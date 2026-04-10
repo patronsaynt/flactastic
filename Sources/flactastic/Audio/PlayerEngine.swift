@@ -30,24 +30,21 @@ final class PlayerEngine {
     private var nextScheduleFrame: AVAudioFramePosition = 0
     private var decodeTask: Task<Void, Never>?
     private var tickTask: Task<Void, Never>?
-    private var converterCache: [ConverterKey: AVAudioConverter] = [:]
     private var isPrepared = false
+    /// True while the decode task is still scheduling buffers.
+    private var isDecoding = false
 
-    /// Cap how far ahead we schedule (in canonical frames). ~10 seconds at 192 kHz.
-    private let lookAheadFrames: AVAudioFrameCount = 192_000 * 10
+    /// Chunk size for the output buffer fed to the player node (in canonical frames).
+    /// ~0.34 seconds at 192 kHz.
+    private let outputChunkFrames: AVAudioFrameCount = 65_536
 
-    /// Chunk size for reading source files (in source frames).
-    private let readChunkFrames: AVAudioFrameCount = 65_536
+    /// Chunk size for reading source files in the converter input block (in source frames).
+    private let readChunkFrames: AVAudioFrameCount = 32_768
 
     private struct ScheduledEntry {
         let track: Track
         let startFrame: AVAudioFramePosition
         var endFrame: AVAudioFramePosition
-    }
-
-    private struct ConverterKey: Hashable {
-        let sampleRate: Double
-        let channelCount: UInt32
     }
 
     // MARK: - Init
@@ -78,7 +75,6 @@ final class PlayerEngine {
         cancelDecode()
         graph.flush()
         scheduledEntries.removeAll()
-        converterCache.removeAll()
         nextScheduleFrame = 0
 
         _queue = tracks
@@ -134,7 +130,6 @@ final class PlayerEngine {
 
     func previous() {
         guard !_queue.isEmpty else { return }
-        // If we're past 3 seconds, restart; otherwise go to previous track.
         if currentTime > 3 {
             setQueue(_queue, startAt: _currentIndex)
             play()
@@ -153,7 +148,6 @@ final class PlayerEngine {
         scheduledEntries.removeAll()
         nextScheduleFrame = 0
 
-        // Clamp to valid range
         let clamped = max(0, seconds)
         currentTime = clamped
         notifyStateUpdate()
@@ -181,13 +175,17 @@ final class PlayerEngine {
     private func cancelDecode() {
         decodeTask?.cancel()
         decodeTask = nil
+        isDecoding = false
     }
 
     private func startDecoding(from index: Int, seekOffset: TimeInterval = 0) {
         let queue = _queue
         let canonical = graph.canonicalFormat
-        let chunkFrames = readChunkFrames
+        let readChunk = readChunkFrames
+        let outputChunk = outputChunkFrames
         let graphRef = graph
+
+        isDecoding = true
 
         decodeTask = Task.detached(priority: .userInitiated) { [weak self] in
             var trackIndex = index
@@ -219,12 +217,14 @@ final class PlayerEngine {
                         }
                     }
 
-                    // Get or create converter.
-                    let converter = try await self?.getOrCreateConverter(
-                        sourceFormat: sourceFormat, destFormat: canonical
-                    )
-
-                    guard let converter else { break }
+                    // Create a fresh converter per track to avoid stale internal state.
+                    guard let converter = AVAudioConverter(from: sourceFormat, to: canonical) else {
+                        print("[PlayerEngine] Cannot create converter for \(track.title)")
+                        trackIndex += 1
+                        isFirstTrack = false
+                        continue
+                    }
+                    converter.sampleRateConverterQuality = .max
 
                     // Record start frame.
                     let startFrame = await MainActor.run { [weak self] () -> AVAudioFramePosition in
@@ -233,49 +233,62 @@ final class PlayerEngine {
 
                     var totalScheduledFrames: AVAudioFramePosition = 0
 
-                    // Read and schedule in chunks.
-                    while file.framePosition < file.length, !Task.isCancelled {
-                        let remainingSourceFrames = AVAudioFrameCount(file.length - file.framePosition)
-                        let framesToRead = min(chunkFrames, remainingSourceFrames)
+                    // Use a pull-based converter: call convert() in a loop, each call fills
+                    // one output chunk. The input block reads from the file on demand.
+                    // This keeps the converter's SRC state continuous (no clicks between chunks).
+                    let fileBox = UncheckedSendableBox(file)
+                    var fileExhausted = false
 
-                        guard let sourceBuffer = AVAudioPCMBuffer(
-                            pcmFormat: sourceFormat,
-                            frameCapacity: framesToRead
-                        ) else { break }
-                        try file.read(into: sourceBuffer, frameCount: framesToRead)
-
-                        if sourceBuffer.frameLength == 0 { break }
-
-                        // Convert to canonical format.
-                        let outputFrameCapacity = AVAudioFrameCount(
-                            Double(sourceBuffer.frameLength) * canonical.sampleRate / sourceFormat.sampleRate
-                        ) + 1024
+                    while !fileExhausted, !Task.isCancelled {
                         guard let destBuffer = AVAudioPCMBuffer(
                             pcmFormat: canonical,
-                            frameCapacity: outputFrameCapacity
+                            frameCapacity: outputChunk
                         ) else { break }
 
-                        var error: NSError?
-                        // The converter input block is called synchronously during convert(),
-                        // so the mutable capture is safe. Use a Sendable wrapper to satisfy Swift 6.
-                        let inputBuffer = UncheckedSendableBox(sourceBuffer)
-                        let consumed = UncheckedSendableBox(MutableFlag(false))
-                        let status = converter.convert(to: destBuffer, error: &error) { _, outStatus in
-                            if consumed.value.value {
+                        var convError: NSError?
+                        let readSize = readChunk
+                        let srcFmt = sourceFormat
+
+                        let status = converter.convert(to: destBuffer, error: &convError) { _, outStatus in
+                            let f = fileBox.value
+                            let remaining = AVAudioFrameCount(f.length - f.framePosition)
+                            if remaining == 0 {
                                 outStatus.pointee = .endOfStream
                                 return nil
                             }
-                            consumed.value.value = true
+                            let toRead = min(readSize, remaining)
+                            guard let srcBuf = AVAudioPCMBuffer(
+                                pcmFormat: srcFmt,
+                                frameCapacity: toRead
+                            ) else {
+                                outStatus.pointee = .endOfStream
+                                return nil
+                            }
+                            do {
+                                try f.read(into: srcBuf, frameCount: toRead)
+                            } catch {
+                                outStatus.pointee = .endOfStream
+                                return nil
+                            }
+                            if srcBuf.frameLength == 0 {
+                                outStatus.pointee = .endOfStream
+                                return nil
+                            }
                             outStatus.pointee = .haveData
-                            return inputBuffer.value
+                            return srcBuf
                         }
 
-                        if status == .error { break }
-                        if destBuffer.frameLength == 0 { continue }
+                        if destBuffer.frameLength > 0 {
+                            totalScheduledFrames += AVAudioFramePosition(destBuffer.frameLength)
+                            graphRef.schedule(destBuffer, completionCallbackType: .dataConsumed) { _ in }
+                        }
 
-                        totalScheduledFrames += AVAudioFramePosition(destBuffer.frameLength)
-
-                        graphRef.schedule(destBuffer, completionCallbackType: .dataConsumed) { _ in }
+                        if status == .endOfStream || status == .error {
+                            if status == .error, let convError {
+                                print("[PlayerEngine] Converter error for \(track.title): \(convError)")
+                            }
+                            fileExhausted = true
+                        }
                     }
 
                     // Record entry for track-boundary tracking.
@@ -292,34 +305,18 @@ final class PlayerEngine {
 
                 } catch {
                     if Task.isCancelled { return }
-                    print("[PlayerEngine] Error decoding \(track.title): \(error)")
+                    print("[PlayerEngine] Error opening \(track.title): \(error)")
                 }
 
                 isFirstTrack = false
                 trackIndex += 1
             }
-        }
-    }
 
-    @MainActor
-    private func getOrCreateConverter(
-        sourceFormat: AVAudioFormat,
-        destFormat: AVAudioFormat
-    ) throws -> AVAudioConverter {
-        let key = ConverterKey(
-            sampleRate: sourceFormat.sampleRate,
-            channelCount: sourceFormat.channelCount
-        )
-        if let cached = converterCache[key] {
-            return cached
+            // Mark decode complete on main actor.
+            await MainActor.run { [weak self] in
+                self?.isDecoding = false
+            }
         }
-        guard let converter = AVAudioConverter(from: sourceFormat, to: destFormat) else {
-            throw NSError(domain: "PlayerEngine", code: -1,
-                          userInfo: [NSLocalizedDescriptionKey: "Cannot create converter from \(sourceFormat) to \(destFormat)"])
-        }
-        converter.sampleRateConverterQuality = .max
-        converterCache[key] = converter
-        return converter
     }
 
     // MARK: - Time tracking tick
@@ -344,7 +341,7 @@ final class PlayerEngine {
         let canonicalRate = graph.canonicalFormat.sampleRate
 
         // Find which track the current playback position falls in.
-        for (_, entry) in scheduledEntries.enumerated() {
+        for entry in scheduledEntries {
             if sampleTime >= entry.startFrame && sampleTime < entry.endFrame {
                 let framesIntoTrack = sampleTime - entry.startFrame
                 currentTime = Double(framesIntoTrack) / canonicalRate
@@ -352,7 +349,6 @@ final class PlayerEngine {
                 if currentTrack?.id != entry.track.id {
                     currentTrack = entry.track
                     duration = entry.track.duration ?? Double(entry.endFrame - entry.startFrame) / canonicalRate
-                    // Update the queue index.
                     if let idx = _queue.firstIndex(where: { $0.id == entry.track.id }) {
                         _currentIndex = idx
                     }
@@ -360,16 +356,15 @@ final class PlayerEngine {
                 notifyStateUpdate()
 
                 // Clean up entries that are fully in the past.
-                let pastEntries = scheduledEntries.prefix(while: { $0.endFrame <= sampleTime })
-                if !pastEntries.isEmpty {
-                    scheduledEntries.removeFirst(pastEntries.count)
+                while let first = scheduledEntries.first, first.endFrame <= sampleTime {
+                    scheduledEntries.removeFirst()
                 }
                 return
             }
         }
 
-        // If sampleTime is past all entries, playback finished.
-        if !scheduledEntries.isEmpty && sampleTime >= scheduledEntries.last!.endFrame {
+        // If sampleTime is past all entries AND decoding is done, playback finished.
+        if !isDecoding, !scheduledEntries.isEmpty, sampleTime >= scheduledEntries.last!.endFrame {
             isPlaying = false
             stopTick()
             notifyStateUpdate()
@@ -385,16 +380,12 @@ final class PlayerEngine {
         let savedIndex = _currentIndex
 
         cancelDecode()
+        graph.flush()
         scheduledEntries.removeAll()
         nextScheduleFrame = 0
-        converterCache.removeAll()
 
-        do {
-            try graph.prepare()
-        } catch {
-            print("[PlayerEngine] Failed to restart after config change: \(error)")
-            return
-        }
+        // The engine was stopped by the system; re-prepare it.
+        graph.reprepare()
 
         if !_queue.isEmpty {
             startDecoding(from: savedIndex, seekOffset: savedTime)
@@ -415,10 +406,4 @@ final class PlayerEngine {
 struct UncheckedSendableBox<T>: @unchecked Sendable {
     let value: T
     init(_ value: T) { self.value = value }
-}
-
-/// A simple mutable boolean wrapped in a reference type.
-final class MutableFlag: @unchecked Sendable {
-    var value: Bool
-    init(_ value: Bool) { self.value = value }
 }

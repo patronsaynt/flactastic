@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:flactastic}",
+            "name": "Debug flactastic",
+            "target": "flactastic",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug flactastic"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:flactastic}",
+            "name": "Release flactastic",
+            "target": "flactastic",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release flactastic"
+        }
+    ]
+}
