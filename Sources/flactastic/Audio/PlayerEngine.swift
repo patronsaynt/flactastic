@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import os
 
 /// The gapless audio engine. Lives on `@MainActor` so transport methods can be called
 /// synchronously from SwiftUI. Heavy decode work is dispatched off the main actor.
@@ -18,7 +19,6 @@ final class PlayerEngine {
 
     // MARK: - State update callback
 
-    /// Called on every tick / state change so `PlayerState` can mirror values.
     var onStateUpdate: (@MainActor () -> Void)?
 
     // MARK: - Private
@@ -31,15 +31,20 @@ final class PlayerEngine {
     private var decodeTask: Task<Void, Never>?
     private var tickTask: Task<Void, Never>?
     private var isPrepared = false
-    /// True while the decode task is still scheduling buffers.
     private var isDecoding = false
+    private var seekTimeOffset: TimeInterval = 0
 
-    /// Chunk size for the output buffer fed to the player node (in canonical frames).
-    /// ~0.34 seconds at 192 kHz.
-    private let outputChunkFrames: AVAudioFrameCount = 65_536
+    /// Generation counter — incremented on every cancel to invalidate stale decode tasks.
+    private let generation = OSAllocatedUnfairLock(initialState: UInt64(0))
 
-    /// Chunk size for reading source files in the converter input block (in source frames).
-    private let readChunkFrames: AVAudioFrameCount = 32_768
+    /// Backpressure: caps how many canonical frames are scheduled but not yet consumed.
+    private let throttle = BufferThrottle()
+
+    /// Output chunk: ~0.37s at 44.1 kHz. Small enough for responsive seek, large enough to avoid overhead.
+    private let outputChunkFrames: AVAudioFrameCount = 16_384
+
+    /// Read chunk for converter input block (source frames).
+    private let readChunkFrames: AVAudioFrameCount = 8_192
 
     private struct ScheduledEntry {
         let track: Track
@@ -57,6 +62,10 @@ final class PlayerEngine {
         guard !isPrepared else { return }
         do {
             try graph.prepare()
+            // Set throttle limit based on actual device sample rate (~10 seconds of audio).
+            let rate = graph.canonicalFormat.sampleRate
+            throttle.setLimit(Int64(rate * 10))
+
             graph.onConfigurationChange { [weak self] in
                 Task { @MainActor in
                     self?.handleConfigurationChange()
@@ -76,6 +85,7 @@ final class PlayerEngine {
         graph.flush()
         scheduledEntries.removeAll()
         nextScheduleFrame = 0
+        seekTimeOffset = 0
 
         _queue = tracks
         _currentIndex = min(index, max(tracks.count - 1, 0))
@@ -112,11 +122,7 @@ final class PlayerEngine {
     }
 
     func togglePlayPause() {
-        if isPlaying {
-            pause()
-        } else {
-            play()
-        }
+        if isPlaying { pause() } else { play() }
     }
 
     func next() {
@@ -149,6 +155,7 @@ final class PlayerEngine {
         nextScheduleFrame = 0
 
         let clamped = max(0, seconds)
+        seekTimeOffset = clamped
         currentTime = clamped
         notifyStateUpdate()
 
@@ -162,19 +169,16 @@ final class PlayerEngine {
         notifyStateUpdate()
     }
 
-    func volumeUp() {
-        setVolume(volume + 0.05)
-    }
-
-    func volumeDown() {
-        setVolume(volume - 0.05)
-    }
+    func volumeUp() { setVolume(volume + 0.05) }
+    func volumeDown() { setVolume(volume - 0.05) }
 
     // MARK: - Decode pipeline
 
     private func cancelDecode() {
         decodeTask?.cancel()
         decodeTask = nil
+        generation.withLock { $0 &+= 1 }
+        throttle.reset()
         isDecoding = false
     }
 
@@ -184,6 +188,9 @@ final class PlayerEngine {
         let readChunk = readChunkFrames
         let outputChunk = outputChunkFrames
         let graphRef = graph
+        let throttle = self.throttle
+        let myGeneration = generation.withLock { $0 }
+        let generation = self.generation
 
         isDecoding = true
 
@@ -202,14 +209,13 @@ final class PlayerEngine {
                     )
                     let sourceFormat = file.processingFormat
 
-                    // Handle seek offset for the first track.
+                    // Seek within the first track.
                     if isFirstTrack && seekOffset > 0 {
                         let seekFrame = AVAudioFramePosition(seekOffset * sourceFormat.sampleRate)
-                        let clampedFrame = min(seekFrame, file.length - 1)
-                        file.framePosition = max(0, clampedFrame)
+                        file.framePosition = max(0, min(seekFrame, file.length - 1))
                     }
 
-                    // Update duration on main actor for the current track.
+                    // Update duration for the current track.
                     let fileDuration = Double(file.length) / sourceFormat.sampleRate
                     if isFirstTrack {
                         await MainActor.run { [weak self] in
@@ -217,90 +223,139 @@ final class PlayerEngine {
                         }
                     }
 
-                    // Create a fresh converter per track to avoid stale internal state.
-                    guard let converter = AVAudioConverter(from: sourceFormat, to: canonical) else {
-                        print("[PlayerEngine] Cannot create converter for \(track.title)")
-                        trackIndex += 1
-                        isFirstTrack = false
-                        continue
-                    }
-                    converter.sampleRateConverterQuality = .max
+                    // Check if we can do a zero-conversion passthrough.
+                    let needsConverter = sourceFormat.sampleRate != canonical.sampleRate
+                        || sourceFormat.channelCount != canonical.channelCount
 
-                    // Record start frame.
-                    let startFrame = await MainActor.run { [weak self] () -> AVAudioFramePosition in
-                        return self?.nextScheduleFrame ?? 0
+                    // Create converter only if needed.
+                    var converter: AVAudioConverter?
+                    if needsConverter {
+                        guard let conv = AVAudioConverter(from: sourceFormat, to: canonical) else {
+                            print("[PlayerEngine] Cannot create converter for \(track.title)")
+                            trackIndex += 1
+                            isFirstTrack = false
+                            continue
+                        }
+                        conv.sampleRateConverterQuality = .max
+                        converter = conv
+                    }
+
+                    // Create entry eagerly so updateTime() can track this track immediately.
+                    // endFrame = .max is a sentinel meaning "still decoding".
+                    let (startFrame, entryIndex) = await MainActor.run { [weak self] () -> (AVAudioFramePosition, Int) in
+                        guard let self else { return (0, 0) }
+                        let sf = self.nextScheduleFrame
+                        let entry = ScheduledEntry(track: track, startFrame: sf, endFrame: .max)
+                        self.scheduledEntries.append(entry)
+                        return (sf, self.scheduledEntries.count - 1)
                     }
 
                     var totalScheduledFrames: AVAudioFramePosition = 0
 
-                    // Use a pull-based converter: call convert() in a loop, each call fills
-                    // one output chunk. The input block reads from the file on demand.
-                    // This keeps the converter's SRC state continuous (no clicks between chunks).
-                    let fileBox = UncheckedSendableBox(file)
-                    var fileExhausted = false
+                    if needsConverter, let converter {
+                        // --- Converter path: pull-based conversion ---
+                        let fileBox = UncheckedSendableBox(file)
+                        var fileExhausted = false
 
-                    while !fileExhausted, !Task.isCancelled {
-                        guard let destBuffer = AVAudioPCMBuffer(
-                            pcmFormat: canonical,
-                            frameCapacity: outputChunk
-                        ) else { break }
+                        while !fileExhausted, !Task.isCancelled {
+                            if generation.withLock({ $0 }) != myGeneration { return }
 
-                        var convError: NSError?
-                        let readSize = readChunk
-                        let srcFmt = sourceFormat
+                            guard let destBuffer = AVAudioPCMBuffer(
+                                pcmFormat: canonical, frameCapacity: outputChunk
+                            ) else { break }
 
-                        let status = converter.convert(to: destBuffer, error: &convError) { _, outStatus in
-                            let f = fileBox.value
-                            let remaining = AVAudioFrameCount(f.length - f.framePosition)
-                            if remaining == 0 {
-                                outStatus.pointee = .endOfStream
-                                return nil
+                            var convError: NSError?
+                            let srcFmt = sourceFormat
+                            let chunkSize = readChunk
+
+                            let status = converter.convert(to: destBuffer, error: &convError) { _, outStatus in
+                                let f = fileBox.value
+                                let remaining = AVAudioFrameCount(f.length - f.framePosition)
+                                if remaining == 0 {
+                                    outStatus.pointee = .endOfStream
+                                    return nil
+                                }
+                                let toRead = min(chunkSize, remaining)
+                                guard let srcBuf = AVAudioPCMBuffer(
+                                    pcmFormat: srcFmt, frameCapacity: toRead
+                                ) else {
+                                    outStatus.pointee = .endOfStream
+                                    return nil
+                                }
+                                do {
+                                    try f.read(into: srcBuf, frameCount: toRead)
+                                } catch {
+                                    outStatus.pointee = .endOfStream
+                                    return nil
+                                }
+                                if srcBuf.frameLength == 0 {
+                                    outStatus.pointee = .endOfStream
+                                    return nil
+                                }
+                                outStatus.pointee = .haveData
+                                return srcBuf
                             }
-                            let toRead = min(readSize, remaining)
-                            guard let srcBuf = AVAudioPCMBuffer(
-                                pcmFormat: srcFmt,
-                                frameCapacity: toRead
-                            ) else {
-                                outStatus.pointee = .endOfStream
-                                return nil
+
+                            if destBuffer.frameLength > 0 {
+                                let frameCount = Int64(destBuffer.frameLength)
+
+                                await throttle.acquire(frames: frameCount)
+                                if generation.withLock({ $0 }) != myGeneration { return }
+
+                                totalScheduledFrames += AVAudioFramePosition(frameCount)
+                                graphRef.schedule(destBuffer, completionCallbackType: .dataConsumed) { _ in
+                                    if generation.withLock({ $0 }) == myGeneration {
+                                        throttle.release(frames: frameCount)
+                                    }
+                                }
                             }
-                            do {
-                                try f.read(into: srcBuf, frameCount: toRead)
-                            } catch {
-                                outStatus.pointee = .endOfStream
-                                return nil
+
+                            if status == .endOfStream || status == .error {
+                                if status == .error, let convError {
+                                    print("[PlayerEngine] Converter error for \(track.title): \(convError)")
+                                }
+                                fileExhausted = true
                             }
-                            if srcBuf.frameLength == 0 {
-                                outStatus.pointee = .endOfStream
-                                return nil
-                            }
-                            outStatus.pointee = .haveData
-                            return srcBuf
                         }
+                    } else {
+                        // --- Passthrough path: read directly into schedule buffers ---
+                        while file.framePosition < file.length, !Task.isCancelled {
+                            if generation.withLock({ $0 }) != myGeneration { return }
 
-                        if destBuffer.frameLength > 0 {
-                            totalScheduledFrames += AVAudioFramePosition(destBuffer.frameLength)
-                            graphRef.schedule(destBuffer, completionCallbackType: .dataConsumed) { _ in }
-                        }
+                            let remaining = AVAudioFrameCount(file.length - file.framePosition)
+                            let toRead = min(outputChunk, remaining)
 
-                        if status == .endOfStream || status == .error {
-                            if status == .error, let convError {
-                                print("[PlayerEngine] Converter error for \(track.title): \(convError)")
+                            guard let destBuffer = AVAudioPCMBuffer(
+                                pcmFormat: canonical, frameCapacity: toRead
+                            ) else { break }
+
+                            try file.read(into: destBuffer, frameCount: toRead)
+                            if destBuffer.frameLength == 0 { break }
+
+                            let frameCount = Int64(destBuffer.frameLength)
+
+                            await throttle.acquire(frames: frameCount)
+                            if generation.withLock({ $0 }) != myGeneration { return }
+
+                            totalScheduledFrames += AVAudioFramePosition(frameCount)
+                            graphRef.schedule(destBuffer, completionCallbackType: .dataConsumed) { _ in
+                                if generation.withLock({ $0 }) == myGeneration {
+                                    throttle.release(frames: frameCount)
+                                }
                             }
-                            fileExhausted = true
                         }
                     }
 
-                    // Record entry for track-boundary tracking.
+                    // Finalize entry: replace .max sentinel with actual endFrame.
+                    if generation.withLock({ $0 }) != myGeneration { return }
+                    let actualEnd = startFrame + totalScheduledFrames
                     await MainActor.run { [weak self] in
                         guard let self else { return }
-                        let entry = ScheduledEntry(
-                            track: track,
-                            startFrame: startFrame,
-                            endFrame: startFrame + totalScheduledFrames
-                        )
-                        self.scheduledEntries.append(entry)
-                        self.nextScheduleFrame = entry.endFrame
+                        if entryIndex < self.scheduledEntries.count,
+                           self.scheduledEntries[entryIndex].track.id == track.id {
+                            self.scheduledEntries[entryIndex].endFrame = actualEnd
+                        }
+                        self.nextScheduleFrame = actualEnd
                     }
 
                 } catch {
@@ -312,7 +367,6 @@ final class PlayerEngine {
                 trackIndex += 1
             }
 
-            // Mark decode complete on main actor.
             await MainActor.run { [weak self] in
                 self?.isDecoding = false
             }
@@ -337,34 +391,46 @@ final class PlayerEngine {
     }
 
     private func updateTime() {
-        guard let sampleTime = graph.currentPlayerSampleTime() else { return }
+        guard let sampleTime = graph.currentPlayerSampleTime(), sampleTime >= 0 else { return }
         let canonicalRate = graph.canonicalFormat.sampleRate
 
-        // Find which track the current playback position falls in.
         for entry in scheduledEntries {
-            if sampleTime >= entry.startFrame && sampleTime < entry.endFrame {
+            // endFrame == .max means "still decoding" — treat as if it extends to infinity.
+            if sampleTime >= entry.startFrame && (entry.endFrame == .max || sampleTime < entry.endFrame) {
                 let framesIntoTrack = sampleTime - entry.startFrame
-                currentTime = Double(framesIntoTrack) / canonicalRate
+                currentTime = seekTimeOffset + Double(framesIntoTrack) / canonicalRate
 
                 if currentTrack?.id != entry.track.id {
                     currentTrack = entry.track
-                    duration = entry.track.duration ?? Double(entry.endFrame - entry.startFrame) / canonicalRate
+                    if entry.endFrame != .max {
+                        duration = entry.track.duration ?? Double(entry.endFrame - entry.startFrame) / canonicalRate
+                    } else {
+                        duration = entry.track.duration
+                    }
                     if let idx = _queue.firstIndex(where: { $0.id == entry.track.id }) {
                         _currentIndex = idx
                     }
+                    // Reset seek offset for subsequent tracks (they start at 0).
+                    seekTimeOffset = 0
                 }
                 notifyStateUpdate()
 
-                // Clean up entries that are fully in the past.
-                while let first = scheduledEntries.first, first.endFrame <= sampleTime {
+                // Clean up fully-consumed, finalized entries.
+                while let first = scheduledEntries.first,
+                      first.endFrame != .max,
+                      first.endFrame <= sampleTime {
                     scheduledEntries.removeFirst()
                 }
                 return
             }
         }
 
-        // If sampleTime is past all entries AND decoding is done, playback finished.
-        if !isDecoding, !scheduledEntries.isEmpty, sampleTime >= scheduledEntries.last!.endFrame {
+        // Past all entries and decoding done → playback finished.
+        // Only trigger if the last entry is finalized (endFrame != .max).
+        if !isDecoding,
+           let lastEntry = scheduledEntries.last,
+           lastEntry.endFrame != .max,
+           sampleTime >= lastEntry.endFrame {
             isPlaying = false
             stopTick()
             notifyStateUpdate()
@@ -384,8 +450,10 @@ final class PlayerEngine {
         scheduledEntries.removeAll()
         nextScheduleFrame = 0
 
-        // The engine was stopped by the system; re-prepare it.
         graph.reprepare()
+        // Update throttle limit for new device rate.
+        let rate = graph.canonicalFormat.sampleRate
+        throttle.setLimit(Int64(rate * 10))
 
         if !_queue.isEmpty {
             startDecoding(from: savedIndex, seekOffset: savedTime)
@@ -400,9 +468,60 @@ final class PlayerEngine {
     }
 }
 
+// MARK: - Buffer throttle (backpressure)
+
+/// Caps in-flight scheduled frames so we never flood the player node's buffer queue.
+/// Thread-safe; used from the decode task and completion callbacks concurrently.
+final class BufferThrottle: @unchecked Sendable {
+    private let state = OSAllocatedUnfairLock(initialState: ThrottleState())
+
+    private struct ThrottleState {
+        var inFlight: Int64 = 0
+        var limit: Int64 = 441_000 // default ~10s at 44.1 kHz, updated at prepare
+        var waiters: [CheckedContinuation<Void, Never>] = []
+    }
+
+    func setLimit(_ limit: Int64) {
+        state.withLock { $0.limit = limit }
+    }
+
+    func acquire(frames: Int64) async {
+        let shouldWait: Bool = state.withLock { s in
+            s.inFlight += frames
+            return s.inFlight > s.limit
+        }
+        if !shouldWait { return }
+
+        await withCheckedContinuation { cont in
+            state.withLock { $0.waiters.append(cont) }
+        }
+    }
+
+    func release(frames: Int64) {
+        let waiter: CheckedContinuation<Void, Never>? = state.withLock { s in
+            s.inFlight -= frames
+            if s.inFlight <= s.limit, !s.waiters.isEmpty {
+                return s.waiters.removeFirst()
+            }
+            return nil
+        }
+        waiter?.resume()
+    }
+
+    /// Cancel all backpressure — unblock any waiting decode task so it can check cancellation.
+    func reset() {
+        let waiters: [CheckedContinuation<Void, Never>] = state.withLock { s in
+            s.inFlight = 0
+            let w = s.waiters
+            s.waiters.removeAll()
+            return w
+        }
+        for w in waiters { w.resume() }
+    }
+}
+
 // MARK: - Concurrency helpers
 
-/// Wraps a non-Sendable value for use in contexts where we know the access pattern is safe.
 struct UncheckedSendableBox<T>: @unchecked Sendable {
     let value: T
     init(_ value: T) { self.value = value }

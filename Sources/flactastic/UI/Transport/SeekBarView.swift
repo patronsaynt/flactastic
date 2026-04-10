@@ -6,26 +6,53 @@ struct SeekBarView: View {
     @State private var dragValue: Double = 0
 
     var body: some View {
-        @Bindable var player = player
         let duration = player.duration ?? 1
         let displayTime = isDragging ? dragValue : player.currentTime
+        let progress = duration > 0 ? displayTime / duration : 0
 
         VStack(spacing: Theme.Spacing.xs) {
-            Slider(
-                value: isDragging ? $dragValue : $player.currentTime,
-                in: 0...max(duration, 1)
-            ) {
-                Text("Seek")
-            } onEditingChanged: { editing in
-                if editing {
-                    isDragging = true
-                    dragValue = player.currentTime
-                } else {
-                    player.engine.seek(to: dragValue)
-                    isDragging = false
+            GeometryReader { geo in
+                let width = geo.size.width
+
+                ZStack(alignment: .leading) {
+                    // Track background
+                    Capsule()
+                        .fill(Theme.surfaceElevated)
+                        .frame(height: 4)
+
+                    // Filled portion
+                    Capsule()
+                        .fill(Theme.accent)
+                        .frame(width: max(0, min(CGFloat(progress) * width, width)), height: 4)
+
+                    // Thumb
+                    Circle()
+                        .fill(Theme.accent)
+                        .frame(width: 12, height: 12)
+                        .offset(x: max(0, min(CGFloat(progress) * width - 6, width - 12)))
                 }
+                .frame(height: 12)
+                .frame(maxHeight: .infinity, alignment: .center)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            let fraction = max(0, min(value.location.x / width, 1))
+                            let time = fraction * duration
+                            if !isDragging {
+                                isDragging = true
+                            }
+                            dragValue = time
+                        }
+                        .onEnded { value in
+                            let fraction = max(0, min(value.location.x / width, 1))
+                            let time = fraction * duration
+                            player.engine.seek(to: time)
+                            isDragging = false
+                        }
+                )
             }
-            .tint(Theme.accent)
+            .frame(height: 16)
 
             HStack {
                 Text(FormatUtils.formatDuration(displayTime))

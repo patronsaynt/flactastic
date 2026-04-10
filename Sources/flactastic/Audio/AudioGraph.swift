@@ -20,7 +20,9 @@ protocol AudioGraphProtocol: AnyObject, Sendable {
 // MARK: - Apple AVAudioEngine implementation
 
 final class AppleAudioGraph: AudioGraphProtocol, @unchecked Sendable {
-    let canonicalFormat: AVAudioFormat
+    /// The canonical processing format, derived from the output device's sample rate.
+    /// Set during `prepare()` / `reprepare()`. Always stereo Float32 non-interleaved.
+    private(set) var canonicalFormat: AVAudioFormat
 
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
@@ -28,7 +30,8 @@ final class AppleAudioGraph: AudioGraphProtocol, @unchecked Sendable {
     private var isAttached = false
 
     init() {
-        canonicalFormat = AVAudioFormat(standardFormatWithSampleRate: 192_000, channels: 2)!
+        // Placeholder; real format is set in prepare() from the device rate.
+        canonicalFormat = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2)!
     }
 
     deinit {
@@ -39,6 +42,8 @@ final class AppleAudioGraph: AudioGraphProtocol, @unchecked Sendable {
     }
 
     func prepare() throws {
+        canonicalFormat = makeCanonicalFormat()
+
         if !isAttached {
             engine.attach(playerNode)
             isAttached = true
@@ -48,8 +53,7 @@ final class AppleAudioGraph: AudioGraphProtocol, @unchecked Sendable {
     }
 
     func reprepare() {
-        // After a config change the engine was stopped by the system.
-        // Re-connect and restart without re-attaching.
+        canonicalFormat = makeCanonicalFormat()
         engine.connect(playerNode, to: engine.mainMixerNode, format: canonicalFormat)
         try? engine.start()
     }
@@ -97,5 +101,13 @@ final class AppleAudioGraph: AudioGraphProtocol, @unchecked Sendable {
         ) { _ in
             handler()
         }
+    }
+
+    // MARK: - Private
+
+    private func makeCanonicalFormat() -> AVAudioFormat {
+        let outputFormat = engine.outputNode.outputFormat(forBus: 0)
+        let deviceRate = outputFormat.sampleRate > 0 ? outputFormat.sampleRate : 44_100
+        return AVAudioFormat(standardFormatWithSampleRate: deviceRate, channels: 2)!
     }
 }
