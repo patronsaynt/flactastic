@@ -6,6 +6,7 @@ struct FlactasticApp: App {
     @State private var library = LibraryStore()
     @State private var player = PlayerState()
     @State private var settings = Settings()
+    @State private var playlistStore = PlaylistStore()
 
     var body: some Scene {
         WindowGroup {
@@ -13,6 +14,7 @@ struct FlactasticApp: App {
                 .environment(library)
                 .environment(player)
                 .environment(settings)
+                .environment(playlistStore)
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 900, minHeight: 600)
                 .background(Theme.background)
@@ -48,6 +50,7 @@ struct FlactasticApp: App {
 
     @MainActor
     private func bootstrap() async {
+        playlistStore.load()
         player.engine.setVolume(settings.volume)
         if let path = settings.lastRootPath {
             let url = URL(fileURLWithPath: path)

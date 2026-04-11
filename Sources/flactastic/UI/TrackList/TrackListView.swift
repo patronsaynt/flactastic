@@ -3,6 +3,7 @@ import SwiftUI
 struct TrackListView: View {
     @Environment(LibraryStore.self) private var library
     @Environment(PlayerState.self) private var player
+    @Environment(PlaylistStore.self) private var playlistStore
 
     var body: some View {
         if library.tracks.isEmpty {
@@ -14,6 +15,9 @@ struct TrackListView: View {
                     .onTapGesture(count: 2) {
                         play(track)
                     }
+                    .contextMenu {
+                        addToPlaylistMenu(track: track)
+                    }
                     .listRowBackground(
                         player.currentTrack?.id == track.id
                             ? Theme.surfaceElevated
@@ -24,6 +28,21 @@ struct TrackListView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Theme.surface)
+        }
+    }
+
+    @ViewBuilder
+    private func addToPlaylistMenu(track: Track) -> some View {
+        if playlistStore.playlists.isEmpty {
+            Text("No playlists yet")
+        } else {
+            Menu("Add to Playlist") {
+                ForEach(playlistStore.playlists) { playlist in
+                    Button(playlist.name) {
+                        playlistStore.addTracks([track], to: playlist.id, relativeTo: library.rootURL)
+                    }
+                }
+            }
         }
     }
 
