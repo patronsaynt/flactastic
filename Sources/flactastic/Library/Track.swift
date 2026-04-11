@@ -12,6 +12,8 @@ struct Track: Sendable, Identifiable, Hashable {
     var fileFormat: AudioFileFormat
     var sampleRate: Double?
     var bitDepth: Int?
+    var genre: String?
+    var year: Int?
 
     init(
         id: UUID = UUID(),
@@ -24,7 +26,9 @@ struct Track: Sendable, Identifiable, Hashable {
         artwork: Data? = nil,
         fileFormat: AudioFileFormat,
         sampleRate: Double? = nil,
-        bitDepth: Int? = nil
+        bitDepth: Int? = nil,
+        genre: String? = nil,
+        year: Int? = nil
     ) {
         self.id = id
         self.url = url
@@ -37,6 +41,8 @@ struct Track: Sendable, Identifiable, Hashable {
         self.fileFormat = fileFormat
         self.sampleRate = sampleRate
         self.bitDepth = bitDepth
+        self.genre = genre
+        self.year = year
     }
 
     static func makeFromURL(_ url: URL) -> Track? {

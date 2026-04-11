@@ -16,22 +16,17 @@ struct FlactasticApp: App {
                 .environment(settings)
                 .environment(playlistStore)
                 .preferredColorScheme(.dark)
-                .frame(minWidth: 900, minHeight: 600)
+                .frame(minWidth: 1000, minHeight: 650)
                 .background(Theme.background)
                 .task { await bootstrap() }
                 .onAppear {
-                    // When launched via `swift run`, the process isn't registered as a
-                    // foreground app by default. Force activation so the window comes to front.
                     NSApplication.shared.setActivationPolicy(.regular)
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 }
         }
-        .windowToolbarStyle(.unified)
+        .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
-            CommandGroup(replacing: .newItem) {
-                Button("Open Folder…") { openFolder() }
-                    .keyboardShortcut("o", modifiers: .command)
-            }
+            CommandGroup(replacing: .newItem) { }
             CommandMenu("Playback") {
                 Button("Play / Pause") { player.engine.togglePlayPause() }
                     .keyboardShortcut(.space, modifiers: [])
@@ -57,19 +52,6 @@ struct FlactasticApp: App {
             if FileManager.default.fileExists(atPath: url.path) {
                 library.openFolder(url)
             }
-        }
-    }
-
-    @MainActor
-    private func openFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.title = "Choose your music folder"
-        if panel.runModal() == .OK, let url = panel.url {
-            settings.lastRootPath = url.path
-            library.openFolder(url)
         }
     }
 }

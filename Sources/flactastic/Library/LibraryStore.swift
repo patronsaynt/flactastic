@@ -15,6 +15,25 @@ final class LibraryStore {
     var tracks: [Track] = []
     var scanState: ScanState = .idle
 
+    var albums: [Album] {
+        let grouped = Dictionary(grouping: tracks) { track in
+            "\(track.artist ?? "Unknown Artist")|\(track.album ?? "Unknown Album")"
+        }
+        return grouped.map { key, tracks in
+            let sorted = tracks.sorted { ($0.trackNumber ?? Int.max) < ($1.trackNumber ?? Int.max) }
+            return Album(
+                id: key,
+                name: sorted.first?.album ?? "Unknown Album",
+                artist: sorted.first?.artist,
+                year: sorted.first?.year,
+                genre: sorted.first?.genre,
+                artwork: sorted.first(where: { $0.artwork != nil })?.artwork,
+                tracks: sorted
+            )
+        }
+        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
     private let scanner = LibraryScanner()
     private var scanTask: Task<Void, Never>?
     private var metadataTask: Task<Void, Never>?

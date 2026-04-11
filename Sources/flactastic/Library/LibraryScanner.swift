@@ -68,6 +68,17 @@ actor LibraryScanner {
                     if let data = try? await item.load(.dataValue) {
                         updated.artwork = data
                     }
+                case .commonKeyType:
+                    if let s = try? await item.load(.stringValue), !s.isEmpty {
+                        updated.genre = s
+                    }
+                case .commonKeyCreationDate:
+                    if let s = try? await item.load(.stringValue), !s.isEmpty {
+                        let digits = s.prefix(4)
+                        if let y = Int(digits), y > 1000, y < 3000 {
+                            updated.year = y
+                        }
+                    }
                 default:
                     break
                 }
@@ -88,6 +99,29 @@ actor LibraryScanner {
                                 let parts = s.split(separator: "/")
                                 if let first = parts.first, let n = Int(first) {
                                     updated.trackNumber = n
+                                }
+                            }
+                        }
+
+                        // Genre: ID3 "TCON", iTunes "genre" / "gnre"
+                        if updated.genre == nil {
+                            if identifier.contains("TCON") || identifier.contains("genre") || identifier.contains("gnre")
+                                || keyString.contains("genre") || keyString.contains("gnre") {
+                                if let s = try? await item.load(.stringValue), !s.isEmpty {
+                                    updated.genre = s
+                                }
+                            }
+                        }
+
+                        // Year: ID3 "TDRC" / "TYER", iTunes "day"
+                        if updated.year == nil {
+                            if identifier.contains("TDRC") || identifier.contains("TYER") || identifier.contains("day")
+                                || keyString.contains("year") || keyString.contains("day") {
+                                if let s = try? await item.load(.stringValue), !s.isEmpty {
+                                    let digits = s.prefix(4)
+                                    if let y = Int(digits), y > 1000, y < 3000 {
+                                        updated.year = y
+                                    }
                                 }
                             }
                         }

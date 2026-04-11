@@ -1,6 +1,10 @@
 import Foundation
 import Observation
 
+enum RepeatMode: Sendable {
+    case off, all, one
+}
+
 @Observable
 @MainActor
 final class PlayerState {
@@ -11,6 +15,8 @@ final class PlayerState {
     var currentTime: TimeInterval = 0
     var duration: TimeInterval?
     var volume: Float = 0.75
+    var isShuffleEnabled: Bool = false
+    var repeatMode: RepeatMode = .off
 
     var queue: [Track] { engine.queue }
     var currentIndex: Int { engine.currentIndex }

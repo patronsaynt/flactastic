@@ -18,42 +18,48 @@ struct PlaylistDetailView: View {
         if let playlist {
             let tracks = playlistStore.resolvedTracks(for: playlist, in: library)
 
-            VStack(spacing: 0) {
-                playlistHeader(playlist, trackCount: tracks.count)
-                Divider().foregroundStyle(Theme.divider)
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+                    playlistHeader(playlist, tracks: tracks)
 
-                if tracks.isEmpty {
-                    emptyState
-                } else {
-                    trackList(tracks)
+                    if tracks.isEmpty {
+                        emptyState
+                    } else {
+                        trackList(tracks)
+                    }
                 }
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.top, Theme.Spacing.lg)
+                .padding(.bottom, 100)
             }
-            .background(Theme.surface)
+            .background(Theme.background)
+            .navigationTitle(playlist.name)
         } else {
             Text("Playlist not found")
                 .foregroundStyle(Theme.textTertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Theme.surface)
+                .background(Theme.background)
         }
     }
 
     // MARK: - Header
 
     @ViewBuilder
-    private func playlistHeader(_ playlist: Playlist, trackCount: Int) -> some View {
-        HStack(spacing: Theme.Spacing.md) {
-            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+    private func playlistHeader(_ playlist: Playlist, tracks: [Track]) -> some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.xl) {
+            // Playlist artwork (first track's artwork or placeholder)
+            ArtworkView(data: tracks.first?.artwork, size: 200)
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 if isEditingName {
                     TextField("Playlist name", text: $editedName)
                         .textFieldStyle(.plain)
-                        .font(Theme.Font.headline)
+                        .font(Theme.Font.title)
                         .foregroundStyle(Theme.textPrimary)
-                        .onSubmit {
-                            commitRename()
-                        }
+                        .onSubmit { commitRename() }
                 } else {
                     Text(playlist.name)
-                        .font(Theme.Font.headline)
+                        .font(Theme.Font.title)
                         .foregroundStyle(Theme.textPrimary)
                         .onTapGesture(count: 2) {
                             editedName = playlist.name
@@ -61,42 +67,48 @@ struct PlaylistDetailView: View {
                         }
                 }
 
-                Text("\(trackCount) track\(trackCount == 1 ? "" : "s")")
+                Text("\(tracks.count) track\(tracks.count == 1 ? "" : "s")")
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.textSecondary)
-            }
 
-            Spacer()
+                Spacer()
 
-            if trackCount > 0 {
-                Button {
-                    let tracks = playlistStore.resolvedTracks(for: playlist, in: library)
-                    guard !tracks.isEmpty else { return }
-                    player.engine.setQueue(tracks, startAt: 0)
-                    player.engine.play()
-                } label: {
-                    HStack(spacing: Theme.Spacing.xs) {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 11))
-                        Text("Play All")
-                            .font(Theme.Font.bodyMedium)
+                if !tracks.isEmpty {
+                    HStack(spacing: Theme.Spacing.md) {
+                        Button {
+                            player.engine.setQueue(tracks, startAt: 0)
+                            player.engine.play()
+                        } label: {
+                            HStack(spacing: Theme.Spacing.xs) {
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 12))
+                                Text("Play All")
+                            }
+                        }
+                        .buttonStyle(PrimaryMonochromeButtonStyle())
+
+                        Button {
+                            var shuffled = tracks
+                            shuffled.shuffle()
+                            player.isShuffleEnabled = true
+                            player.engine.setQueue(shuffled, startAt: 0)
+                            player.engine.play()
+                        } label: {
+                            HStack(spacing: Theme.Spacing.xs) {
+                                Image(systemName: "shuffle")
+                                    .font(.system(size: 12))
+                                Text("Shuffle")
+                            }
+                        }
+                        .buttonStyle(MonochromeButtonStyle())
                     }
-                    .foregroundStyle(Theme.textPrimary)
-                    .padding(.horizontal, Theme.Spacing.md)
-                    .padding(.vertical, Theme.Spacing.sm)
-                    .background(
-                        RoundedRectangle(cornerRadius: Theme.Radius.md)
-                            .fill(Theme.surfaceElevated)
-                    )
                 }
-                .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, Theme.Spacing.lg)
-        .padding(.vertical, Theme.Spacing.md)
+        .frame(height: 200)
     }
 
-    // MARK: - Track list
+    // MARK: - Track List
 
     @ViewBuilder
     private func trackList(_ tracks: [Track]) -> some View {
@@ -123,12 +135,11 @@ struct PlaylistDetailView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .background(Theme.surface)
+        .frame(minHeight: CGFloat(tracks.count) * 48)
     }
 
-    // MARK: - Empty state
+    // MARK: - Empty State
 
-    @ViewBuilder
     private var emptyState: some View {
         VStack(spacing: Theme.Spacing.md) {
             Image(systemName: "music.note.list")
@@ -137,12 +148,12 @@ struct PlaylistDetailView: View {
             Text("No tracks in this playlist")
                 .font(Theme.Font.body)
                 .foregroundStyle(Theme.textTertiary)
-            Text("Right-click tracks in your library to add them")
+            Text("Right-click tracks in your collection to add them")
                 .font(Theme.Font.caption)
                 .foregroundStyle(Theme.textTertiary)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.surface)
+        .frame(maxWidth: .infinity)
+        .padding(.top, Theme.Spacing.xxl)
     }
 
     // MARK: - Actions
