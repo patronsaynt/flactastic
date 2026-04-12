@@ -26,17 +26,19 @@ struct TrackRow: View {
 
             Spacer()
 
-            if let badge = formatBadge {
-                Text(badge)
-                    .font(Theme.Font.captionMono)
-                    .foregroundStyle(Theme.textTertiary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .fill(Theme.surfaceElevated)
-                    )
-            }
+            // File format badge
+            Text(track.fileFormat.displayName)
+                .font(Theme.Font.captionMono)
+                .foregroundStyle(Theme.textTertiary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .fill(Theme.surfaceElevated)
+                )
+
+            // Quality badge
+            qualityBadge
 
             Text(FormatUtils.formatDuration(track.duration))
                 .font(Theme.Font.captionMono)
@@ -62,10 +64,23 @@ struct TrackRow: View {
         }
     }
 
-    private var formatBadge: String? {
-        if let rate = track.sampleRate, let bits = track.bitDepth {
-            return FormatUtils.formatSampleRate(rate, bitDepth: bits)
-        }
-        return track.fileFormat.displayName
+    private var qualityBadge: some View {
+        let quality = AudioQuality.classify(
+            sampleRate: track.sampleRate,
+            bitDepth: track.bitDepth,
+            format: track.fileFormat
+        )
+        let detail = FormatUtils.formatSampleRate(track.sampleRate, bitDepth: track.bitDepth)
+        let label = detail.map { "\(quality.label) · \($0)" } ?? quality.label
+
+        return Text(label)
+            .font(Theme.Font.captionMono)
+            .foregroundStyle(quality.color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    .fill(quality.color.opacity(0.12))
+            )
     }
 }

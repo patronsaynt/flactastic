@@ -49,6 +49,13 @@ enum Theme {
         light: NSColor.black
     ))
 
+    // MARK: - Quality Tier Colors
+
+    static let qualityLossless = Color(red: 0.0, green: 0.9, blue: 0.8)   // bright turquoise — hi-res
+    static let qualityCD = Color(red: 0.3, green: 0.85, blue: 0.4)        // green — CD quality
+    static let qualityMid = Color(red: 0.95, green: 0.75, blue: 0.2)      // amber — mid quality
+    static let qualityLow = Color(red: 0.95, green: 0.3, blue: 0.3)       // red — low quality
+
     // MARK: - Helpers
 
     private static func adaptive(dark: NSColor, light: NSColor) -> NSColor {

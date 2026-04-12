@@ -46,7 +46,7 @@ struct ContentView: View {
         .toolbarBackground(Theme.background, for: .windowToolbar)
         .overlay(alignment: .bottom) {
             FloatingPlayerBar()
-                .padding(.horizontal, 40)
+                .frame(maxWidth: 700)
                 .padding(.bottom, 16)
         }
         .background(Theme.background)

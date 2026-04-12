@@ -7,8 +7,8 @@ struct FloatingPlayerBar: View {
     var body: some View {
         if player.currentTrack != nil {
             playerContent
-                .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.vertical, Theme.Spacing.md)
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.sm)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.Radius.lg)
                         .fill(Theme.surface)
@@ -18,23 +18,19 @@ struct FloatingPlayerBar: View {
     }
 
     private var playerContent: some View {
-        VStack(spacing: Theme.Spacing.sm) {
-            HStack(spacing: Theme.Spacing.lg) {
-                // Left: artwork + track info
-                trackInfo
-
-                Spacer()
-
-                // Center: transport controls
+        VStack(spacing: Theme.Spacing.xs) {
+            ZStack {
+                // Center: transport controls (centered to full bar width)
                 transportControls
 
-                Spacer()
-
-                // Right: volume
-                VolumeSliderView()
+                // Left: track info / Right: volume pinned to edges
+                HStack {
+                    trackInfo
+                    Spacer(minLength: 0)
+                    VolumeSliderView()
+                }
             }
 
-            // Seek bar below
             SeekBarView()
         }
     }
@@ -44,22 +40,23 @@ struct FloatingPlayerBar: View {
     @ViewBuilder
     private var trackInfo: some View {
         if let track = player.currentTrack {
-            HStack(spacing: Theme.Spacing.md) {
-                ArtworkView(data: track.artwork, size: 48)
+            HStack(spacing: Theme.Spacing.sm) {
+                ArtworkView(data: track.artwork, size: 40)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 1) {
                     Text(track.title)
-                        .font(Theme.Font.bodyMedium)
+                        .font(Theme.Font.caption)
+                        .fontWeight(.medium)
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
                     if let artist = track.artist {
                         Text(artist)
-                            .font(Theme.Font.caption)
+                            .font(.system(size: 10))
                             .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
                     }
                 }
-                .frame(maxWidth: 200, alignment: .leading)
+                .frame(maxWidth: 150, alignment: .leading)
             }
         }
     }
@@ -67,39 +64,34 @@ struct FloatingPlayerBar: View {
     // MARK: - Transport Controls
 
     private var transportControls: some View {
-        HStack(spacing: Theme.Spacing.lg) {
-            // Shuffle
+        HStack(spacing: Theme.Spacing.md) {
             Button {
                 player.toggleShuffle()
             } label: {
                 Image(systemName: "shuffle")
-                    .font(.system(size: 13))
+                    .font(.system(size: 11))
                     .foregroundStyle(player.isShuffleEnabled ? Theme.accent : Theme.textTertiary)
             }
             .buttonStyle(.plain)
 
-            // Previous
             Button { player.engine.previous() } label: {
                 Image(systemName: "backward.fill")
-                    .font(.system(size: 14))
+                    .font(.system(size: 12))
             }
-            .buttonStyle(MonochromeButtonStyle())
+            .buttonStyle(MonochromeButtonStyle(size: 30))
 
-            // Play/Pause
             Button { player.engine.togglePlayPause() } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 16))
-            }
-            .buttonStyle(PrimaryMonochromeButtonStyle())
-
-            // Next
-            Button { player.next() } label: {
-                Image(systemName: "forward.fill")
                     .font(.system(size: 14))
             }
-            .buttonStyle(MonochromeButtonStyle())
+            .buttonStyle(PrimaryMonochromeButtonStyle(size: 42))
 
-            // Repeat
+            Button { player.next() } label: {
+                Image(systemName: "forward.fill")
+                    .font(.system(size: 12))
+            }
+            .buttonStyle(MonochromeButtonStyle(size: 30))
+
             Button {
                 switch player.repeatMode {
                 case .off: player.repeatMode = .all
@@ -108,7 +100,7 @@ struct FloatingPlayerBar: View {
                 }
             } label: {
                 Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
-                    .font(.system(size: 13))
+                    .font(.system(size: 11))
                     .foregroundStyle(player.repeatMode != .off ? Theme.accent : Theme.textTertiary)
             }
             .buttonStyle(.plain)
