@@ -93,7 +93,7 @@ struct FloatingPlayerBar: View {
             .buttonStyle(PrimaryMonochromeButtonStyle())
 
             // Next
-            Button { player.engine.next() } label: {
+            Button { player.next() } label: {
                 Image(systemName: "forward.fill")
                     .font(.system(size: 14))
             }

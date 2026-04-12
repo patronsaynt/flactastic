@@ -1,12 +1,11 @@
 import SwiftUI
 
 struct CollectionView: View {
-    let searchText: String
-
     @Environment(LibraryStore.self) private var library
     @Environment(PlayerState.self) private var player
     @Environment(Settings.self) private var settings
 
+    @State private var searchText = ""
     @State private var sortOption: CollectionSortOption = .album
 
     private var filteredAlbums: [Album] {
@@ -108,6 +107,8 @@ struct CollectionView: View {
             }
             .pickerStyle(.menu)
             .tint(Theme.textSecondary)
+
+            SearchBarView(searchText: $searchText)
         }
     }
 

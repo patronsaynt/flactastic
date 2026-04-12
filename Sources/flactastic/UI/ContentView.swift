@@ -7,16 +7,15 @@ struct ContentView: View {
     @Environment(PlaylistStore.self) private var playlistStore
 
     @State private var selectedTab: AppTab = .collection
-    @State private var searchText = ""
     @State private var showSettings = false
 
     var body: some View {
         Group {
             switch selectedTab {
             case .collection:
-                CollectionView(searchText: searchText)
+                CollectionView()
             case .playlists:
-                PlaylistsTabView(searchText: searchText)
+                PlaylistsTabView()
             case .visualizer:
                 VisualizerView()
             }
@@ -31,16 +30,16 @@ struct ContentView: View {
             }
 
             ToolbarItem(placement: .primaryAction) {
-                SearchBarView(searchText: $searchText)
-            }
-
-            ToolbarItem(placement: .primaryAction) {
                 Button {
                     showSettings = true
                 } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.textSecondary)
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 13))
+                        Text("Settings")
+                            .font(Theme.Font.caption)
+                    }
+                    .foregroundStyle(Theme.textSecondary)
                 }
             }
         }

@@ -9,12 +9,11 @@ enum PlaylistSortOption: String, CaseIterable, Identifiable {
 }
 
 struct PlaylistsTabView: View {
-    let searchText: String
-
     @Environment(PlaylistStore.self) private var playlistStore
     @Environment(LibraryStore.self) private var library
     @Environment(Settings.self) private var settings
 
+    @State private var searchText = ""
     @State private var sortOption: PlaylistSortOption = .nameAsc
     @State private var showNewPlaylistPrompt = false
     @State private var newPlaylistName = ""
@@ -113,6 +112,8 @@ struct PlaylistsTabView: View {
                     )
                 }
                 .buttonStyle(.plain)
+
+                SearchBarView(searchText: $searchText)
             }
         }
     }

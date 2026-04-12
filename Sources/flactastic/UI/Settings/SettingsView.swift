@@ -67,11 +67,13 @@ struct SettingsView: View {
                 @Bindable var settings = settings
 
                 Toggle("Light Mode", isOn: $settings.useLightMode)
+                    .toggleStyle(.switch)
                     .font(Theme.Font.body)
                     .foregroundStyle(Theme.textSecondary)
                     .tint(Theme.accent)
 
                 Toggle("List Layout", isOn: $settings.useListLayout)
+                    .toggleStyle(.switch)
                     .font(Theme.Font.body)
                     .foregroundStyle(Theme.textSecondary)
                     .tint(Theme.accent)

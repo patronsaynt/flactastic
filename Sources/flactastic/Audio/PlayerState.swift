@@ -71,6 +71,23 @@ final class PlayerState {
         }
     }
 
+    /// Advance to the next track, respecting repeat mode.
+    func next() {
+        let q = engine.queue
+        guard !q.isEmpty else { return }
+        let nextIndex = engine.currentIndex + 1
+        if nextIndex < q.count {
+            engine.setQueue(q, startAt: nextIndex)
+            engine.play()
+        } else if repeatMode == .all {
+            engine.setQueue(q, startAt: 0)
+            engine.play()
+        } else {
+            // End of queue, no repeat — stop playback
+            engine.pause()
+        }
+    }
+
     /// Store the original queue when an external caller sets up a shuffled queue
     /// (e.g. "Shuffle" button on album/playlist detail views).
     func setOriginalQueue(_ tracks: [Track]) {

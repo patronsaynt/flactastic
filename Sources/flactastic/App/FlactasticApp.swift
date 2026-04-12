@@ -31,7 +31,7 @@ struct FlactasticApp: App {
             CommandMenu("Playback") {
                 Button("Play / Pause") { player.engine.togglePlayPause() }
                     .keyboardShortcut(.space, modifiers: [])
-                Button("Next") { player.engine.next() }
+                Button("Next") { player.next() }
                     .keyboardShortcut(.rightArrow, modifiers: .command)
                 Button("Previous") { player.engine.previous() }
                     .keyboardShortcut(.leftArrow, modifiers: .command)
