@@ -66,36 +66,41 @@ final class PlaylistStore {
             let trackPath = track.url.path
             if trackPath.hasPrefix(rootPath) {
                 let relative = String(trackPath.dropFirst(rootPath.count).drop(while: { $0 == "/" }))
-                playlists[index].trackPaths.append(relative)
+                playlists[index].entries.append(PlaylistEntry(relativePath: relative))
             }
         }
         save()
     }
 
-    func removeTrack(at offset: IndexSet, from playlistID: UUID) {
+    func removeEntries(at offsets: IndexSet, from playlistID: UUID) {
         guard let index = playlists.firstIndex(where: { $0.id == playlistID }) else { return }
-        playlists[index].trackPaths.remove(atOffsets: offset)
+        playlists[index].entries.remove(atOffsets: offsets)
         save()
     }
 
-    func moveTracks(from source: IndexSet, to destination: Int, in playlistID: UUID) {
+    func removeEntries(ids: Set<UUID>, from playlistID: UUID) {
         guard let index = playlists.firstIndex(where: { $0.id == playlistID }) else { return }
-        playlists[index].trackPaths.move(fromOffsets: source, toOffset: destination)
+        playlists[index].entries.removeAll { ids.contains($0.id) }
+        save()
+    }
+
+    func moveEntries(from source: IndexSet, to destination: Int, in playlistID: UUID) {
+        guard let index = playlists.firstIndex(where: { $0.id == playlistID }) else { return }
+        playlists[index].entries.move(fromOffsets: source, toOffset: destination)
         save()
     }
 
     // MARK: - Resolution
 
-    /// Resolves relative paths in a playlist to live Track objects from the library.
+    /// Resolves playlist entries to live Track objects from the library.
     func resolvedTracks(for playlist: Playlist, in library: LibraryStore) -> [Track] {
         guard let rootURL = library.rootURL else { return [] }
 
-        // Build a lookup from absolute file path → Track for fast resolution.
         let tracksByPath = Dictionary(library.tracks.map { ($0.url.path, $0) },
                                       uniquingKeysWith: { first, _ in first })
 
-        return playlist.trackPaths.compactMap { relativePath in
-            let absolutePath = rootURL.appendingPathComponent(relativePath).path
+        return playlist.entries.compactMap { entry in
+            let absolutePath = rootURL.appendingPathComponent(entry.relativePath).path
             return tracksByPath[absolutePath]
         }
     }
@@ -110,12 +115,12 @@ final class PlaylistStore {
         var changed = false
 
         for i in playlists.indices {
-            let before = playlists[i].trackPaths.count
-            playlists[i].trackPaths.removeAll { relativePath in
-                let absolutePath = rootURL.appendingPathComponent(relativePath).path
+            let before = playlists[i].entries.count
+            playlists[i].entries.removeAll { entry in
+                let absolutePath = rootURL.appendingPathComponent(entry.relativePath).path
                 return !libraryPaths.contains(absolutePath)
             }
-            if playlists[i].trackPaths.count != before {
+            if playlists[i].entries.count != before {
                 changed = true
             }
         }

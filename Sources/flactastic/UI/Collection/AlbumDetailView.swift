@@ -68,22 +68,20 @@ struct AlbumDetailView: View {
                     } label: {
                         HStack(spacing: Theme.Spacing.xs) {
                             Image(systemName: "play.fill")
-                                .font(.system(size: 12))
                             Text("Play All")
                         }
                     }
-                    .buttonStyle(PrimaryMonochromeButtonStyle())
+                    .buttonStyle(PillButtonStyle(isPrimary: true))
 
                     Button {
                         playAlbum(album, shuffle: true)
                     } label: {
                         HStack(spacing: Theme.Spacing.xs) {
                             Image(systemName: "shuffle")
-                                .font(.system(size: 12))
                             Text("Shuffle")
                         }
                     }
-                    .buttonStyle(MonochromeButtonStyle())
+                    .buttonStyle(PillButtonStyle())
                 }
             }
         }
@@ -148,8 +146,11 @@ struct AlbumDetailView: View {
     private func playAlbum(_ album: Album, shuffle: Bool) {
         var tracks = album.tracks
         if shuffle {
+            player.setOriginalQueue(album.tracks)
             tracks.shuffle()
             player.isShuffleEnabled = true
+        } else {
+            player.isShuffleEnabled = false
         }
         player.engine.setQueue(tracks, startAt: 0)
         player.engine.play()

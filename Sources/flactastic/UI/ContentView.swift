@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct ContentView: View {
     @Environment(PlayerState.self) private var player
@@ -10,28 +11,40 @@ struct ContentView: View {
     @State private var showSettings = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            TopNavigationBar(
-                selectedTab: $selectedTab,
-                searchText: $searchText,
-                onSettingsPressed: { showSettings = true }
-            )
+        Group {
+            switch selectedTab {
+            case .collection:
+                CollectionView(searchText: searchText)
+            case .playlists:
+                PlaylistsTabView(searchText: searchText)
+            case .visualizer:
+                VisualizerView()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onTapGesture {
+            NSApp.keyWindow?.makeFirstResponder(nil)
+        }
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                TabBarView(selectedTab: $selectedTab)
+            }
 
-            Divider().foregroundStyle(Theme.divider)
+            ToolbarItem(placement: .primaryAction) {
+                SearchBarView(searchText: $searchText)
+            }
 
-            // Tab content
-            Group {
-                switch selectedTab {
-                case .collection:
-                    CollectionView(searchText: searchText)
-                case .playlists:
-                    PlaylistsTabView(searchText: searchText)
-                case .visualizer:
-                    VisualizerView()
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.textSecondary)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .toolbarBackground(Theme.background, for: .windowToolbar)
         .overlay(alignment: .bottom) {
             FloatingPlayerBar()
                 .padding(.horizontal, 40)
@@ -47,9 +60,18 @@ struct ContentView: View {
             }
         }
         .onChange(of: player.isPlaying) { oldValue, newValue in
-            // Handle repeat when playback stops naturally
+            // Handle repeat only when playback stopped naturally (track reached the end),
+            // not when the user manually pressed pause.
             if oldValue && !newValue && player.currentTrack != nil {
-                handleRepeat()
+                let reachedEnd: Bool
+                if let duration = player.duration, duration > 0 {
+                    reachedEnd = player.currentTime >= duration - 0.5
+                } else {
+                    reachedEnd = false
+                }
+                if reachedEnd {
+                    handleRepeat()
+                }
             }
         }
     }
@@ -63,7 +85,7 @@ struct ContentView: View {
             player.engine.play()
         case .all:
             let queue = player.queue
-            if !queue.isEmpty && player.currentIndex >= queue.count - 1 {
+            if !queue.isEmpty {
                 player.engine.setQueue(queue, startAt: 0)
                 player.engine.play()
             }

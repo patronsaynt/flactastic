@@ -431,6 +431,8 @@ final class PlayerEngine {
            let lastEntry = scheduledEntries.last,
            lastEntry.endFrame != .max,
            sampleTime >= lastEntry.endFrame {
+            // Snap currentTime to duration so repeat-end detection works reliably.
+            if let d = duration { currentTime = d }
             isPlaying = false
             stopTick()
             notifyStateUpdate()

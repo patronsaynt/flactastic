@@ -3,6 +3,7 @@ import SwiftUI
 struct TrackRow: View {
     let track: Track
     let isPlaying: Bool
+    var displayNumber: Int? = nil
 
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
@@ -52,7 +53,7 @@ struct TrackRow: View {
             Image(systemName: "speaker.wave.2.fill")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.accent)
-        } else if let num = track.trackNumber {
+        } else if let num = displayNumber ?? track.trackNumber {
             Text("\(num)")
                 .font(Theme.Font.captionMono)
                 .foregroundStyle(Theme.textTertiary)

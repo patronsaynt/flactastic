@@ -15,13 +15,14 @@ struct FlactasticApp: App {
                 .environment(player)
                 .environment(settings)
                 .environment(playlistStore)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(settings.useLightMode ? .light : .dark)
                 .frame(minWidth: 1000, minHeight: 650)
                 .background(Theme.background)
                 .task { await bootstrap() }
                 .onAppear {
                     NSApplication.shared.setActivationPolicy(.regular)
                     NSApplication.shared.activate(ignoringOtherApps: true)
+                    installSpacebarMonitor()
                 }
         }
         .windowToolbarStyle(.unified(showsTitle: false))
@@ -40,6 +41,26 @@ struct FlactasticApp: App {
                 Button("Volume Down") { player.engine.volumeDown() }
                     .keyboardShortcut(.downArrow, modifiers: .command)
             }
+        }
+    }
+
+    /// Intercept the spacebar at the app level so it always triggers play/pause,
+    /// even when a text field or other control has keyboard focus.
+    private func installSpacebarMonitor() {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [player] event in
+            // Only bare space (no modifiers except shift which would be the same key)
+            guard event.keyCode == 49,
+                  event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                      .subtracting(.capsLock) == [] else {
+                return event
+            }
+            // Don't swallow space when a text field is editing
+            if let responder = event.window?.firstResponder,
+               responder is NSTextView {
+                return event
+            }
+            player.engine.togglePlayPause()
+            return nil // consume the event
         }
     }
 

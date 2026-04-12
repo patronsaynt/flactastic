@@ -9,6 +9,7 @@ struct PlaylistDetailView: View {
 
     @State private var isEditingName = false
     @State private var editedName = ""
+    @State private var selection: Set<UUID> = []
 
     private var playlist: Playlist? {
         playlistStore.playlists.first { $0.id == playlistID }
@@ -25,7 +26,7 @@ struct PlaylistDetailView: View {
                     if tracks.isEmpty {
                         emptyState
                     } else {
-                        trackList(tracks)
+                        trackList(playlist)
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
@@ -47,7 +48,6 @@ struct PlaylistDetailView: View {
     @ViewBuilder
     private func playlistHeader(_ playlist: Playlist, tracks: [Track]) -> some View {
         HStack(alignment: .top, spacing: Theme.Spacing.xl) {
-            // Playlist artwork (first track's artwork or placeholder)
             ArtworkView(data: tracks.first?.artwork, size: 200)
 
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
@@ -76,18 +76,19 @@ struct PlaylistDetailView: View {
                 if !tracks.isEmpty {
                     HStack(spacing: Theme.Spacing.md) {
                         Button {
+                            player.isShuffleEnabled = false
                             player.engine.setQueue(tracks, startAt: 0)
                             player.engine.play()
                         } label: {
                             HStack(spacing: Theme.Spacing.xs) {
                                 Image(systemName: "play.fill")
-                                    .font(.system(size: 12))
                                 Text("Play All")
                             }
                         }
-                        .buttonStyle(PrimaryMonochromeButtonStyle())
+                        .buttonStyle(PillButtonStyle(isPrimary: true))
 
                         Button {
+                            player.setOriginalQueue(tracks)
                             var shuffled = tracks
                             shuffled.shuffle()
                             player.isShuffleEnabled = true
@@ -96,11 +97,10 @@ struct PlaylistDetailView: View {
                         } label: {
                             HStack(spacing: Theme.Spacing.xs) {
                                 Image(systemName: "shuffle")
-                                    .font(.system(size: 12))
                                 Text("Shuffle")
                             }
                         }
-                        .buttonStyle(MonochromeButtonStyle())
+                        .buttonStyle(PillButtonStyle())
                     }
                 }
             }
@@ -111,31 +111,61 @@ struct PlaylistDetailView: View {
     // MARK: - Track List
 
     @ViewBuilder
-    private func trackList(_ tracks: [Track]) -> some View {
-        List {
-            ForEach(Array(tracks.enumerated()), id: \.offset) { index, track in
-                TrackRow(track: track, isPlaying: player.currentTrack?.id == track.id)
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) {
-                        playTrack(at: index)
-                    }
-                    .listRowBackground(
-                        player.currentTrack?.id == track.id
-                            ? Theme.surfaceElevated
-                            : Color.clear
-                    )
-                    .listRowSeparator(.hidden)
+    private func trackList(_ playlist: Playlist) -> some View {
+        let tracksByPath = buildTrackLookup()
+
+        List(selection: $selection) {
+            ForEach(Array(playlist.entries.enumerated()), id: \.element.id) { index, entry in
+                if let track = resolveEntry(entry, lookup: tracksByPath) {
+                    TrackRow(track: track, isPlaying: player.currentTrack?.id == track.id, displayNumber: index + 1)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) {
+                            playFromEntry(entry, in: playlist)
+                        }
+                        .contextMenu {
+                            contextMenuItems(for: entry)
+                        }
+                        .listRowBackground(
+                            player.currentTrack?.id == track.id
+                                ? Theme.surfaceElevated
+                                : (selection.contains(entry.id)
+                                   ? Theme.surfaceElevated.opacity(0.6)
+                                   : Color.clear)
+                        )
+                        .listRowSeparator(.hidden)
+                        .tag(entry.id)
+                }
             }
             .onMove { source, destination in
-                playlistStore.moveTracks(from: source, to: destination, in: playlistID)
+                playlistStore.moveEntries(from: source, to: destination, in: playlistID)
             }
             .onDelete { offsets in
-                playlistStore.removeTrack(at: offsets, from: playlistID)
+                playlistStore.removeEntries(at: offsets, from: playlistID)
+                selection = []
             }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .frame(minHeight: CGFloat(tracks.count) * 48)
+        .frame(minHeight: CGFloat(playlist.entries.count) * 48)
+    }
+
+    // MARK: - Context Menu
+
+    @ViewBuilder
+    private func contextMenuItems(for entry: PlaylistEntry) -> some View {
+        let selectedCount = selection.contains(entry.id) ? selection.count : 0
+
+        if selectedCount > 1 {
+            Button("Remove \(selectedCount) Tracks", role: .destructive) {
+                playlistStore.removeEntries(ids: selection, from: playlistID)
+                selection = []
+            }
+        } else {
+            Button("Remove from Playlist", role: .destructive) {
+                playlistStore.removeEntries(ids: [entry.id], from: playlistID)
+                selection.remove(entry.id)
+            }
+        }
     }
 
     // MARK: - Empty State
@@ -156,13 +186,37 @@ struct PlaylistDetailView: View {
         .padding(.top, Theme.Spacing.xxl)
     }
 
-    // MARK: - Actions
+    // MARK: - Helpers
 
-    private func playTrack(at index: Int) {
-        guard let playlist else { return }
+    private func buildTrackLookup() -> [String: Track] {
+        guard let rootURL = library.rootURL else { return [:] }
+        _ = rootURL // rootURL needed for resolution
+        return Dictionary(library.tracks.map { ($0.url.path, $0) },
+                          uniquingKeysWith: { first, _ in first })
+    }
+
+    private func resolveEntry(_ entry: PlaylistEntry, lookup: [String: Track]) -> Track? {
+        guard let rootURL = library.rootURL else { return nil }
+        let absolutePath = rootURL.appendingPathComponent(entry.relativePath).path
+        return lookup[absolutePath]
+    }
+
+    private func playFromEntry(_ entry: PlaylistEntry, in playlist: Playlist) {
         let tracks = playlistStore.resolvedTracks(for: playlist, in: library)
-        guard index < tracks.count else { return }
-        player.engine.setQueue(tracks, startAt: index)
+        guard let entryIndex = playlist.entries.firstIndex(where: { $0.id == entry.id }) else { return }
+
+        // Map the entry index to the resolved track index (accounting for any
+        // unresolvable entries that compactMap skipped).
+        var resolvedIndex = 0
+        let tracksByPath = buildTrackLookup()
+        for i in 0..<entryIndex {
+            if resolveEntry(playlist.entries[i], lookup: tracksByPath) != nil {
+                resolvedIndex += 1
+            }
+        }
+
+        guard resolvedIndex < tracks.count else { return }
+        player.engine.setQueue(tracks, startAt: resolvedIndex)
         player.engine.play()
     }
 

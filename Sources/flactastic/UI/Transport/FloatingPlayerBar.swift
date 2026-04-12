@@ -70,7 +70,7 @@ struct FloatingPlayerBar: View {
         HStack(spacing: Theme.Spacing.lg) {
             // Shuffle
             Button {
-                player.isShuffleEnabled.toggle()
+                player.toggleShuffle()
             } label: {
                 Image(systemName: "shuffle")
                     .font(.system(size: 13))

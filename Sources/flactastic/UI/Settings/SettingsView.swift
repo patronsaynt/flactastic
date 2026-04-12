@@ -52,8 +52,29 @@ struct SettingsView: View {
                     Button("Choose Folder…") {
                         openFolder()
                     }
-                    .buttonStyle(MonochromeButtonStyle())
+                    .buttonStyle(PillButtonStyle())
                 }
+            }
+
+            Divider().foregroundStyle(Theme.divider)
+
+            // Appearance section
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                Text("Appearance")
+                    .font(Theme.Font.bodyMedium)
+                    .foregroundStyle(Theme.textPrimary)
+
+                @Bindable var settings = settings
+
+                Toggle("Light Mode", isOn: $settings.useLightMode)
+                    .font(Theme.Font.body)
+                    .foregroundStyle(Theme.textSecondary)
+                    .tint(Theme.accent)
+
+                Toggle("List Layout", isOn: $settings.useListLayout)
+                    .font(Theme.Font.body)
+                    .foregroundStyle(Theme.textSecondary)
+                    .tint(Theme.accent)
             }
 
             Spacer()

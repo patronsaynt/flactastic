@@ -13,8 +13,13 @@ struct PlaylistsTabView: View {
 
     @Environment(PlaylistStore.self) private var playlistStore
     @Environment(LibraryStore.self) private var library
+    @Environment(Settings.self) private var settings
 
     @State private var sortOption: PlaylistSortOption = .nameAsc
+    @State private var showNewPlaylistPrompt = false
+    @State private var newPlaylistName = ""
+    @State private var renamingPlaylistID: UUID?
+    @State private var renameText = ""
 
     private var filteredPlaylists: [Playlist] {
         let sorted: [Playlist]
@@ -40,7 +45,11 @@ struct PlaylistsTabView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     header
-                    playlistGrid
+                    if settings.useListLayout {
+                        playlistList
+                    } else {
+                        playlistGrid
+                    }
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
                 .padding(.top, Theme.Spacing.lg)
@@ -50,6 +59,12 @@ struct PlaylistsTabView: View {
             .navigationDestination(for: UUID.self) { playlistID in
                 PlaylistDetailView(playlistID: playlistID)
             }
+        }
+        .sheet(isPresented: $showNewPlaylistPrompt) {
+            newPlaylistSheet
+        }
+        .sheet(item: $renamingPlaylistID) { playlistID in
+            renamePlaylistSheet(for: playlistID)
         }
     }
 
@@ -80,7 +95,8 @@ struct PlaylistsTabView: View {
                 .tint(Theme.textSecondary)
 
                 Button {
-                    playlistStore.createPlaylist(name: "New Playlist")
+                    newPlaylistName = ""
+                    showNewPlaylistPrompt = true
                 } label: {
                     HStack(spacing: Theme.Spacing.xs) {
                         Image(systemName: "plus")
@@ -118,12 +134,127 @@ struct PlaylistsTabView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .contextMenu {
-                    Button("Delete", role: .destructive) {
-                        playlistStore.deletePlaylist(id: playlist.id)
-                    }
-                }
+                .contextMenu { playlistContextMenu(playlist) }
             }
         }
     }
+
+    // MARK: - Playlist List
+
+    private var playlistList: some View {
+        LazyVStack(spacing: 0) {
+            ForEach(filteredPlaylists) { playlist in
+                let resolved = playlistStore.resolvedTracks(for: playlist, in: library)
+                NavigationLink(value: playlist.id) {
+                    PlaylistRowView(
+                        playlist: playlist,
+                        artwork: resolved.first?.artwork,
+                        trackCount: resolved.count
+                    )
+                }
+                .buttonStyle(.plain)
+                .contextMenu { playlistContextMenu(playlist) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func playlistContextMenu(_ playlist: Playlist) -> some View {
+        Button("Rename") {
+            renameText = playlist.name
+            renamingPlaylistID = playlist.id
+        }
+        Divider()
+        Button("Delete", role: .destructive) {
+            playlistStore.deletePlaylist(id: playlist.id)
+        }
+    }
+
+    // MARK: - New Playlist Sheet
+
+    private var newPlaylistSheet: some View {
+        VStack(spacing: Theme.Spacing.lg) {
+            Text("New Playlist")
+                .font(Theme.Font.headline)
+                .foregroundStyle(Theme.textPrimary)
+
+            TextField("Playlist name", text: $newPlaylistName)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 260)
+                .onSubmit { commitNewPlaylist() }
+
+            HStack(spacing: Theme.Spacing.md) {
+                Button("Cancel") {
+                    showNewPlaylistPrompt = false
+                }
+                .buttonStyle(PillButtonStyle())
+                .keyboardShortcut(.cancelAction)
+
+                Button("Create") {
+                    commitNewPlaylist()
+                }
+                .buttonStyle(PillButtonStyle(isPrimary: true))
+                .keyboardShortcut(.defaultAction)
+                .disabled(newPlaylistName.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(Theme.Spacing.xl)
+        .frame(width: 340, height: 160)
+        .background(Theme.surface)
+    }
+
+    // MARK: - Rename Playlist Sheet
+
+    private func renamePlaylistSheet(for playlistID: UUID) -> some View {
+        VStack(spacing: Theme.Spacing.lg) {
+            Text("Rename Playlist")
+                .font(Theme.Font.headline)
+                .foregroundStyle(Theme.textPrimary)
+
+            TextField("Playlist name", text: $renameText)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 260)
+                .onSubmit { commitRename(for: playlistID) }
+
+            HStack(spacing: Theme.Spacing.md) {
+                Button("Cancel") {
+                    renamingPlaylistID = nil
+                }
+                .buttonStyle(PillButtonStyle())
+                .keyboardShortcut(.cancelAction)
+
+                Button("Rename") {
+                    commitRename(for: playlistID)
+                }
+                .buttonStyle(PillButtonStyle(isPrimary: true))
+                .keyboardShortcut(.defaultAction)
+                .disabled(renameText.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(Theme.Spacing.xl)
+        .frame(width: 340, height: 160)
+        .background(Theme.surface)
+    }
+
+    // MARK: - Actions
+
+    private func commitNewPlaylist() {
+        let trimmed = newPlaylistName.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        playlistStore.createPlaylist(name: trimmed)
+        showNewPlaylistPrompt = false
+    }
+
+    private func commitRename(for playlistID: UUID) {
+        let trimmed = renameText.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        playlistStore.renamePlaylist(id: playlistID, name: trimmed)
+        renamingPlaylistID = nil
+    }
+}
+
+// MARK: - Make UUID work with .sheet(item:)
+
+extension UUID: @retroactive Identifiable {
+    public var id: UUID { self }
 }
