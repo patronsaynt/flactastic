@@ -20,11 +20,18 @@ final class Settings {
         didSet { UserDefaults.standard.set(useListLayout, forKey: "flactastic.useListLayout") }
     }
 
+    /// UI scale factor. 1.0 = default. Clamped to 0.9...1.35 in the view layer.
+    var uiScale: Double {
+        didSet { UserDefaults.standard.set(uiScale, forKey: "flactastic.uiScale") }
+    }
+
     init() {
         lastRootPath = UserDefaults.standard.string(forKey: "flactastic.lastRootPath")
         let stored = UserDefaults.standard.object(forKey: "flactastic.volume")
         volume = (stored as? Float) ?? 0.75
         useLightMode = UserDefaults.standard.bool(forKey: "flactastic.useLightMode")
         useListLayout = UserDefaults.standard.bool(forKey: "flactastic.useListLayout")
+        let storedScale = UserDefaults.standard.object(forKey: "flactastic.uiScale")
+        uiScale = (storedScale as? Double) ?? 1.0
     }
 }

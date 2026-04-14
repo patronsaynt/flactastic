@@ -10,20 +10,27 @@ struct FlactasticApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environment(library)
-                .environment(player)
-                .environment(settings)
-                .environment(playlistStore)
-                .preferredColorScheme(settings.useLightMode ? .light : .dark)
-                .frame(minWidth: 1000, minHeight: 650)
-                .background(Theme.background)
-                .task { await bootstrap() }
-                .onAppear {
-                    NSApplication.shared.setActivationPolicy(.regular)
-                    NSApplication.shared.activate(ignoringOtherApps: true)
-                    installSpacebarMonitor()
-                }
+            GeometryReader { geo in
+                ContentView()
+                    .environment(library)
+                    .environment(player)
+                    .environment(settings)
+                    .environment(playlistStore)
+                    .frame(
+                        width: max(1, geo.size.width / settings.uiScale),
+                        height: max(1, geo.size.height / settings.uiScale)
+                    )
+                    .scaleEffect(settings.uiScale, anchor: .topLeading)
+            }
+            .preferredColorScheme(settings.useLightMode ? .light : .dark)
+            .frame(minWidth: 1000, minHeight: 650)
+            .background(Theme.background)
+            .task { await bootstrap() }
+            .onAppear {
+                NSApplication.shared.setActivationPolicy(.regular)
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                installSpacebarMonitor()
+            }
         }
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
