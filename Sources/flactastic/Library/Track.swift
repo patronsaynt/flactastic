@@ -14,6 +14,10 @@ struct Track: Sendable, Identifiable, Hashable {
     var bitDepth: Int?
     var genre: String?
     var year: Int?
+    /// Filesystem-derived timestamp for when this track's file appeared in the
+    /// library folder. Prefers the APFS "added to directory" timestamp when
+    /// available, otherwise falls back to file creation / modification.
+    var dateAdded: Date?
 
     init(
         id: UUID = UUID(),
@@ -28,7 +32,8 @@ struct Track: Sendable, Identifiable, Hashable {
         sampleRate: Double? = nil,
         bitDepth: Int? = nil,
         genre: String? = nil,
-        year: Int? = nil
+        year: Int? = nil,
+        dateAdded: Date? = nil
     ) {
         self.id = id
         self.url = url
@@ -43,6 +48,7 @@ struct Track: Sendable, Identifiable, Hashable {
         self.bitDepth = bitDepth
         self.genre = genre
         self.year = year
+        self.dateAdded = dateAdded
     }
 
     static func makeFromURL(_ url: URL) -> Track? {
@@ -76,7 +82,8 @@ extension Track {
             sampleRate: sampleRate,
             bitDepth: bitDepth,
             genre: genre,
-            year: year
+            year: year,
+            dateAdded: dateAdded
         )
     }
 }

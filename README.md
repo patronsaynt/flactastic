@@ -1,12 +1,12 @@
-# Project FLACtastic: Phase 2
+# Project FLACtastic: Phase 3
 
-## Visual Design Phase
+## Feature enhancements
 
-Phase 2 marks the transition from core playback functionality to refined user experience. This phase focuses on establishing FLACtastic's visual language.
+FLACtastic now has core functionality in place. Phase 3 will expand on this functionality and increase customizability for users.
 
 ### Timeline
 
-Phase 2 is underway with deliverables iterating across design and development in parallel.
+Phase 3 is now underway with deliverables iterating across design and development in parallel.
 
 ---
 

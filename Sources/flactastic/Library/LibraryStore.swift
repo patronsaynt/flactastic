@@ -38,6 +38,25 @@ final class LibraryStore {
     private var scanTask: Task<Void, Never>?
     private var metadataTask: Task<Void, Never>?
 
+    /// Replaces the stored `Track` matching `id` with `updated`.
+    /// Because `albums` is a computed property, callers in album-detail views
+    /// and the collection grid will automatically see the new metadata.
+    func updateTrack(id: UUID, with updated: Track) {
+        guard let i = tracks.firstIndex(where: { $0.id == id }) else { return }
+        tracks[i] = updated
+    }
+
+    /// Applies many track updates atomically in a single `tracks` assignment.
+    /// Prefer this over per-track `updateTrack` when renaming fields that affect
+    /// album grouping (artist/album name): a piecemeal update would briefly
+    /// split the album across two grouping keys and cause detail views to
+    /// render "Album not found" mid-operation.
+    func replaceTracks(_ updated: [Track]) {
+        guard !updated.isEmpty else { return }
+        let byID = Dictionary(uniqueKeysWithValues: updated.map { ($0.id, $0) })
+        tracks = tracks.map { byID[$0.id] ?? $0 }
+    }
+
     func openFolder(_ url: URL) {
         scanTask?.cancel()
         metadataTask?.cancel()

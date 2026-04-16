@@ -1,5 +1,7 @@
 import Foundation
 import AVFoundation
+import CTagLib
+import CTagLibHelper
 
 actor LibraryScanner {
     enum ScanError: Error {
@@ -14,7 +16,13 @@ actor LibraryScanner {
             throw ScanError.rootNotFound
         }
 
-        let keys: [URLResourceKey] = [.isRegularFileKey, .nameKey]
+        let keys: [URLResourceKey] = [
+            .isRegularFileKey,
+            .nameKey,
+            .addedToDirectoryDateKey,
+            .creationDateKey,
+            .contentModificationDateKey,
+        ]
         guard let enumerator = fm.enumerator(
             at: root,
             includingPropertiesForKeys: keys,
@@ -28,19 +36,63 @@ actor LibraryScanner {
             try Task.checkCancellation()
             let values = try? url.resourceValues(forKeys: Set(keys))
             if values?.isRegularFile != true { continue }
-            if let track = Track.makeFromURL(url) {
+            if var track = Track.makeFromURL(url) {
+                // Prefer APFS "added to directory" (the true "date added" a
+                // user expects in a library view), fall back to creation, then
+                // modification. Missing timestamps are tolerated — sorts push
+                // them to the end.
+                track.dateAdded = values?.addedToDirectoryDate
+                    ?? values?.creationDate
+                    ?? values?.contentModificationDate
                 tracks.append(track)
             }
         }
         return tracks.sortedForLibrary()
     }
 
-    /// Loads metadata for a single track via AVURLAsset. Returns an updated copy of the track.
-    /// Falls back gracefully when fields are missing.
+    /// Loads metadata for a single track. Tag fields (title/artist/album/etc.) are
+    /// read via TagLib — the same library used for writes — so edits always round-trip
+    /// correctly without relying on AVFoundation's metadata cache. Audio format
+    /// properties (duration, sample rate, bit depth) still come from AVFoundation.
     func loadMetadata(for track: Track) async -> Track {
-        let asset = AVURLAsset(url: track.url)
         var updated = track
 
+        // --- Tag fields via TagLib (bypasses AVFoundation metadata cache) ---
+        track.url.path.withCString { pathPtr in
+            guard let file = taglib_file_new(pathPtr) else { return }
+            defer {
+                taglib_file_free(file)
+                taglib_tag_free_strings()
+            }
+            guard taglib_file_is_valid(file) != 0,
+                  let tag = taglib_file_tag(file) else { return }
+
+            if let ptr = taglib_tag_title(tag), ptr.pointee != 0 {
+                updated.title = String(cString: ptr)
+            }
+            if let ptr = taglib_tag_artist(tag), ptr.pointee != 0 {
+                updated.artist = String(cString: ptr)
+            }
+            if let ptr = taglib_tag_album(tag), ptr.pointee != 0 {
+                updated.album = String(cString: ptr)
+            }
+            if let ptr = taglib_tag_genre(tag), ptr.pointee != 0 {
+                updated.genre = String(cString: ptr)
+            }
+            let year = taglib_tag_year(tag)
+            if year > 0 { updated.year = Int(year) }
+            let track = taglib_tag_track(tag)
+            if track > 0 { updated.trackNumber = Int(track) }
+
+            var picSize: UInt32 = 0
+            if let picBytes = taglib_helper_read_picture(file, &picSize), picSize > 0 {
+                updated.artwork = Data(bytes: picBytes, count: Int(picSize))
+                free(picBytes)
+            }
+        }
+
+        // --- Audio format properties via AVFoundation ---
+        let asset = AVURLAsset(url: track.url)
         if let duration = try? await asset.load(.duration) {
             let seconds = CMTimeGetSeconds(duration)
             if seconds.isFinite, seconds > 0 {
@@ -48,92 +100,8 @@ actor LibraryScanner {
             }
         }
 
-        if let metadata = try? await asset.load(.commonMetadata) {
-            for item in metadata {
-                guard let key = item.commonKey else { continue }
-                switch key {
-                case .commonKeyTitle:
-                    if let s = try? await item.load(.stringValue), !s.isEmpty {
-                        updated.title = s
-                    }
-                case .commonKeyArtist:
-                    if let s = try? await item.load(.stringValue), !s.isEmpty {
-                        updated.artist = s
-                    }
-                case .commonKeyAlbumName:
-                    if let s = try? await item.load(.stringValue), !s.isEmpty {
-                        updated.album = s
-                    }
-                case .commonKeyArtwork:
-                    if let data = try? await item.load(.dataValue) {
-                        updated.artwork = data
-                    }
-                case .commonKeyType:
-                    if let s = try? await item.load(.stringValue), !s.isEmpty {
-                        updated.genre = s
-                    }
-                case .commonKeyCreationDate:
-                    if let s = try? await item.load(.stringValue), !s.isEmpty {
-                        let digits = s.prefix(4)
-                        if let y = Int(digits), y > 1000, y < 3000 {
-                            updated.year = y
-                        }
-                    }
-                default:
-                    break
-                }
-            }
-        }
-
-        // Track number lives outside common metadata; check iTunes & ID3 namespaces.
-        if let formats = try? await asset.load(.availableMetadataFormats) {
-            for format in formats {
-                if let items = try? await asset.loadMetadata(for: format) {
-                    for item in items {
-                        let keyString = (item.key as? String) ?? ""
-                        let identifier = item.identifier?.rawValue ?? ""
-                        if keyString.contains("trkn") || identifier.contains("trkn") || identifier.contains("TRCK") {
-                            if let n = try? await item.load(.numberValue) {
-                                updated.trackNumber = n.intValue
-                            } else if let s = try? await item.load(.stringValue) {
-                                let parts = s.split(separator: "/")
-                                if let first = parts.first, let n = Int(first) {
-                                    updated.trackNumber = n
-                                }
-                            }
-                        }
-
-                        // Genre: ID3 "TCON", iTunes "genre" / "gnre"
-                        if updated.genre == nil {
-                            if identifier.contains("TCON") || identifier.contains("genre") || identifier.contains("gnre")
-                                || keyString.contains("genre") || keyString.contains("gnre") {
-                                if let s = try? await item.load(.stringValue), !s.isEmpty {
-                                    updated.genre = s
-                                }
-                            }
-                        }
-
-                        // Year: ID3 "TDRC" / "TYER", iTunes "day"
-                        if updated.year == nil {
-                            if identifier.contains("TDRC") || identifier.contains("TYER") || identifier.contains("day")
-                                || keyString.contains("year") || keyString.contains("day") {
-                                if let s = try? await item.load(.stringValue), !s.isEmpty {
-                                    let digits = s.prefix(4)
-                                    if let y = Int(digits), y > 1000, y < 3000 {
-                                        updated.year = y
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Sample rate / bit depth from AVAudioFile (cheap, opens file briefly).
         if let file = try? AVAudioFile(forReading: track.url) {
             updated.sampleRate = file.processingFormat.sampleRate
-            // bit depth comes from the underlying stream description if available
             let asbd = file.fileFormat.streamDescription.pointee
             if asbd.mBitsPerChannel > 0 {
                 updated.bitDepth = Int(asbd.mBitsPerChannel)

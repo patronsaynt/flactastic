@@ -7,6 +7,7 @@ struct FlactasticApp: App {
     @State private var player = PlayerState()
     @State private var settings = Settings()
     @State private var playlistStore = PlaylistStore()
+    @State private var metadataWriter = MetadataWriter()
 
     var body: some Scene {
         WindowGroup {
@@ -16,6 +17,7 @@ struct FlactasticApp: App {
                     .environment(player)
                     .environment(settings)
                     .environment(playlistStore)
+                    .environment(\.metadataWriter, metadataWriter)
                     .frame(
                         width: max(1, geo.size.width / settings.uiScale),
                         height: max(1, geo.size.height / settings.uiScale)
@@ -49,6 +51,29 @@ struct FlactasticApp: App {
                     .keyboardShortcut(.downArrow, modifiers: .command)
             }
         }
+
+        // Menu bar mini-player. The `isInserted` binding reflects the Settings
+        // toggle live (Settings is @Observable), so flipping the option in
+        // Settings adds/removes the menu bar icon without needing a restart.
+        MenuBarExtra(isInserted: menuBarBinding) {
+            MenuBarPlayerView()
+                .environment(library)
+                .environment(player)
+                .environment(settings)
+                .environment(playlistStore)
+        } label: {
+            Image(systemName: player.isPlaying ? "play.circle.fill" : "music.note")
+        }
+        .menuBarExtraStyle(.window)
+    }
+
+    /// A `Binding<Bool>` over `settings.showMenuBarPlayer` for `MenuBarExtra`'s
+    /// `isInserted` parameter. Built inline so we don't need `@Bindable` here.
+    private var menuBarBinding: Binding<Bool> {
+        Binding(
+            get: { settings.showMenuBarPlayer },
+            set: { settings.showMenuBarPlayer = $0 }
+        )
     }
 
     /// Intercept the spacebar at the app level so it always triggers play/pause,

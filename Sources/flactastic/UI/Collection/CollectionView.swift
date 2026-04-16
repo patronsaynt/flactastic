@@ -7,6 +7,8 @@ struct CollectionView: View {
 
     @State private var searchText = ""
     @State private var sortOption: CollectionSortOption = .album
+    @State private var contentMode: CollectionContentMode = .albums
+    @State private var editingAlbum: Album? = nil
 
     private var filteredAlbums: [Album] {
         let sorted = sortedAlbums
@@ -64,12 +66,17 @@ struct CollectionView: View {
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     header
 
-                    if shouldGroup {
-                        groupedContent
-                    } else if settings.useListLayout {
-                        albumList(filteredAlbums)
-                    } else {
-                        albumGrid(filteredAlbums)
+                    switch contentMode {
+                    case .albums:
+                        if shouldGroup {
+                            groupedContent
+                        } else if settings.useListLayout {
+                            albumList(filteredAlbums)
+                        } else {
+                            albumGrid(filteredAlbums)
+                        }
+                    case .tracks:
+                        AllTracksView(tracks: library.tracks, searchText: searchText)
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
@@ -80,19 +87,31 @@ struct CollectionView: View {
             .navigationDestination(for: String.self) { albumID in
                 AlbumDetailView(albumID: albumID)
             }
+            .sheet(item: $editingAlbum) { album in
+                AlbumMetadataEditorView(album: album)
+                    .environment(library)
+            }
         }
     }
 
     // MARK: - Header
 
     private var header: some View {
-        HStack(alignment: .center) {
+        HStack(alignment: .center, spacing: Theme.Spacing.md) {
+            Picker("View", selection: $contentMode) {
+                ForEach(CollectionContentMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 180)
+
             HStack(spacing: Theme.Spacing.sm) {
                 Image(systemName: "music.note")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.textTertiary)
 
-                Text("LIBRARY — \(filteredAlbums.count) ALBUM\(filteredAlbums.count == 1 ? "" : "S")")
+                Text(countLabel)
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.textTertiary)
                     .tracking(1.5)
@@ -100,15 +119,28 @@ struct CollectionView: View {
 
             Spacer()
 
-            Picker("Sort", selection: $sortOption) {
-                ForEach(CollectionSortOption.allCases) { option in
-                    Text(option.rawValue).tag(option)
+            if contentMode == .albums {
+                Picker("Sort", selection: $sortOption) {
+                    ForEach(CollectionSortOption.allCases) { option in
+                        Text(option.rawValue).tag(option)
+                    }
                 }
+                .pickerStyle(.menu)
+                .tint(Theme.textSecondary)
             }
-            .pickerStyle(.menu)
-            .tint(Theme.textSecondary)
 
             SearchBarView(searchText: $searchText)
+        }
+    }
+
+    private var countLabel: String {
+        switch contentMode {
+        case .albums:
+            let n = filteredAlbums.count
+            return "LIBRARY — \(n) ALBUM\(n == 1 ? "" : "S")"
+        case .tracks:
+            let n = library.tracks.count
+            return "LIBRARY — \(n) TRACK\(n == 1 ? "" : "S")"
         }
     }
 
@@ -146,7 +178,7 @@ struct CollectionView: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
-                    playbackContextMenuItems(for: album.tracks, player: player)
+                    albumContextMenu(album)
                 }
             }
         }
@@ -162,9 +194,16 @@ struct CollectionView: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
-                    playbackContextMenuItems(for: album.tracks, player: player)
+                    albumContextMenu(album)
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func albumContextMenu(_ album: Album) -> some View {
+        playbackContextMenuItems(for: album.tracks, player: player)
+        Divider()
+        Button("Edit...") { editingAlbum = album }
     }
 }

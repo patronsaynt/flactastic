@@ -25,6 +25,12 @@ final class Settings {
         didSet { UserDefaults.standard.set(uiScale, forKey: "flactastic.uiScale") }
     }
 
+    /// Whether the menu bar mini-player is shown. When false, the `MenuBarExtra`
+    /// scene is omitted entirely so no icon appears in the system menu bar.
+    var showMenuBarPlayer: Bool {
+        didSet { UserDefaults.standard.set(showMenuBarPlayer, forKey: "flactastic.showMenuBarPlayer") }
+    }
+
     init() {
         lastRootPath = UserDefaults.standard.string(forKey: "flactastic.lastRootPath")
         let stored = UserDefaults.standard.object(forKey: "flactastic.volume")
@@ -33,5 +39,7 @@ final class Settings {
         useListLayout = UserDefaults.standard.bool(forKey: "flactastic.useListLayout")
         let storedScale = UserDefaults.standard.object(forKey: "flactastic.uiScale")
         uiScale = (storedScale as? Double) ?? 1.0
+        let storedMBP = UserDefaults.standard.object(forKey: "flactastic.showMenuBarPlayer")
+        showMenuBarPlayer = (storedMBP as? Bool) ?? true
     }
 }

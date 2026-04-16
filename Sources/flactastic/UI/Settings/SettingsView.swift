@@ -116,36 +116,49 @@ private struct SettingsTabBar: View {
 
 private struct ConfigSettingsSection: View {
     @Environment(LibraryStore.self) private var library
+    @Environment(Settings.self) private var settings
     let openFolder: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Text("Music Folder")
-                .font(Theme.Font.bodyMedium)
-                .foregroundStyle(Theme.textPrimary)
+        @Bindable var settings = settings
 
-            HStack(spacing: Theme.Spacing.md) {
-                if let rootURL = library.rootURL {
-                    Image(systemName: "folder.fill")
-                        .foregroundStyle(Theme.textTertiary)
-                    Text(rootURL.path)
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                } else {
-                    Text("No folder selected")
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.textTertiary)
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                Text("Music Folder")
+                    .font(Theme.Font.bodyMedium)
+                    .foregroundStyle(Theme.textPrimary)
+
+                HStack(spacing: Theme.Spacing.md) {
+                    if let rootURL = library.rootURL {
+                        Image(systemName: "folder.fill")
+                            .foregroundStyle(Theme.textTertiary)
+                        Text(rootURL.path)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    } else {
+                        Text("No folder selected")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+
+                    Spacer()
+
+                    Button("Choose Folder…") {
+                        openFolder()
+                    }
+                    .buttonStyle(PillButtonStyle())
                 }
-
-                Spacer()
-
-                Button("Choose Folder…") {
-                    openFolder()
-                }
-                .buttonStyle(PillButtonStyle())
             }
+
+            Divider().foregroundStyle(Theme.divider)
+
+            Toggle("Menu Bar Mini-Player", isOn: $settings.showMenuBarPlayer)
+                .toggleStyle(.switch)
+                .font(Theme.Font.body)
+                .foregroundStyle(Theme.textSecondary)
+                .tint(Theme.accent)
         }
     }
 }

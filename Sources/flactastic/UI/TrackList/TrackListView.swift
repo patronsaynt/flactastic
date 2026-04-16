@@ -5,6 +5,8 @@ struct TrackListView: View {
     @Environment(PlayerState.self) private var player
     @Environment(PlaylistStore.self) private var playlistStore
 
+    @State private var editingTrack: Track? = nil
+
     var body: some View {
         if library.tracks.isEmpty {
             emptyState
@@ -18,6 +20,8 @@ struct TrackListView: View {
                     .contextMenu {
                         playbackContextMenuItems(for: [track], player: player)
                         Divider()
+                        Button("Edit...") { editingTrack = track }
+                        Divider()
                         addToPlaylistMenu(track: track)
                     }
                     .listRowBackground(
@@ -30,6 +34,10 @@ struct TrackListView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Theme.surface)
+            .sheet(item: $editingTrack) { track in
+                TrackMetadataEditorView(track: track)
+                    .environment(library)
+            }
         }
     }
 

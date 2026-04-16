@@ -7,9 +7,23 @@ struct AlbumDetailView: View {
     @Environment(PlayerState.self) private var player
     @Environment(PlaylistStore.self) private var playlistStore
 
+    /// Track IDs we've observed belonging to this album. Used as a fallback
+    /// for resolving the album after a metadata edit renames the album/artist
+    /// (which changes `Album.id` since that id is derived from artist+name).
+    @State private var knownTrackIDs: Set<UUID> = []
+
     private var album: Album? {
-        library.albums.first { $0.id == albumID }
+        if let exact = library.albums.first(where: { $0.id == albumID }) {
+            return exact
+        }
+        guard !knownTrackIDs.isEmpty else { return nil }
+        return library.albums.first { candidate in
+            candidate.tracks.contains { knownTrackIDs.contains($0.id) }
+        }
     }
+
+    @State private var isEditingAlbum = false
+    @State private var editingTrack: Track? = nil
 
     var body: some View {
         if let album {
@@ -24,6 +38,20 @@ struct AlbumDetailView: View {
             }
             .background(Theme.background)
             .navigationTitle(album.name)
+            .sheet(isPresented: $isEditingAlbum) {
+                AlbumMetadataEditorView(album: album)
+                    .environment(library)
+            }
+            .sheet(item: $editingTrack) { track in
+                TrackMetadataEditorView(track: track)
+                    .environment(library)
+            }
+            .onAppear {
+                knownTrackIDs = Set(album.tracks.map(\.id))
+            }
+            .onChange(of: album.tracks.map(\.id)) { _, ids in
+                knownTrackIDs = Set(ids)
+            }
         } else {
             Text("Album not found")
                 .foregroundStyle(Theme.textTertiary)
@@ -82,6 +110,16 @@ struct AlbumDetailView: View {
                         }
                     }
                     .buttonStyle(PillButtonStyle())
+
+                    Button {
+                        isEditingAlbum = true
+                    } label: {
+                        HStack(spacing: Theme.Spacing.xs) {
+                            Image(systemName: "pencil")
+                            Text("Edit")
+                        }
+                    }
+                    .buttonStyle(PillButtonStyle())
                 }
             }
         }
@@ -101,6 +139,8 @@ struct AlbumDetailView: View {
                     }
                     .contextMenu {
                         playbackContextMenuItems(for: [track], player: player)
+                        Divider()
+                        Button("Edit...") { editingTrack = track }
                         Divider()
                         addToPlaylistMenu(track: track)
                     }

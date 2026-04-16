@@ -9,6 +9,7 @@ enum RepeatMode: Sendable {
 @MainActor
 final class PlayerState {
     let engine: PlayerEngine
+    private let nowPlaying: NowPlayingController
 
     var currentTrack: Track?
     var isPlaying: Bool = false
@@ -51,9 +52,14 @@ final class PlayerState {
 
     init(graph: (any AudioGraphProtocol)? = nil) {
         engine = PlayerEngine(graph: graph)
+        nowPlaying = NowPlayingController()
         engine.onStateUpdate = { [weak self] in
             self?.syncFromEngine()
         }
+        // Two-step wiring: NowPlayingController is created above without `self`,
+        // then attached once `self` is fully initialized so its remote command
+        // closures can reach back into PlayerState.
+        nowPlaying.attach(player: self)
     }
 
     /// Toggle shuffle on/off. Shuffling applies ONLY to source (album/playlist)
@@ -221,5 +227,14 @@ final class PlayerState {
         volume = engine.volume
         queue = engine.queue
         currentIndex = engine.currentIndex
+        // Push metadata + playback state into MPNowPlayingInfoCenter so
+        // Control Center, the lock screen, hardware remotes, and AirPods all
+        // see accurate info without needing to poll us.
+        nowPlaying.updateNowPlaying(
+            track: currentTrack,
+            isPlaying: isPlaying,
+            currentTime: currentTime,
+            duration: duration
+        )
     }
 }

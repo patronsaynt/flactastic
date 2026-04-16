@@ -299,10 +299,11 @@ final class PlayerEngine {
     }
 
     /// Rearrange the queue (e.g. for shuffle/unshuffle) without flushing the audio
-    /// pipeline. The currently-playing audio continues uninterrupted; decode is
-    /// restarted from the new next-track position using the live schedule pointer so
-    /// frame offsets stay correct. Falls back to a full rebuild only in the rare case
-    /// where a different track has already been pre-scheduled.
+    /// pipeline. The currently-playing audio — and the rest of the current track —
+    /// continue uninterrupted. Decode is cancelled and restarted from the *current*
+    /// track's continuation point so it plays to completion before moving to the new
+    /// next track. Falls back to a full rebuild only when a different track has already
+    /// been pre-scheduled (current track has < ~10 s remaining).
     func reorderQueue(_ tracks: [Track], currentIndex: Int) {
         guard !tracks.isEmpty else { return }
         _queue = tracks
@@ -321,25 +322,36 @@ final class PlayerEngine {
             return
         }
 
-        // Common case: only the current track's audio is in the player node.
-        // Snapshot where scheduled audio ends *before* cancelling, then restart
-        // decode from the new next track at exactly that frame position.
+        // Snapshot where the pre-scheduled audio ends (≈ the throttle look-ahead,
+        // typically ~10 s worth of frames). We will continue decoding the current
+        // track from this point so it plays fully before the shuffled next track.
         let endFrame = liveScheduleEnd.withLock { $0 }
+
+        // How far into the current track's source file should the continuation seek?
+        // That's: time already played (seekTimeOffset) + the pre-buffered window.
+        let currentEntryStart = scheduledEntries.last?.startFrame ?? 0
+        let canonicalRate = graph.canonicalFormat.sampleRate
+        let preScheduledSeconds = Double(endFrame - currentEntryStart) / canonicalRate
+        let continuationOffset = seekTimeOffset + preScheduledSeconds
+
         cancelDecode()
+
+        // Tell the new decode task where in the player-node frame timeline to start
+        // appending buffers.
         nextScheduleFrame = endFrame
 
-        // Seal the current entry's sentinel so updateTime() knows when to
-        // transition to the next track.
-        if !scheduledEntries.isEmpty {
-            scheduledEntries[scheduledEntries.count - 1].endFrame = endFrame
-        }
+        // Intentionally leave scheduledEntries alone — the current track's entry
+        // (endFrame == .max) stays. The continuation decode will finalize it when
+        // the track is fully scheduled, giving updateTime() a correct boundary.
 
         notifyStateUpdate()
 
-        let nextIdx = currentIndex + 1
-        if nextIdx < _queue.count {
-            startDecoding(from: nextIdx)
-        }
+        // Restart decode from the current track at the continuation file offset.
+        // appendingEntry:true means it will NOT create a new ScheduledEntry for the
+        // first (current) track — it appends to the existing one. When the track
+        // finishes, the task naturally advances to _queue[currentIndex + 1], which
+        // is now the shuffled next track.
+        startDecoding(from: currentIndex, seekOffset: continuationOffset, appendingEntry: !scheduledEntries.isEmpty)
     }
 
     private func cancelDecode() {
@@ -350,7 +362,7 @@ final class PlayerEngine {
         isDecoding = false
     }
 
-    private func startDecoding(from index: Int, seekOffset: TimeInterval = 0) {
+    private func startDecoding(from index: Int, seekOffset: TimeInterval = 0, appendingEntry: Bool = false) {
         let canonical = graph.canonicalFormat
         let readChunk = readChunkFrames
         let outputChunk = outputChunkFrames
@@ -422,14 +434,23 @@ final class PlayerEngine {
 
                     // Create entry eagerly so updateTime() can track this track immediately.
                     // endFrame = .max is a sentinel meaning "still decoding".
+                    //
+                    // appendingEntry + isFirstTrack: this is a continuation decode that
+                    // follows a reorderQueue() call. The existing ScheduledEntry for the
+                    // current track (endFrame == .max) stays in place — we must NOT create
+                    // a second entry. We only capture nextScheduleFrame so the finalization
+                    // below can compute the correct absolute endFrame for the existing entry.
                     let startFrame = await MainActor.run { [weak self] () -> AVAudioFramePosition in
                         guard let self else { return 0 }
                         let sf = self.nextScheduleFrame
-                        let entry = ScheduledEntry(track: track, startFrame: sf, endFrame: .max)
-                        self.scheduledEntries.append(entry)
-                        // Initialize live pointer for this entry so reorderQueue() can read
-                        // a sensible value even before any buffers are scheduled.
-                        scheduleEnd.withLock { $0 = sf }
+                        if appendingEntry && isFirstTrack {
+                            // Continuation: no new entry. Just update the live pointer.
+                            scheduleEnd.withLock { $0 = sf }
+                        } else {
+                            let entry = ScheduledEntry(track: track, startFrame: sf, endFrame: .max)
+                            self.scheduledEntries.append(entry)
+                            scheduleEnd.withLock { $0 = sf }
+                        }
                         return sf
                     }
 
@@ -537,17 +558,27 @@ final class PlayerEngine {
                     }
 
                     // Finalize entry: replace .max sentinel with actual endFrame.
-                    // Look up by startFrame (unique per entry) rather than a stored index,
-                    // because updateTime() may have removed earlier fully-consumed entries,
-                    // shifting this entry's position in the array.
                     if generation.withLock({ $0 }) != myGeneration { return }
                     let actualEnd = startFrame + totalScheduledFrames
                     await MainActor.run { [weak self] in
                         guard let self else { return }
-                        if let idx = self.scheduledEntries.firstIndex(where: {
-                            $0.startFrame == startFrame && $0.track.id == track.id
-                        }) {
-                            self.scheduledEntries[idx].endFrame = actualEnd
+                        if appendingEntry && isFirstTrack {
+                            // Continuation mode: the existing entry was never given a new
+                            // startFrame — find it by track identity + .max sentinel.
+                            // actualEnd = liveScheduleEnd + continuationFrames, which is the
+                            // correct absolute endFrame for the full track in the player node.
+                            if let idx = self.scheduledEntries.firstIndex(where: {
+                                $0.track.id == track.id && $0.endFrame == .max
+                            }) {
+                                self.scheduledEntries[idx].endFrame = actualEnd
+                            }
+                        } else {
+                            // Normal mode: look up by the startFrame captured at entry creation.
+                            if let idx = self.scheduledEntries.firstIndex(where: {
+                                $0.startFrame == startFrame && $0.track.id == track.id
+                            }) {
+                                self.scheduledEntries[idx].endFrame = actualEnd
+                            }
                         }
                         self.nextScheduleFrame = actualEnd
                     }
