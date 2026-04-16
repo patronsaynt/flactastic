@@ -96,10 +96,12 @@ struct AlbumDetailView: View {
                 TrackRow(track: track, isPlaying: player.currentTrack?.id == track.id)
                     .contentShape(Rectangle())
                     .onTapGesture(count: 2) {
-                        player.engine.setQueue(tracks, startAt: index)
+                        player.startFreshQueue(tracks, startAt: index, source: album?.name)
                         player.engine.play()
                     }
                     .contextMenu {
+                        playbackContextMenuItems(for: [track], player: player)
+                        Divider()
                         addToPlaylistMenu(track: track)
                     }
                     .padding(.vertical, Theme.Spacing.xs)
@@ -152,7 +154,7 @@ struct AlbumDetailView: View {
         } else {
             player.isShuffleEnabled = false
         }
-        player.engine.setQueue(tracks, startAt: 0)
+        player.startFreshQueue(tracks, startAt: 0, source: album.name)
         player.engine.play()
     }
 }

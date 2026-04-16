@@ -145,6 +145,9 @@ struct CollectionView: View {
                     AlbumCardView(album: album)
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    playbackContextMenuItems(for: album.tracks, player: player)
+                }
             }
         }
     }
@@ -158,6 +161,9 @@ struct CollectionView: View {
                     AlbumRowView(album: album)
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    playbackContextMenuItems(for: album.tracks, player: player)
+                }
             }
         }
     }

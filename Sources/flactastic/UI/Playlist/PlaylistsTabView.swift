@@ -11,6 +11,7 @@ enum PlaylistSortOption: String, CaseIterable, Identifiable {
 struct PlaylistsTabView: View {
     @Environment(PlaylistStore.self) private var playlistStore
     @Environment(LibraryStore.self) private var library
+    @Environment(PlayerState.self) private var player
     @Environment(Settings.self) private var settings
 
     @State private var searchText = ""
@@ -135,7 +136,7 @@ struct PlaylistsTabView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .contextMenu { playlistContextMenu(playlist) }
+                .contextMenu { playlistContextMenu(playlist, tracks: resolved) }
             }
         }
     }
@@ -154,13 +155,15 @@ struct PlaylistsTabView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .contextMenu { playlistContextMenu(playlist) }
+                .contextMenu { playlistContextMenu(playlist, tracks: resolved) }
             }
         }
     }
 
     @ViewBuilder
-    private func playlistContextMenu(_ playlist: Playlist) -> some View {
+    private func playlistContextMenu(_ playlist: Playlist, tracks: [Track]) -> some View {
+        playbackContextMenuItems(for: tracks, player: player)
+        Divider()
         Button("Rename") {
             renameText = playlist.name
             renamingPlaylistID = playlist.id

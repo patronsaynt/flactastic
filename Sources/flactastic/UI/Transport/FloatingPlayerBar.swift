@@ -23,10 +23,11 @@ struct FloatingPlayerBar: View {
                 // Center: transport controls (centered to full bar width)
                 transportControls
 
-                // Left: track info / Right: volume pinned to edges
-                HStack {
+                // Left: track info / Right: queue toggle + volume pinned to edges
+                HStack(spacing: Theme.Spacing.sm) {
                     trackInfo
                     Spacer(minLength: 0)
+                    queueToggleButton
                     VolumeSliderView()
                 }
             }
@@ -59,6 +60,23 @@ struct FloatingPlayerBar: View {
                 .frame(maxWidth: 150, alignment: .leading)
             }
         }
+    }
+
+    // MARK: - Queue Toggle
+
+    private var queueToggleButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.28)) {
+                player.isQueueVisible.toggle()
+            }
+        } label: {
+            Image(systemName: "text.line.first.and.arrowtriangle.forward")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(player.isQueueVisible ? Theme.accent : Theme.textTertiary)
+                .frame(width: 22, height: 22)
+        }
+        .buttonStyle(.plain)
+        .help(player.isQueueVisible ? "Hide queue" : "Show queue")
     }
 
     // MARK: - Transport Controls

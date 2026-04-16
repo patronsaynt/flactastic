@@ -16,6 +16,8 @@ struct TrackListView: View {
                         play(track)
                     }
                     .contextMenu {
+                        playbackContextMenuItems(for: [track], player: player)
+                        Divider()
                         addToPlaylistMenu(track: track)
                     }
                     .listRowBackground(
@@ -62,7 +64,7 @@ struct TrackListView: View {
 
     private func play(_ track: Track) {
         guard let index = library.tracks.firstIndex(where: { $0.id == track.id }) else { return }
-        player.engine.setQueue(library.tracks, startAt: index)
+        player.startFreshQueue(library.tracks, startAt: index, source: "Library")
         player.engine.play()
     }
 }

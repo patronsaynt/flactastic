@@ -15,7 +15,7 @@ struct VolumeSliderView: View {
                 settings.volume = player.volume
             }
             .tint(Theme.accent)
-            .frame(width: 70)
+            .frame(width: 56)
             .onChange(of: player.volume) { _, newValue in
                 player.engine.setVolume(newValue)
             }

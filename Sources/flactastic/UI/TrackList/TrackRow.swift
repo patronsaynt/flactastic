@@ -4,6 +4,9 @@ struct TrackRow: View {
     let track: Track
     let isPlaying: Bool
     var displayNumber: Int? = nil
+    /// When `true`, a subtle drag-handle icon is shown at the trailing edge
+    /// to signal that the row can be reordered by dragging.
+    var showDragHandle: Bool = false
 
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
@@ -44,6 +47,13 @@ struct TrackRow: View {
                 .font(Theme.Font.captionMono)
                 .foregroundStyle(Theme.textTertiary)
                 .monospacedDigit()
+
+            if showDragHandle {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.textTertiary.opacity(0.6))
+                    .frame(width: 18)
+            }
         }
         .padding(.vertical, Theme.Spacing.xs)
         .padding(.horizontal, Theme.Spacing.sm)

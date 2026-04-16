@@ -77,7 +77,7 @@ struct PlaylistDetailView: View {
                     HStack(spacing: Theme.Spacing.md) {
                         Button {
                             player.isShuffleEnabled = false
-                            player.engine.setQueue(tracks, startAt: 0)
+                            player.startFreshQueue(tracks, startAt: 0, source: playlist.name)
                             player.engine.play()
                         } label: {
                             HStack(spacing: Theme.Spacing.xs) {
@@ -92,7 +92,7 @@ struct PlaylistDetailView: View {
                             var shuffled = tracks
                             shuffled.shuffle()
                             player.isShuffleEnabled = true
-                            player.engine.setQueue(shuffled, startAt: 0)
+                            player.startFreshQueue(shuffled, startAt: 0, source: playlist.name)
                             player.engine.play()
                         } label: {
                             HStack(spacing: Theme.Spacing.xs) {
@@ -117,13 +117,13 @@ struct PlaylistDetailView: View {
         List(selection: $selection) {
             ForEach(Array(playlist.entries.enumerated()), id: \.element.id) { index, entry in
                 if let track = resolveEntry(entry, lookup: tracksByPath) {
-                    TrackRow(track: track, isPlaying: player.currentTrack?.id == track.id, displayNumber: index + 1)
+                    TrackRow(track: track, isPlaying: player.currentTrack?.id == track.id, displayNumber: index + 1, showDragHandle: true)
                         .contentShape(Rectangle())
                         .onTapGesture(count: 2) {
                             playFromEntry(entry, in: playlist)
                         }
                         .contextMenu {
-                            contextMenuItems(for: entry)
+                            contextMenuItems(for: entry, track: track)
                         }
                         .listRowBackground(
                             player.currentTrack?.id == track.id
@@ -152,9 +152,11 @@ struct PlaylistDetailView: View {
     // MARK: - Context Menu
 
     @ViewBuilder
-    private func contextMenuItems(for entry: PlaylistEntry) -> some View {
-        let selectedCount = selection.contains(entry.id) ? selection.count : 0
+    private func contextMenuItems(for entry: PlaylistEntry, track: Track) -> some View {
+        playbackContextMenuItems(for: [track], player: player)
+        Divider()
 
+        let selectedCount = selection.contains(entry.id) ? selection.count : 0
         if selectedCount > 1 {
             Button("Remove \(selectedCount) Tracks", role: .destructive) {
                 playlistStore.removeEntries(ids: selection, from: playlistID)
@@ -216,7 +218,7 @@ struct PlaylistDetailView: View {
         }
 
         guard resolvedIndex < tracks.count else { return }
-        player.engine.setQueue(tracks, startAt: resolvedIndex)
+        player.startFreshQueue(tracks, startAt: resolvedIndex, source: playlist.name)
         player.engine.play()
     }
 

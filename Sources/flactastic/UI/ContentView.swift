@@ -44,11 +44,24 @@ struct ContentView: View {
             }
         }
         .toolbarBackground(Theme.background, for: .windowToolbar)
+        .overlay(alignment: .bottomTrailing) {
+            if player.isQueueVisible {
+                QueuePanelView()
+                    .frame(width: 340)
+                    .padding(.top, Theme.Spacing.lg)
+                    .padding(.trailing, Theme.Spacing.lg)
+                    .padding(.bottom, 16)
+                    .frame(maxHeight: .infinity)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
         .overlay(alignment: .bottom) {
             FloatingPlayerBar()
                 .frame(maxWidth: 700)
                 .padding(.bottom, 16)
+                .offset(x: player.isQueueVisible ? -180 : 0)
         }
+        .animation(.easeInOut(duration: 0.28), value: player.isQueueVisible)
         .background(Theme.background)
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -89,5 +102,7 @@ struct ContentView: View {
                 player.engine.play()
             }
         }
+        // Note: we keep `engine.setQueue` here (not `startFreshQueue`) because
+        // repeat-all replays the same queue, so user-queued markers must survive.
     }
 }

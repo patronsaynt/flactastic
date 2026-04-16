@@ -58,6 +58,29 @@ struct Track: Sendable, Identifiable, Hashable {
     }
 }
 
+extension Track {
+    /// Returns a copy of this track with a freshly-generated UUID. Used when enqueuing
+    /// a track that may already appear in the queue, so the two instances can be tracked
+    /// and displayed independently.
+    func withNewID() -> Track {
+        Track(
+            id: UUID(),
+            url: url,
+            title: title,
+            artist: artist,
+            album: album,
+            trackNumber: trackNumber,
+            duration: duration,
+            artwork: artwork,
+            fileFormat: fileFormat,
+            sampleRate: sampleRate,
+            bitDepth: bitDepth,
+            genre: genre,
+            year: year
+        )
+    }
+}
+
 extension Array where Element == Track {
     /// Sort tracks by (album, trackNumber, title) with stable fallbacks for missing metadata.
     func sortedForLibrary() -> [Track] {
