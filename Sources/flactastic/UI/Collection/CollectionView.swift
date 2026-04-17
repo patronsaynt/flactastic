@@ -9,6 +9,7 @@ struct CollectionView: View {
     @State private var sortOption: CollectionSortOption = .album
     @State private var contentMode: CollectionContentMode = .albums
     @State private var editingAlbum: Album? = nil
+    @State private var refreshRotation: Double = 0
 
     private var filteredAlbums: [Album] {
         let sorted = sortedAlbums
@@ -56,32 +57,45 @@ struct CollectionView: View {
         }
     }
 
+    private var isRefreshing: Bool {
+        library.scanState == .refreshing || library.scanState == .scanning
+    }
+
     private var shouldGroup: Bool {
         sortOption == .artist || sortOption == .genre
     }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                    header
+            VStack(spacing: 0) {
+                // Header is always pinned above the content area.
+                header
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.top, Theme.Spacing.lg)
+                    .padding(.bottom, Theme.Spacing.md)
 
-                    switch contentMode {
-                    case .albums:
-                        if shouldGroup {
-                            groupedContent
-                        } else if settings.useListLayout {
-                            albumList(filteredAlbums)
-                        } else {
-                            albumGrid(filteredAlbums)
+                switch contentMode {
+                case .albums:
+                    // Albums use a ScrollView so the grid/list can grow freely.
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                            if shouldGroup {
+                                groupedContent
+                            } else if settings.useListLayout {
+                                albumList(filteredAlbums)
+                            } else {
+                                albumGrid(filteredAlbums)
+                            }
                         }
-                    case .tracks:
-                        AllTracksView(tracks: library.tracks, searchText: searchText)
+                        .padding(.horizontal, Theme.Spacing.xl)
+                        .padding(.bottom, 100)
                     }
+                case .tracks:
+                    // Tracks uses List internally — omit the outer ScrollView so
+                    // List can take full height and scroll on its own.
+                    AllTracksView(tracks: library.tracks, searchText: searchText)
+                        .padding(.horizontal, Theme.Spacing.xl)
                 }
-                .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.top, Theme.Spacing.lg)
-                .padding(.bottom, 100)
             }
             .background(Theme.background)
             .navigationDestination(for: String.self) { albumID in
@@ -115,6 +129,27 @@ struct CollectionView: View {
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.textTertiary)
                     .tracking(1.5)
+            }
+
+            Button { library.refreshLibrary() } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(isRefreshing ? Theme.textTertiary : Theme.textSecondary)
+                    .rotationEffect(.degrees(refreshRotation))
+            }
+            .buttonStyle(.plain)
+            .disabled(isRefreshing)
+            .help("Refresh Library")
+            .onChange(of: isRefreshing) { _, spinning in
+                if spinning {
+                    withAnimation(.linear(duration: 0.7).repeatForever(autoreverses: false)) {
+                        refreshRotation = 360
+                    }
+                } else {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        refreshRotation = 0
+                    }
+                }
             }
 
             Spacer()

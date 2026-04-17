@@ -41,6 +41,14 @@ actor MetadataWriter {
         }
     }
 
+    /// Sentinel passed for `albumArtist` to distinguish "leave alone" from
+    /// "clear the tag". `.unchanged` skips the write entirely; `.set(nil)` or
+    /// `.set("")` clears the ALBUMARTIST tag; `.set("value")` writes a value.
+    enum AlbumArtistChange: Sendable {
+        case unchanged
+        case set(String?)
+    }
+
     /// Write text tags and optionally artwork to the file at `track.url`.
     ///
     /// - Returns: An updated `Track` value reflecting the written fields.
@@ -54,7 +62,8 @@ actor MetadataWriter {
         year: Int?,
         genre: String?,
         trackNumber: Int?,
-        artworkChange: ArtworkChange = .unchanged
+        artworkChange: ArtworkChange = .unchanged,
+        albumArtistChange: AlbumArtistChange = .unchanged
     ) throws -> Track {
         let url = track.url
 
@@ -86,6 +95,14 @@ actor MetadataWriter {
         (genre       ?? "").withCString { taglib_tag_set_genre(tag, $0) }
         taglib_tag_set_year(tag,  UInt32(max(0, year        ?? 0)))
         taglib_tag_set_track(tag, UInt32(max(0, trackNumber ?? 0)))
+
+        // --- Album artist (via property API / custom helper) ---
+        switch albumArtistChange {
+        case .unchanged:
+            break
+        case .set(let value):
+            (value ?? "").withCString { taglib_helper_set_album_artist(file, $0) }
+        }
 
         // --- Artwork ---
         switch artworkChange {
@@ -122,6 +139,11 @@ actor MetadataWriter {
         updated.genre       = genre.flatMap       { $0.isEmpty ? nil : $0 }
         updated.year        = year
         updated.trackNumber = trackNumber
+        switch albumArtistChange {
+        case .unchanged:        break
+        case .set(let value):
+            updated.albumArtist = (value?.isEmpty ?? true) ? nil : value
+        }
         switch artworkChange {
         case .unchanged:   break
         case .removed:     updated.artwork = nil

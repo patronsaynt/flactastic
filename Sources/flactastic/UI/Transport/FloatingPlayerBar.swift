@@ -1,8 +1,13 @@
 import SwiftUI
 
 struct FloatingPlayerBar: View {
-    @Environment(PlayerState.self) private var player
-    @Environment(Settings.self) private var settings
+    @Environment(PlayerState.self)   private var player
+    @Environment(Settings.self)      private var settings
+    @Environment(PlaylistStore.self) private var playlistStore
+    @Environment(LibraryStore.self)  private var library
+
+    @State private var showingNewPlaylistAlert = false
+    @State private var newPlaylistName = ""
 
     var body: some View {
         if player.currentTrack != nil {
@@ -27,6 +32,7 @@ struct FloatingPlayerBar: View {
                 HStack(spacing: Theme.Spacing.sm) {
                     trackInfo
                     Spacer(minLength: 0)
+                    addToPlaylistButton
                     queueToggleButton
                     VolumeSliderView()
                 }
@@ -60,6 +66,50 @@ struct FloatingPlayerBar: View {
                 .frame(maxWidth: 150, alignment: .leading)
             }
         }
+    }
+
+    // MARK: - Add to Playlist
+
+    private var addToPlaylistButton: some View {
+        Menu {
+            if playlistStore.playlists.isEmpty {
+                Text("No playlists yet")
+                    .foregroundStyle(Theme.textTertiary)
+            } else {
+                ForEach(playlistStore.playlists) { playlist in
+                    Button(playlist.name) { addCurrentTrack(to: playlist.id) }
+                }
+                Divider()
+            }
+            Button("New Playlist…") { showingNewPlaylistAlert = true }
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 11, weight: .medium))
+                .frame(width: 22, height: 22)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .foregroundStyle(Theme.textTertiary)
+        .frame(width: 22, height: 22)
+        .help("Add to playlist")
+        .alert("New Playlist", isPresented: $showingNewPlaylistAlert) {
+            TextField("Playlist name", text: $newPlaylistName)
+            Button("Create") { createPlaylistAndAdd() }
+            Button("Cancel", role: .cancel) { newPlaylistName = "" }
+        }
+    }
+
+    private func addCurrentTrack(to playlistID: UUID) {
+        guard let track = player.currentTrack else { return }
+        playlistStore.addTracks([track], to: playlistID, relativeTo: library.rootURL)
+    }
+
+    private func createPlaylistAndAdd() {
+        let name = newPlaylistName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { newPlaylistName = ""; return }
+        let playlist = playlistStore.createPlaylist(name: name)
+        addCurrentTrack(to: playlist.id)
+        newPlaylistName = ""
     }
 
     // MARK: - Queue Toggle

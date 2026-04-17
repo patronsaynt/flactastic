@@ -5,6 +5,7 @@ struct Track: Sendable, Identifiable, Hashable {
     let url: URL
     var title: String
     var artist: String?
+    var albumArtist: String?
     var album: String?
     var trackNumber: Int?
     var duration: TimeInterval?
@@ -24,6 +25,7 @@ struct Track: Sendable, Identifiable, Hashable {
         url: URL,
         title: String,
         artist: String? = nil,
+        albumArtist: String? = nil,
         album: String? = nil,
         trackNumber: Int? = nil,
         duration: TimeInterval? = nil,
@@ -39,6 +41,7 @@ struct Track: Sendable, Identifiable, Hashable {
         self.url = url
         self.title = title
         self.artist = artist
+        self.albumArtist = albumArtist
         self.album = album
         self.trackNumber = trackNumber
         self.duration = duration
@@ -54,13 +57,7 @@ struct Track: Sendable, Identifiable, Hashable {
     static func makeFromURL(_ url: URL) -> Track? {
         guard let format = AudioFileFormat.classify(url) else { return nil }
         let title = url.deletingPathExtension().lastPathComponent
-        let album = url.deletingLastPathComponent().lastPathComponent
-        return Track(
-            url: url,
-            title: title,
-            album: album.isEmpty ? nil : album,
-            fileFormat: format
-        )
+        return Track(url: url, title: title, fileFormat: format)
     }
 }
 
@@ -74,6 +71,7 @@ extension Track {
             url: url,
             title: title,
             artist: artist,
+            albumArtist: albumArtist,
             album: album,
             trackNumber: trackNumber,
             duration: duration,

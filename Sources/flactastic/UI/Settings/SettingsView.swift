@@ -154,11 +154,16 @@ private struct ConfigSettingsSection: View {
 
             Divider().foregroundStyle(Theme.divider)
 
-            Toggle("Menu Bar Mini-Player", isOn: $settings.showMenuBarPlayer)
-                .toggleStyle(.switch)
-                .font(Theme.Font.body)
-                .foregroundStyle(Theme.textSecondary)
-                .tint(Theme.accent)
+            HStack {
+                Text("Menu Bar Mini-Player")
+                    .font(Theme.Font.body)
+                    .foregroundStyle(Theme.textSecondary)
+                Spacer()
+                Toggle("", isOn: $settings.showMenuBarPlayer)
+                    .toggleStyle(.switch)
+                    .tint(Theme.accent)
+                    .labelsHidden()
+            }
         }
     }
 }
@@ -168,24 +173,28 @@ private struct ConfigSettingsSection: View {
 private struct AppearanceSettingsSection: View {
     @Environment(Settings.self) private var settings
 
-    /// Slider range: 0.9 (small) to 1.35 (large). Default 1.0.
     private let scaleRange: ClosedRange<Double> = 0.9...1.35
+
+    private func settingsToggle(_ label: String, isOn: Binding<Bool>) -> some View {
+        HStack {
+            Text(label)
+                .font(Theme.Font.body)
+                .foregroundStyle(Theme.textSecondary)
+            Spacer()
+            Toggle("", isOn: isOn)
+                .toggleStyle(.switch)
+                .tint(Theme.accent)
+                .labelsHidden()
+        }
+    }
 
     var body: some View {
         @Bindable var settings = settings
 
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            Toggle("Light Mode", isOn: $settings.useLightMode)
-                .toggleStyle(.switch)
-                .font(Theme.Font.body)
-                .foregroundStyle(Theme.textSecondary)
-                .tint(Theme.accent)
-
-            Toggle("List Layout", isOn: $settings.useListLayout)
-                .toggleStyle(.switch)
-                .font(Theme.Font.body)
-                .foregroundStyle(Theme.textSecondary)
-                .tint(Theme.accent)
+            settingsToggle("Light Mode", isOn: $settings.useLightMode)
+            settingsToggle("List Layout", isOn: $settings.useListLayout)
+            settingsToggle("Rounded Album Art", isOn: $settings.roundedArtwork)
 
             Divider().foregroundStyle(Theme.divider)
 

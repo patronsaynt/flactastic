@@ -7,6 +7,7 @@ final class LibraryStore {
     enum ScanState: Equatable {
         case idle
         case scanning
+        case refreshing
         case done(count: Int)
         case failed(String)
     }
@@ -16,22 +17,51 @@ final class LibraryStore {
     var scanState: ScanState = .idle
 
     var albums: [Album] {
-        let grouped = Dictionary(grouping: tracks) { track in
-            "\(track.artist ?? "Unknown Artist")|\(track.album ?? "Unknown Album")"
+        // Pass 1: group by normalized album name.
+        let byName = Dictionary(grouping: tracks) {
+            ($0.album ?? "Unknown Album").lowercased()
         }
-        return grouped.map { key, tracks in
-            let sorted = tracks.sorted { ($0.trackNumber ?? Int.max) < ($1.trackNumber ?? Int.max) }
-            return Album(
-                id: key,
-                name: sorted.first?.album ?? "Unknown Album",
-                artist: sorted.first?.artist,
-                year: sorted.first?.year,
-                genre: sorted.first?.genre,
-                artwork: sorted.first(where: { $0.artwork != nil })?.artwork,
-                tracks: sorted
-            )
+
+        var result: [Album] = []
+
+        for (_, nameGroup) in byName {
+            // Pass 2: subdivide by albumArtist only when at least one track has it set.
+            // This lets tracks with the same album name but different `artist` tags (and
+            // no albumArtist) merge into one compilation instead of splitting.
+            let hasAlbumArtist = nameGroup.contains(where: { $0.albumArtist != nil })
+
+            let subgroups: [[Track]]
+            if hasAlbumArtist {
+                let sub = Dictionary(grouping: nameGroup) { $0.albumArtist ?? "Unknown Artist" }
+                subgroups = Array(sub.values)
+            } else {
+                subgroups = [nameGroup]
+            }
+
+            for group in subgroups {
+                let sorted = group.sorted { ($0.trackNumber ?? Int.max) < ($1.trackNumber ?? Int.max) }
+                let aa = sorted.first(where: { $0.albumArtist != nil })?.albumArtist
+                let distinct = Set(sorted.compactMap(\.artist))
+                let displayArtist: String?
+                if let aa { displayArtist = aa }
+                else if distinct.count > 1 { displayArtist = "Various Artists" }
+                else { displayArtist = distinct.first }
+
+                let key = "\(aa ?? displayArtist ?? "Unknown Artist")|\(sorted.first?.album ?? "Unknown Album")"
+                result.append(Album(
+                    id: key,
+                    name: sorted.first?.album ?? "Unknown Album",
+                    artist: displayArtist,
+                    albumArtist: aa,
+                    year: sorted.first?.year,
+                    genre: sorted.first?.genre,
+                    artwork: sorted.first(where: { $0.artwork != nil })?.artwork,
+                    tracks: sorted
+                ))
+            }
         }
-        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+
+        return result.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     private let scanner = LibraryScanner()
@@ -74,6 +104,66 @@ final class LibraryStore {
             } catch {
                 if Task.isCancelled { return }
                 self.scanState = .failed(String(describing: error))
+            }
+        }
+    }
+
+    func refreshLibrary() {
+        guard let url = rootURL else { return }
+        guard scanState != .scanning else { return }
+
+        scanTask?.cancel()
+        metadataTask?.cancel()
+        scanState = .refreshing
+
+        scanTask = Task { [scanner] in
+            do {
+                let scanned = try await scanner.scan(root: url)
+                if Task.isCancelled { return }
+
+                let existingByURL = Dictionary(
+                    self.tracks.map { ($0.url, $0) },
+                    uniquingKeysWith: { _, last in last }
+                )
+                let merged: [Track] = scanned.map { stub in existingByURL[stub.url] ?? stub }
+
+                self.tracks = merged
+                self.scanState = .done(count: merged.count)
+
+                let newStubs = merged.filter { existingByURL[$0.url] == nil }
+                if !newStubs.isEmpty {
+                    self.startMetadataLoadForTracks(newStubs)
+                }
+            } catch {
+                if Task.isCancelled { return }
+                self.scanState = .failed(String(describing: error))
+            }
+        }
+    }
+
+    private func startMetadataLoadForTracks(_ newTracks: [Track]) {
+        let snapshot = newTracks
+        metadataTask = Task { [scanner] in
+            await withTaskGroup(of: Track.self) { group in
+                let maxConcurrent = 8
+                var index = 0
+                var inFlight = 0
+
+                func submit(_ t: Track) {
+                    group.addTask { [scanner] in await scanner.loadMetadata(for: t) }
+                }
+
+                while index < snapshot.count && inFlight < maxConcurrent {
+                    submit(snapshot[index]); index += 1; inFlight += 1
+                }
+                while let updated = await group.next() {
+                    if Task.isCancelled { group.cancelAll(); return }
+                    self.updateTrack(id: updated.id, with: updated)
+                    if index < snapshot.count { submit(snapshot[index]); index += 1 }
+                }
+                if !Task.isCancelled {
+                    self.tracks = self.tracks.sortedForLibrary()
+                }
             }
         }
     }

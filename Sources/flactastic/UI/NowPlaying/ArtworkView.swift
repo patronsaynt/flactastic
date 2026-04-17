@@ -1,8 +1,14 @@
 import SwiftUI
 
 struct ArtworkView: View {
+    @Environment(Settings.self) private var settings
+
     let data: Data?
     var size: CGFloat = 280
+
+    private var cornerRadius: CGFloat {
+        settings.roundedArtwork ? Theme.Radius.lg : 0
+    }
 
     var body: some View {
         if let data, let nsImage = NSImage(data: data) {
@@ -10,14 +16,14 @@ struct ArtworkView: View {
                 .resizable()
                 .aspectRatio(contentMode: .fill)
                 .frame(width: size, height: size)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         } else {
             placeholder
         }
     }
 
     private var placeholder: some View {
-        RoundedRectangle(cornerRadius: Theme.Radius.lg)
+        RoundedRectangle(cornerRadius: cornerRadius)
             .fill(Theme.surfaceElevated)
             .frame(width: size, height: size)
             .overlay {

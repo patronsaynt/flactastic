@@ -7,11 +7,16 @@ struct TrackRow: View {
     /// When `true`, a subtle drag-handle icon is shown at the trailing edge
     /// to signal that the row can be reordered by dragging.
     var showDragHandle: Bool = false
+    var showAlbumArt: Bool = false
 
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
-            trackNumberOrIndicator
-                .frame(width: 28, alignment: .trailing)
+            if showAlbumArt {
+                albumArtOrIndicator
+            } else {
+                trackNumberOrIndicator
+                    .frame(width: 28, alignment: .trailing)
+            }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.title)
@@ -57,6 +62,21 @@ struct TrackRow: View {
         }
         .padding(.vertical, Theme.Spacing.xs)
         .padding(.horizontal, Theme.Spacing.sm)
+    }
+
+    @ViewBuilder
+    private var albumArtOrIndicator: some View {
+        if isPlaying {
+            ArtworkView(data: track.artwork, size: 36)
+                .overlay(alignment: .center) {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white)
+                        .shadow(radius: 2)
+                }
+        } else {
+            ArtworkView(data: track.artwork, size: 36)
+        }
     }
 
     @ViewBuilder

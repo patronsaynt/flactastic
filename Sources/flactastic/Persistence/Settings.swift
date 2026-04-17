@@ -31,6 +31,10 @@ final class Settings {
         didSet { UserDefaults.standard.set(showMenuBarPlayer, forKey: "flactastic.showMenuBarPlayer") }
     }
 
+    var roundedArtwork: Bool {
+        didSet { UserDefaults.standard.set(roundedArtwork, forKey: "flactastic.roundedArtwork") }
+    }
+
     init() {
         lastRootPath = UserDefaults.standard.string(forKey: "flactastic.lastRootPath")
         let stored = UserDefaults.standard.object(forKey: "flactastic.volume")
@@ -41,5 +45,7 @@ final class Settings {
         uiScale = (storedScale as? Double) ?? 1.0
         let storedMBP = UserDefaults.standard.object(forKey: "flactastic.showMenuBarPlayer")
         showMenuBarPlayer = (storedMBP as? Bool) ?? true
+        let storedRA = UserDefaults.standard.object(forKey: "flactastic.roundedArtwork")
+        roundedArtwork = (storedRA as? Bool) ?? true
     }
 }

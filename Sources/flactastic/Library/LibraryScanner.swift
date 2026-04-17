@@ -84,6 +84,12 @@ actor LibraryScanner {
             let track = taglib_tag_track(tag)
             if track > 0 { updated.trackNumber = Int(track) }
 
+            if let aaPtr = taglib_helper_get_album_artist(file) {
+                let aa = String(cString: aaPtr)
+                if !aa.isEmpty { updated.albumArtist = aa }
+                free(aaPtr)
+            }
+
             var picSize: UInt32 = 0
             if let picBytes = taglib_helper_read_picture(file, &picSize), picSize > 0 {
                 updated.artwork = Data(bytes: picBytes, count: Int(picSize))

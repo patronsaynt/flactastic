@@ -1,13 +1,17 @@
 import SwiftUI
 
 struct AlbumCardView: View {
+    @Environment(Settings.self) private var settings
+
     let album: Album
+
+    private var cornerRadius: CGFloat { settings.roundedArtwork ? Theme.Radius.md : 0 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             albumArtwork
                 .aspectRatio(1, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
 
             Text(album.name)
                 .font(Theme.Font.bodyMedium)
@@ -28,7 +32,7 @@ struct AlbumCardView: View {
                 .resizable()
                 .aspectRatio(contentMode: .fill)
         } else {
-            RoundedRectangle(cornerRadius: Theme.Radius.md)
+            RoundedRectangle(cornerRadius: cornerRadius)
                 .fill(Theme.surfaceElevated)
                 .overlay {
                     Image(systemName: "music.note")

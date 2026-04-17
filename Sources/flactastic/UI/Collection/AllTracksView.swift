@@ -20,36 +20,62 @@ struct AllTracksView: View {
     /// ascending (A→Z) via `.onChange` below.
     @State private var ascending: Bool = false
     @State private var editingTrack: Track? = nil
+    @State private var selection: Set<UUID> = []
+    /// Anchor row for shift-click range selection.
+    @State private var anchorID: UUID? = nil
+    @State private var mergePayload: MergeSheetPayload? = nil
 
-    private var visibleTracks: [Track] {
-        let base = filteredTracks
-        return sorted(base, by: sortOption, ascending: ascending)
-    }
+    /// Cached sorted+filtered track list. Recomputed only when the underlying
+    /// inputs change (tracks, search text, sort option, direction) — NOT on
+    /// every selection toggle. Without this cache, every tap would re-sort the
+    /// entire library, producing seconds-long lag on large collections.
+    @State private var cachedVisible: [Track] = []
 
-    private var filteredTracks: [Track] {
-        guard !searchText.isEmpty else { return tracks }
-        let q = searchText.lowercased()
-        return tracks.filter { t in
-            t.title.localizedCaseInsensitiveContains(q)
-                || (t.artist?.localizedCaseInsensitiveContains(q) ?? false)
-                || (t.album?.localizedCaseInsensitiveContains(q) ?? false)
+    private func recomputeVisible() {
+        let filtered: [Track]
+        if searchText.isEmpty {
+            filtered = tracks
+        } else {
+            let q = searchText.lowercased()
+            filtered = tracks.filter { t in
+                t.title.localizedCaseInsensitiveContains(q)
+                    || (t.artist?.localizedCaseInsensitiveContains(q) ?? false)
+                    || (t.album?.localizedCaseInsensitiveContains(q) ?? false)
+            }
         }
+        cachedVisible = sorted(filtered, by: sortOption, ascending: ascending)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             controls
 
-            if visibleTracks.isEmpty {
+            if cachedVisible.isEmpty {
                 emptyState
             } else {
                 trackList
             }
         }
+        .onAppear { recomputeVisible() }
+        .onChange(of: tracks) { _, _ in recomputeVisible() }
+        .onChange(of: searchText) { _, _ in recomputeVisible() }
+        .onChange(of: sortOption) { _, _ in recomputeVisible() }
+        .onChange(of: ascending) { _, _ in recomputeVisible() }
         .sheet(item: $editingTrack) { track in
             TrackMetadataEditorView(track: track)
                 .environment(library)
         }
+        .sheet(item: $mergePayload) { payload in
+            MergeTracksIntoAlbumView(tracks: payload.tracks) {
+                clearSelection()
+            }
+            .environment(library)
+        }
+    }
+
+    private struct MergeSheetPayload: Identifiable {
+        let id = UUID()
+        let tracks: [Track]
     }
 
     // MARK: - Controls row
@@ -63,7 +89,7 @@ struct AllTracksView: View {
                 }
             }
             .buttonStyle(PillButtonStyle(isPrimary: true))
-            .disabled(visibleTracks.isEmpty)
+            .disabled(cachedVisible.isEmpty)
 
             Button { playAll(shuffle: true) } label: {
                 HStack(spacing: Theme.Spacing.xs) {
@@ -72,7 +98,7 @@ struct AllTracksView: View {
                 }
             }
             .buttonStyle(PillButtonStyle())
-            .disabled(visibleTracks.isEmpty)
+            .disabled(cachedVisible.isEmpty)
 
             Spacer()
 
@@ -107,44 +133,108 @@ struct AllTracksView: View {
     // MARK: - Track list
 
     private var trackList: some View {
-        LazyVStack(spacing: 0) {
-            ForEach(Array(visibleTracks.enumerated()), id: \.element.id) { index, track in
-                TrackRow(
-                    track: track,
-                    isPlaying: player.currentTrack?.id == track.id,
-                    displayNumber: nil  // Hide track numbers in all-tracks view
-                )
-                .padding(.horizontal, Theme.Spacing.sm)
-                .padding(.vertical, 2)
-                .background(
-                    player.currentTrack?.id == track.id
-                        ? Theme.surfaceElevated
-                        : Color.clear
-                )
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) {
-                    play(at: index)
-                }
-                .contextMenu {
-                    playbackContextMenuItems(for: [track], player: player)
-                    Divider()
-                    Button("Edit...") { editingTrack = track }
-                    Divider()
-                    addToPlaylistMenu(track: track)
+        ScrollView {
+            LazyVStack(spacing: 2) {
+                ForEach(cachedVisible, id: \.id) { track in
+                    TrackRow(
+                        track: track,
+                        isPlaying: player.currentTrack?.id == track.id,
+                        displayNumber: nil,
+                        showAlbumArt: true
+                    )
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .padding(.vertical, 4)
+                    .background(rowBackground(for: track))
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) { play(track: track) }
+                    .simultaneousGesture(
+                        TapGesture(count: 1).onEnded { handleSelection(for: track) }
+                    )
+                    .contextMenu {
+                        let tracksForMenu = contextTracks(primary: track)
+                        playbackContextMenuItems(for: tracksForMenu, player: player)
+                        Divider()
+                        if tracksForMenu.count >= 2 {
+                            Button("Merge into Album…") {
+                                mergePayload = MergeSheetPayload(tracks: tracksForMenu)
+                            }
+                            Divider()
+                        }
+                        Button("Edit...") { editingTrack = track }
+                        Divider()
+                        addToPlaylistMenu(tracks: tracksForMenu)
+                    }
                 }
             }
+            .padding(.bottom, 100)
+            .background(
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { clearSelection() }
+            )
+        }
+    }
+
+    /// Tracks the context menu should operate on. When the right-clicked track
+    /// is part of an active multi-selection, include every selected track so
+    /// "Merge into Album…" and other batch actions target the whole set.
+    /// Otherwise the menu acts on the single right-clicked track.
+    private func contextTracks(primary: Track) -> [Track] {
+        if selection.count >= 2, selection.contains(primary.id) {
+            let byID = Dictionary(uniqueKeysWithValues: cachedVisible.map { ($0.id, $0) })
+            return selection.compactMap { byID[$0] }
+        }
+        return [primary]
+    }
+
+    private func handleSelection(for track: Track) {
+        if NSEvent.modifierFlags.contains(.shift) {
+            // Shift-click: extend selection from anchor (or current row if none)
+            // to the clicked row.
+            let anchor = anchorID ?? track.id
+            guard let anchorIdx = cachedVisible.firstIndex(where: { $0.id == anchor }),
+                  let clickedIdx = cachedVisible.firstIndex(where: { $0.id == track.id })
+            else { return }
+            let lo = min(anchorIdx, clickedIdx)
+            let hi = max(anchorIdx, clickedIdx)
+            selection = Set(cachedVisible[lo...hi].map(\.id))
+            if anchorID == nil { anchorID = track.id }
+        } else {
+            // Plain click: select only this row and set it as the range anchor.
+            selection = [track.id]
+            anchorID = track.id
+        }
+    }
+
+    private func clearSelection() {
+        if !selection.isEmpty { selection = [] }
+        anchorID = nil
+    }
+
+    @ViewBuilder
+    private func rowBackground(for track: Track) -> some View {
+        let isPlaying = player.currentTrack?.id == track.id
+        let isSelected = selection.contains(track.id)
+        if isPlaying {
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .fill(Theme.surfaceElevated)
+        } else if isSelected {
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .fill(Theme.surfaceElevated.opacity(0.55))
+        } else {
+            Color.clear
         }
     }
 
     @ViewBuilder
-    private func addToPlaylistMenu(track: Track) -> some View {
+    private func addToPlaylistMenu(tracks: [Track]) -> some View {
         if playlistStore.playlists.isEmpty {
             Text("No playlists yet")
         } else {
             Menu("Add to Playlist") {
                 ForEach(playlistStore.playlists) { playlist in
                     Button(playlist.name) {
-                        playlistStore.addTracks([track], to: playlist.id, relativeTo: library.rootURL)
+                        playlistStore.addTracks(tracks, to: playlist.id, relativeTo: library.rootURL)
                     }
                 }
             }
@@ -166,16 +256,17 @@ struct AllTracksView: View {
 
     // MARK: - Playback
 
-    private func play(at index: Int) {
-        let queue = visibleTracks
-        guard queue.indices.contains(index) else { return }
+    private func play(track: Track) {
+        let queue = cachedVisible
+        guard let index = queue.firstIndex(where: { $0.id == track.id }) else { return }
         player.isShuffleEnabled = false
         player.startFreshQueue(queue, startAt: index, source: "Library")
         player.engine.play()
+        clearSelection()
     }
 
     private func playAll(shuffle: Bool) {
-        let queue = visibleTracks
+        let queue = cachedVisible
         guard !queue.isEmpty else { return }
         if shuffle {
             // Preserve the sorted order so toggling shuffle off later restores it.
@@ -189,6 +280,7 @@ struct AllTracksView: View {
             player.startFreshQueue(queue, startAt: 0, source: "Library")
         }
         player.engine.play()
+        clearSelection()
     }
 
     // MARK: - Sorting

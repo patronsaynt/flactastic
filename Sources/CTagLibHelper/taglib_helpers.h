@@ -40,6 +40,14 @@ void taglib_helper_remove_pictures(void *file);
  *  Returns NULL if no picture is found. */
 unsigned char *taglib_helper_read_picture(void *file, unsigned int *out_size);
 
+/** Read the ALBUMARTIST property (cross-format: Xiph ALBUMARTIST / ID3v2 TPE2 / MP4 aART).
+ *  Returns a malloc'd C string the caller must free(), or NULL if unset. */
+char *taglib_helper_get_album_artist(void *file);
+
+/** Write the ALBUMARTIST property. Pass NULL value to leave unchanged; pass
+ *  empty string ("") to clear the tag. */
+void taglib_helper_set_album_artist(void *file, const char *value);
+
 #ifdef __cplusplus
 }
 #endif
