@@ -9,8 +9,9 @@ struct AlbumCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            albumArtwork
+            Color.clear
                 .aspectRatio(1, contentMode: .fit)
+                .overlay { albumArtwork }
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
 
             Text(album.name)
@@ -32,8 +33,7 @@ struct AlbumCardView: View {
                 .resizable()
                 .aspectRatio(contentMode: .fill)
         } else {
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(Theme.surfaceElevated)
+            Theme.surfaceElevated
                 .overlay {
                     Image(systemName: "music.note")
                         .font(.system(size: 40, weight: .ultraLight))

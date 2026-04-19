@@ -10,6 +10,7 @@ struct PlaylistDetailView: View {
     @State private var isEditingName = false
     @State private var editedName = ""
     @State private var selection: Set<UUID> = []
+    @State private var showEditor = false
 
     private var playlist: Playlist? {
         playlistStore.playlists.first { $0.id == playlistID }
@@ -35,6 +36,9 @@ struct PlaylistDetailView: View {
             }
             .background(Theme.background)
             .navigationTitle(playlist.name)
+            .sheet(isPresented: $showEditor) {
+                PlaylistEditorView(playlistID: playlistID)
+            }
         } else {
             Text("Playlist not found")
                 .foregroundStyle(Theme.textTertiary)
@@ -48,7 +52,7 @@ struct PlaylistDetailView: View {
     @ViewBuilder
     private func playlistHeader(_ playlist: Playlist, tracks: [Track]) -> some View {
         HStack(alignment: .top, spacing: Theme.Spacing.xl) {
-            ArtworkView(data: tracks.first?.artwork, size: 200)
+            ArtworkView(data: playlist.customArtwork ?? tracks.first?.artwork, size: 200)
 
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 if isEditingName {
@@ -71,10 +75,18 @@ struct PlaylistDetailView: View {
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.textSecondary)
 
+                if let desc = playlist.description, !desc.isEmpty {
+                    Text(desc)
+                        .font(Theme.Font.body)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 Spacer()
 
-                if !tracks.isEmpty {
-                    HStack(spacing: Theme.Spacing.md) {
+                HStack(spacing: Theme.Spacing.md) {
+                    if !tracks.isEmpty {
                         Button {
                             player.isShuffleEnabled = false
                             player.startFreshQueue(tracks, startAt: 0, source: playlist.name)
@@ -102,10 +114,20 @@ struct PlaylistDetailView: View {
                         }
                         .buttonStyle(PillButtonStyle())
                     }
+
+                    Button {
+                        showEditor = true
+                    } label: {
+                        HStack(spacing: Theme.Spacing.xs) {
+                            Image(systemName: "pencil")
+                            Text("Edit")
+                        }
+                    }
+                    .buttonStyle(PillButtonStyle())
                 }
             }
         }
-        .frame(height: 200)
+        .frame(minHeight: 200)
     }
 
     // MARK: - Track List
@@ -122,7 +144,7 @@ struct PlaylistDetailView: View {
                         .onTapGesture(count: 2) {
                             playFromEntry(entry, in: playlist)
                         }
-                        .contextMenu {
+                        .flContextMenu {
                             contextMenuItems(for: entry, track: track)
                         }
                         .listRowBackground(
@@ -151,23 +173,23 @@ struct PlaylistDetailView: View {
 
     // MARK: - Context Menu
 
-    @ViewBuilder
-    private func contextMenuItems(for entry: PlaylistEntry, track: Track) -> some View {
-        playbackContextMenuItems(for: [track], player: player)
-        Divider()
+    private func contextMenuItems(for entry: PlaylistEntry, track: Track) -> [FLContextMenuItem] {
+        var items = playbackContextMenuItems(for: [track], player: player)
+        items.append(.divider)
 
         let selectedCount = selection.contains(entry.id) ? selection.count : 0
         if selectedCount > 1 {
-            Button("Remove \(selectedCount) Tracks", role: .destructive) {
+            items.append(.button("Remove \(selectedCount) Tracks", destructive: true) {
                 playlistStore.removeEntries(ids: selection, from: playlistID)
                 selection = []
-            }
+            })
         } else {
-            Button("Remove from Playlist", role: .destructive) {
+            items.append(.button("Remove from Playlist", destructive: true) {
                 playlistStore.removeEntries(ids: [entry.id], from: playlistID)
                 selection.remove(entry.id)
-            }
+            })
         }
+        return items
     }
 
     // MARK: - Empty State

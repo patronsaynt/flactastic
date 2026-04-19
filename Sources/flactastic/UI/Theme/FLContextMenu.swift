@@ -1,0 +1,475 @@
+import SwiftUI
+import AppKit
+
+// MARK: - Model
+
+/// Item model for `.flContextMenu { ... }`. Kept as a value type so menus can
+/// be built from a result builder and passed into the AppKit popup window.
+enum FLContextMenuItem: Identifiable {
+    case button(id: UUID, title: String, systemImage: String?, isDestructive: Bool, action: () -> Void)
+    case divider(id: UUID)
+    case submenu(id: UUID, title: String, systemImage: String?, items: [FLContextMenuItem])
+    case label(id: UUID, title: String)
+
+    var id: UUID {
+        switch self {
+        case .button(let id, _, _, _, _): return id
+        case .divider(let id): return id
+        case .submenu(let id, _, _, _): return id
+        case .label(let id, _): return id
+        }
+    }
+
+    static func button(_ title: String,
+                       systemImage: String? = nil,
+                       destructive: Bool = false,
+                       action: @escaping () -> Void) -> FLContextMenuItem {
+        .button(id: UUID(), title: title, systemImage: systemImage, isDestructive: destructive, action: action)
+    }
+
+    static var divider: FLContextMenuItem { .divider(id: UUID()) }
+
+    static func submenu(_ title: String,
+                        systemImage: String? = nil,
+                        items: [FLContextMenuItem]) -> FLContextMenuItem {
+        .submenu(id: UUID(), title: title, systemImage: systemImage, items: items)
+    }
+
+    static func label(_ title: String) -> FLContextMenuItem {
+        .label(id: UUID(), title: title)
+    }
+}
+
+// MARK: - Result Builder
+
+@resultBuilder
+enum FLContextMenuBuilder {
+    static func buildExpression(_ e: FLContextMenuItem) -> [FLContextMenuItem] { [e] }
+    static func buildExpression(_ e: [FLContextMenuItem]) -> [FLContextMenuItem] { e }
+    static func buildBlock(_ parts: [FLContextMenuItem]...) -> [FLContextMenuItem] { parts.flatMap { $0 } }
+    static func buildOptional(_ c: [FLContextMenuItem]?) -> [FLContextMenuItem] { c ?? [] }
+    static func buildEither(first c: [FLContextMenuItem]) -> [FLContextMenuItem] { c }
+    static func buildEither(second c: [FLContextMenuItem]) -> [FLContextMenuItem] { c }
+    static func buildArray(_ parts: [[FLContextMenuItem]]) -> [FLContextMenuItem] { parts.flatMap { $0 } }
+}
+
+// MARK: - Controller
+
+/// Tracks the open root/submenu pair so hover interactions can dismiss the
+/// correct window and clicks close the whole tower at once.
+@MainActor
+final class FLContextMenuController {
+    static let shared = FLContextMenuController()
+
+    weak var rootWindow: FLContextMenuWindow?
+    weak var childWindow: FLContextMenuWindow?
+
+    func dismissAll() {
+        childWindow?.closeImmediately()
+        rootWindow?.closeImmediately()
+        childWindow = nil
+        rootWindow = nil
+    }
+
+    func dismissChild() {
+        childWindow?.closeImmediately()
+        childWindow = nil
+    }
+}
+
+// MARK: - Menu View
+
+struct FLContextMenuView: View {
+    let items: [FLContextMenuItem]
+    let isSubmenu: Bool
+    let onCommit: () -> Void
+
+    @State private var hoveredID: UUID? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(items) { item in
+                row(for: item)
+            }
+        }
+        .padding(.vertical, 4)
+        .frame(minWidth: 200, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .fill(Theme.surfaceElevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .strokeBorder(Theme.divider, lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.35), radius: 14, x: 0, y: 6)
+        .onHover { hovering in
+            if hovering, !isSubmenu {
+                // Mouse moved over the root menu (not on a submenu row) —
+                // collapse any open submenu.
+                let hoverIsOnSubmenuRow = items.contains { item in
+                    if case .submenu = item, item.id == hoveredID { return true }
+                    return false
+                }
+                if !hoverIsOnSubmenuRow {
+                    FLContextMenuController.shared.dismissChild()
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func row(for item: FLContextMenuItem) -> some View {
+        switch item {
+        case .button(_, let title, let systemImage, let destructive, let action):
+            FLMenuRow(
+                title: title,
+                systemImage: systemImage,
+                trailingChevron: false,
+                isDestructive: destructive,
+                isHovered: hoveredID == item.id,
+                onHover: { hovering in
+                    if hovering {
+                        hoveredID = item.id
+                        // Only the root menu closes an open submenu on hover;
+                        // hovering rows inside the submenu itself must not
+                        // dismiss the submenu (that would close it the moment
+                        // the cursor enters).
+                        if !isSubmenu {
+                            FLContextMenuController.shared.dismissChild()
+                        }
+                    } else if hoveredID == item.id {
+                        hoveredID = nil
+                    }
+                },
+                onTap: {
+                    action()
+                    onCommit()
+                }
+            )
+        case .divider:
+            Rectangle()
+                .fill(Theme.divider)
+                .frame(height: 1)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+        case .submenu(_, let title, let systemImage, let children):
+            SubmenuRow(
+                title: title,
+                systemImage: systemImage,
+                children: children,
+                isHovered: hoveredID == item.id,
+                onHover: { hovering, rect in
+                    if hovering {
+                        hoveredID = item.id
+                        FLContextMenuWindow.presentChild(items: children, anchor: rect, onCommit: onCommit)
+                    } else if hoveredID == item.id {
+                        hoveredID = nil
+                    }
+                }
+            )
+        case .label(_, let title):
+            Text(title)
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.textTertiary)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+        }
+    }
+}
+
+// MARK: - Individual Row
+
+private struct FLMenuRow: View {
+    let title: String
+    let systemImage: String?
+    let trailingChevron: Bool
+    let isDestructive: Bool
+    let isHovered: Bool
+    let onHover: (Bool) -> Void
+    let onTap: () -> Void
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            if let icon = systemImage {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 16)
+            } else {
+                Spacer().frame(width: 16)
+            }
+            Text(title)
+                .font(Theme.Font.body)
+                .lineLimit(1)
+            Spacer(minLength: 16)
+            if trailingChevron {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+        }
+        .foregroundStyle(
+            isDestructive
+                ? Color(red: 0.95, green: 0.35, blue: 0.35)
+                : Theme.textPrimary
+        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .fill(isHovered ? Theme.surfaceHover : Color.clear)
+                .padding(.horizontal, 4)
+        )
+        .onHover(perform: onHover)
+        .onTapGesture { onTap() }
+    }
+}
+
+private struct SubmenuRow: View {
+    let title: String
+    let systemImage: String?
+    let children: [FLContextMenuItem]
+    let isHovered: Bool
+    let onHover: (Bool, NSRect) -> Void
+
+    var body: some View {
+        FLMenuRow(
+            title: title,
+            systemImage: systemImage,
+            trailingChevron: true,
+            isDestructive: false,
+            isHovered: isHovered,
+            onHover: { hovering in
+                onHover(hovering, FLContextMenuWindow.submenuAnchor())
+            },
+            onTap: {
+                onHover(true, FLContextMenuWindow.submenuAnchor())
+            }
+        )
+    }
+}
+
+private struct FLMenuRowFrameKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
+}
+
+// MARK: - Window
+
+/// Borderless panel that hosts the SwiftUI menu view. Uses a global mouse-down
+/// monitor to dismiss when the user clicks anywhere else.
+final class FLContextMenuWindow: NSPanel {
+    private var globalMonitor: Any?
+    private var localMonitor: Any?
+    private var isChild: Bool = false
+
+    static func present(items: [FLContextMenuItem], at screenPoint: NSPoint) {
+        FLContextMenuController.shared.dismissAll()
+        let window = FLContextMenuWindow()
+        window.configure(items: items, at: screenPoint, isChild: false)
+        FLContextMenuController.shared.rootWindow = window
+        window.orderFrontRegardless()
+    }
+
+    static func presentChild(items: [FLContextMenuItem], anchor: NSRect, onCommit: @escaping () -> Void) {
+        FLContextMenuController.shared.dismissChild()
+        let window = FLContextMenuWindow()
+        window.configureChild(items: items, anchor: anchor, onCommit: onCommit)
+        FLContextMenuController.shared.childWindow = window
+        window.orderFrontRegardless()
+    }
+
+    /// Anchor point for a submenu: right edge of the root menu, at the current
+    /// cursor Y. Stable and reliable — doesn't depend on SwiftUI preference
+    /// timing, and always flies out sideways like a native submenu.
+    static func submenuAnchor() -> NSRect {
+        let cursor = NSEvent.mouseLocation
+        guard let root = FLContextMenuController.shared.rootWindow else {
+            return NSRect(origin: cursor, size: .zero)
+        }
+        return NSRect(x: root.frame.maxX, y: cursor.y, width: 0, height: 0)
+    }
+
+    init() {
+        super.init(
+            contentRect: NSRect(x: 0, y: 0, width: 220, height: 40),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        self.isFloatingPanel = true
+        self.level = .popUpMenu
+        self.hasShadow = false
+        self.backgroundColor = .clear
+        self.isOpaque = false
+        self.hidesOnDeactivate = false
+        self.isMovable = false
+        self.animationBehavior = .utilityWindow
+    }
+
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+
+    func configure(items: [FLContextMenuItem], at screenPoint: NSPoint, isChild: Bool) {
+        self.isChild = isChild
+        let view = FLContextMenuView(items: items, isSubmenu: isChild) { [weak self] in
+            FLContextMenuController.shared.dismissAll()
+            _ = self
+        }
+        installHosting(view: AnyView(view), origin: screenPoint, anchorRight: false)
+        installDismissMonitors()
+    }
+
+    func configureChild(items: [FLContextMenuItem], anchor: NSRect, onCommit: @escaping () -> Void) {
+        self.isChild = true
+        let view = FLContextMenuView(items: items, isSubmenu: true) {
+            onCommit()
+            FLContextMenuController.shared.dismissAll()
+        }
+        // Top-align the submenu roughly with the hovered row: anchor.y is the
+        // cursor Y, and menu rows are ~28pt tall — nudge up so the first item
+        // sits next to the parent row. `installHosting` subtracts height to
+        // convert this top edge into an AppKit bottom-left origin.
+        let origin = NSPoint(x: anchor.origin.x + 2, y: anchor.origin.y + 18)
+        installHosting(view: AnyView(view), origin: origin, anchorRight: true)
+        // Child windows share the root's dismiss monitor.
+    }
+
+    private func installHosting(view: AnyView, origin: NSPoint, anchorRight: Bool) {
+        let hostingView = NSHostingView(rootView: view)
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+        // Force layout so fittingSize is accurate.
+        hostingView.layoutSubtreeIfNeeded()
+        let fitting = hostingView.fittingSize
+        let size = NSSize(
+            width: max(fitting.width, 220),
+            height: max(fitting.height, 32)
+        )
+
+        var finalOrigin = origin
+        // Default: drop menu down-right from the cursor.
+        if !anchorRight {
+            finalOrigin.y -= size.height
+        } else {
+            finalOrigin.y -= size.height
+        }
+        // Keep within screen bounds.
+        let screen = NSScreen.screens.first(where: { NSMouseInRect(origin, $0.frame, false) }) ?? NSScreen.main
+        if let visible = screen?.visibleFrame {
+            if finalOrigin.x + size.width > visible.maxX {
+                finalOrigin.x = max(visible.minX + 4, visible.maxX - size.width - 4)
+            }
+            if finalOrigin.x < visible.minX { finalOrigin.x = visible.minX + 4 }
+            if finalOrigin.y < visible.minY { finalOrigin.y = visible.minY + 4 }
+            if finalOrigin.y + size.height > visible.maxY {
+                finalOrigin.y = visible.maxY - size.height - 4
+            }
+        }
+
+        let rect = NSRect(origin: finalOrigin, size: size)
+        self.setFrame(rect, display: false)
+        self.contentView = hostingView
+    }
+
+    private func installDismissMonitors() {
+        // Fires only for events in other apps.
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { _ in
+            Task { @MainActor in
+                FLContextMenuController.shared.dismissAll()
+            }
+        }
+        // Fires for events inside our app. Dismiss when the click lands on a
+        // window that isn't part of the menu tower; let clicks inside the menu
+        // itself flow through so button taps can fire.
+        localMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown]
+        ) { event in
+            if event.type == .keyDown {
+                if event.keyCode == 53 { // escape
+                    Task { @MainActor in
+                        FLContextMenuController.shared.dismissAll()
+                    }
+                    return nil
+                }
+                return event
+            }
+            let target = event.window
+            let controller = FLContextMenuController.shared
+            let isMenu = (target === controller.rootWindow) || (target === controller.childWindow)
+            if !isMenu {
+                Task { @MainActor in
+                    FLContextMenuController.shared.dismissAll()
+                }
+            }
+            return event
+        }
+    }
+
+    func closeImmediately() {
+        if let gm = globalMonitor {
+            NSEvent.removeMonitor(gm)
+            globalMonitor = nil
+        }
+        if let lm = localMonitor {
+            NSEvent.removeMonitor(lm)
+            localMonitor = nil
+        }
+        self.orderOut(nil)
+    }
+}
+
+// MARK: - Right-Click Catcher
+
+extension View {
+    /// Shows a themed custom context menu on right-click. Items are built with
+    /// `FLContextMenuBuilder` — mirrors SwiftUI's `.contextMenu` but renders
+    /// the app's monochrome style.
+    func flContextMenu(@FLContextMenuBuilder items: @escaping () -> [FLContextMenuItem]) -> some View {
+        self.overlay(FLRightClickCatcher(itemsProvider: items))
+    }
+}
+
+private struct FLRightClickCatcher: NSViewRepresentable {
+    let itemsProvider: () -> [FLContextMenuItem]
+
+    func makeNSView(context: Context) -> RightClickView {
+        let v = RightClickView()
+        v.itemsProvider = itemsProvider
+        return v
+    }
+
+    func updateNSView(_ nsView: RightClickView, context: Context) {
+        nsView.itemsProvider = itemsProvider
+    }
+
+    final class RightClickView: NSView {
+        var itemsProvider: (() -> [FLContextMenuItem])?
+
+        override func rightMouseDown(with event: NSEvent) {
+            guard let provider = itemsProvider else { return }
+            let items = provider()
+            guard !items.isEmpty else { return }
+            let screenPoint = NSEvent.mouseLocation
+            Task { @MainActor in
+                FLContextMenuWindow.present(items: items, at: screenPoint)
+            }
+        }
+
+        // Let left-clicks pass through to the view below. Only claim the view
+        // when processing a right-click event.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            switch NSApp.currentEvent?.type {
+            case .rightMouseDown, .rightMouseUp, .rightMouseDragged:
+                return self
+            default:
+                return nil
+            }
+        }
+
+        override var acceptsFirstResponder: Bool { false }
+    }
+}

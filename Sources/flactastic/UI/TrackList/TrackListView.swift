@@ -17,12 +17,12 @@ struct TrackListView: View {
                     .onTapGesture(count: 2) {
                         play(track)
                     }
-                    .contextMenu {
+                    .flContextMenu {
                         playbackContextMenuItems(for: [track], player: player)
-                        Divider()
-                        Button("Edit...") { editingTrack = track }
-                        Divider()
-                        addToPlaylistMenu(track: track)
+                        FLContextMenuItem.divider
+                        FLContextMenuItem.button("Edit...") { editingTrack = track }
+                        FLContextMenuItem.divider
+                        addToPlaylistMenuItem(track: track)
                     }
                     .listRowBackground(
                         player.currentTrack?.id == track.id
@@ -41,19 +41,16 @@ struct TrackListView: View {
         }
     }
 
-    @ViewBuilder
-    private func addToPlaylistMenu(track: Track) -> some View {
+    private func addToPlaylistMenuItem(track: Track) -> FLContextMenuItem {
         if playlistStore.playlists.isEmpty {
-            Text("No playlists yet")
-        } else {
-            Menu("Add to Playlist") {
-                ForEach(playlistStore.playlists) { playlist in
-                    Button(playlist.name) {
-                        playlistStore.addTracks([track], to: playlist.id, relativeTo: library.rootURL)
-                    }
-                }
+            return .label("No playlists yet")
+        }
+        let children: [FLContextMenuItem] = playlistStore.playlists.map { playlist in
+            .button(playlist.name) {
+                playlistStore.addTracks([track], to: playlist.id, relativeTo: library.rootURL)
             }
         }
+        return .submenu("Add to Playlist", systemImage: "plus.square.on.square", items: children)
     }
 
     @ViewBuilder

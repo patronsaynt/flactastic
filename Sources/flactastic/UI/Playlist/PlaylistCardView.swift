@@ -11,8 +11,9 @@ struct PlaylistCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            playlistArtwork
+            Color.clear
                 .aspectRatio(1, contentMode: .fit)
+                .overlay { playlistArtwork }
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
 
             Text(playlist.name)
@@ -34,8 +35,7 @@ struct PlaylistCardView: View {
                 .resizable()
                 .aspectRatio(contentMode: .fill)
         } else {
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(Theme.surfaceElevated)
+            Theme.surfaceElevated
                 .overlay {
                     Image(systemName: "music.note.list")
                         .font(.system(size: 40, weight: .ultraLight))

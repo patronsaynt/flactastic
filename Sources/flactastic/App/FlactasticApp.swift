@@ -62,7 +62,7 @@ struct FlactasticApp: App {
                 .environment(settings)
                 .environment(playlistStore)
         } label: {
-            Image(systemName: player.isPlaying ? "play.circle.fill" : "music.note")
+            Image(systemName: "music.note")
         }
         .menuBarExtraStyle(.window)
     }
@@ -71,8 +71,8 @@ struct FlactasticApp: App {
     /// `isInserted` parameter. Built inline so we don't need `@Bindable` here.
     private var menuBarBinding: Binding<Bool> {
         Binding(
-            get: { settings.showMenuBarPlayer },
-            set: { settings.showMenuBarPlayer = $0 }
+            get: { settings.showMenuBarPlayer && player.isPlaying },
+            set: { _ in }
         )
     }
 

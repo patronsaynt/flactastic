@@ -71,25 +71,16 @@ struct FloatingPlayerBar: View {
     // MARK: - Add to Playlist
 
     private var addToPlaylistButton: some View {
-        Menu {
-            if playlistStore.playlists.isEmpty {
-                Text("No playlists yet")
-                    .foregroundStyle(Theme.textTertiary)
-            } else {
-                ForEach(playlistStore.playlists) { playlist in
-                    Button(playlist.name) { addCurrentTrack(to: playlist.id) }
-                }
-                Divider()
-            }
-            Button("New Playlist…") { showingNewPlaylistAlert = true }
+        Button {
+            FLContextMenuWindow.present(items: buildAddToPlaylistItems(), at: NSEvent.mouseLocation)
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 11, weight: .medium))
                 .frame(width: 22, height: 22)
+                .foregroundStyle(Theme.textTertiary)
+                .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .foregroundStyle(Theme.textTertiary)
+        .buttonStyle(.plain)
         .frame(width: 22, height: 22)
         .help("Add to playlist")
         .alert("New Playlist", isPresented: $showingNewPlaylistAlert) {
@@ -97,6 +88,20 @@ struct FloatingPlayerBar: View {
             Button("Create") { createPlaylistAndAdd() }
             Button("Cancel", role: .cancel) { newPlaylistName = "" }
         }
+    }
+
+    private func buildAddToPlaylistItems() -> [FLContextMenuItem] {
+        var items: [FLContextMenuItem] = []
+        if playlistStore.playlists.isEmpty {
+            items.append(.label("No playlists yet"))
+        } else {
+            for playlist in playlistStore.playlists {
+                items.append(.button(playlist.name) { addCurrentTrack(to: playlist.id) })
+            }
+            items.append(.divider)
+        }
+        items.append(.button("New Playlist…") { showingNewPlaylistAlert = true })
+        return items
     }
 
     private func addCurrentTrack(to playlistID: UUID) {

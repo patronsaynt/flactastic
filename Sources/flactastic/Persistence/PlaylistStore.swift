@@ -55,6 +55,21 @@ final class PlaylistStore {
         save()
     }
 
+    /// Updates editable playlist metadata (name, description, custom cover image).
+    /// Pass `nil` for `customArtwork` to clear the cover.
+    func updatePlaylistMetadata(
+        id: UUID,
+        name: String,
+        description: String?,
+        customArtwork: Data?
+    ) {
+        guard let index = playlists.firstIndex(where: { $0.id == id }) else { return }
+        playlists[index].name = name
+        playlists[index].description = description
+        playlists[index].customArtwork = customArtwork
+        save()
+    }
+
     // MARK: - Track operations
 
     func addTracks(_ tracks: [Track], to playlistID: UUID, relativeTo rootURL: URL?) {

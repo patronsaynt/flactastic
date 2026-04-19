@@ -54,6 +54,7 @@ struct AlbumMetadataEditorView: View {
     @State private var artworkData:    Data?
     @State private var artworkChanged: Bool = false
     @State private var artworkRemoved: Bool = false
+    @State private var pendingCropData: Data?
 
     @State private var editableTracks: [EditableTrack]
     @State private var draggingIndex:  Int?   = nil
@@ -97,6 +98,16 @@ struct AlbumMetadataEditorView: View {
             Button("OK", role: .cancel) { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
+        }
+        .sheet(item: Binding(
+            get: { pendingCropData.map { CroppingPayload(data: $0) } },
+            set: { if $0 == nil { pendingCropData = nil } }
+        )) { payload in
+            SquareImageCropperView(sourceData: payload.data) { cropped in
+                artworkData    = cropped
+                artworkChanged = true
+                artworkRemoved = false
+            }
         }
     }
 
@@ -312,9 +323,7 @@ struct AlbumMetadataEditorView: View {
         panel.message = "Choose album artwork"
         guard panel.runModal() == .OK, let url = panel.url,
               let data = try? Data(contentsOf: url) else { return }
-        artworkData    = data
-        artworkChanged = true
-        artworkRemoved = false
+        pendingCropData = data
     }
 
     private func save() {

@@ -150,19 +150,19 @@ struct AllTracksView: View {
                     .simultaneousGesture(
                         TapGesture(count: 1).onEnded { handleSelection(for: track) }
                     )
-                    .contextMenu {
+                    .flContextMenu {
                         let tracksForMenu = contextTracks(primary: track)
                         playbackContextMenuItems(for: tracksForMenu, player: player)
-                        Divider()
+                        FLContextMenuItem.divider
                         if tracksForMenu.count >= 2 {
-                            Button("Merge into Album…") {
+                            FLContextMenuItem.button("Merge into Album…") {
                                 mergePayload = MergeSheetPayload(tracks: tracksForMenu)
                             }
-                            Divider()
+                            FLContextMenuItem.divider
                         }
-                        Button("Edit...") { editingTrack = track }
-                        Divider()
-                        addToPlaylistMenu(tracks: tracksForMenu)
+                        FLContextMenuItem.button("Edit...") { editingTrack = track }
+                        FLContextMenuItem.divider
+                        addToPlaylistMenuItem(tracks: tracksForMenu)
                     }
                 }
             }
@@ -226,19 +226,16 @@ struct AllTracksView: View {
         }
     }
 
-    @ViewBuilder
-    private func addToPlaylistMenu(tracks: [Track]) -> some View {
+    private func addToPlaylistMenuItem(tracks: [Track]) -> FLContextMenuItem {
         if playlistStore.playlists.isEmpty {
-            Text("No playlists yet")
-        } else {
-            Menu("Add to Playlist") {
-                ForEach(playlistStore.playlists) { playlist in
-                    Button(playlist.name) {
-                        playlistStore.addTracks(tracks, to: playlist.id, relativeTo: library.rootURL)
-                    }
-                }
+            return .label("No playlists yet")
+        }
+        let children: [FLContextMenuItem] = playlistStore.playlists.map { playlist in
+            .button(playlist.name) {
+                playlistStore.addTracks(tracks, to: playlist.id, relativeTo: library.rootURL)
             }
         }
+        return .submenu("Add to Playlist", systemImage: "plus.square.on.square", items: children)
     }
 
     private var emptyState: some View {

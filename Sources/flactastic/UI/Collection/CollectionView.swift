@@ -212,9 +212,7 @@ struct CollectionView: View {
                     AlbumCardView(album: album)
                 }
                 .buttonStyle(.plain)
-                .contextMenu {
-                    albumContextMenu(album)
-                }
+                .flContextMenu { albumContextMenu(album) }
             }
         }
     }
@@ -228,17 +226,15 @@ struct CollectionView: View {
                     AlbumRowView(album: album)
                 }
                 .buttonStyle(.plain)
-                .contextMenu {
-                    albumContextMenu(album)
-                }
+                .flContextMenu { albumContextMenu(album) }
             }
         }
     }
 
-    @ViewBuilder
-    private func albumContextMenu(_ album: Album) -> some View {
-        playbackContextMenuItems(for: album.tracks, player: player)
-        Divider()
-        Button("Edit...") { editingAlbum = album }
+    private func albumContextMenu(_ album: Album) -> [FLContextMenuItem] {
+        var items = playbackContextMenuItems(for: album.tracks, player: player)
+        items.append(.divider)
+        items.append(.button("Edit...") { editingAlbum = album })
+        return items
     }
 }

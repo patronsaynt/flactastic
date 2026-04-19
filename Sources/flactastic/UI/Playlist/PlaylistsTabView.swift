@@ -20,6 +20,7 @@ struct PlaylistsTabView: View {
     @State private var newPlaylistName = ""
     @State private var renamingPlaylistID: UUID?
     @State private var renameText = ""
+    @State private var editingPlaylistID: UUID?
 
     private var filteredPlaylists: [Playlist] {
         let sorted: [Playlist]
@@ -65,6 +66,9 @@ struct PlaylistsTabView: View {
         }
         .sheet(item: $renamingPlaylistID) { playlistID in
             renamePlaylistSheet(for: playlistID)
+        }
+        .sheet(item: $editingPlaylistID) { playlistID in
+            PlaylistEditorView(playlistID: playlistID)
         }
     }
 
@@ -131,12 +135,12 @@ struct PlaylistsTabView: View {
                 NavigationLink(value: playlist.id) {
                     PlaylistCardView(
                         playlist: playlist,
-                        artwork: resolved.first?.artwork,
+                        artwork: playlist.customArtwork ?? resolved.first?.artwork,
                         trackCount: resolved.count
                     )
                 }
                 .buttonStyle(.plain)
-                .contextMenu { playlistContextMenu(playlist, tracks: resolved) }
+                .flContextMenu { playlistContextMenu(playlist, tracks: resolved) }
             }
         }
     }
@@ -150,28 +154,29 @@ struct PlaylistsTabView: View {
                 NavigationLink(value: playlist.id) {
                     PlaylistRowView(
                         playlist: playlist,
-                        artwork: resolved.first?.artwork,
+                        artwork: playlist.customArtwork ?? resolved.first?.artwork,
                         trackCount: resolved.count
                     )
                 }
                 .buttonStyle(.plain)
-                .contextMenu { playlistContextMenu(playlist, tracks: resolved) }
+                .flContextMenu { playlistContextMenu(playlist, tracks: resolved) }
             }
         }
     }
 
-    @ViewBuilder
-    private func playlistContextMenu(_ playlist: Playlist, tracks: [Track]) -> some View {
-        playbackContextMenuItems(for: tracks, player: player)
-        Divider()
-        Button("Rename") {
+    private func playlistContextMenu(_ playlist: Playlist, tracks: [Track]) -> [FLContextMenuItem] {
+        var items = playbackContextMenuItems(for: tracks, player: player)
+        items.append(.divider)
+        items.append(.button("Edit…") { editingPlaylistID = playlist.id })
+        items.append(.button("Rename") {
             renameText = playlist.name
             renamingPlaylistID = playlist.id
-        }
-        Divider()
-        Button("Delete", role: .destructive) {
+        })
+        items.append(.divider)
+        items.append(.button("Delete", destructive: true) {
             playlistStore.deletePlaylist(id: playlist.id)
-        }
+        })
+        return items
     }
 
     // MARK: - New Playlist Sheet
