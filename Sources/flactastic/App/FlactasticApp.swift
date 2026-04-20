@@ -31,12 +31,17 @@ struct FlactasticApp: App {
             .onAppear {
                 NSApplication.shared.setActivationPolicy(.regular)
                 NSApplication.shared.activate(ignoringOtherApps: true)
+                NSWindow.allowsAutomaticWindowTabbing = false
                 installSpacebarMonitor()
             }
         }
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             CommandGroup(replacing: .newItem) { }
+            CommandMenu("Collection") {
+                Button("Refresh Collection") { library.refreshLibrary() }
+                    .keyboardShortcut("r", modifiers: .command)
+            }
             CommandMenu("Playback") {
                 Button("Play / Pause") { player.engine.togglePlayPause() }
                     .keyboardShortcut(.space, modifiers: [])
