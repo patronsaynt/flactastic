@@ -87,6 +87,18 @@ final class LibraryStore {
         tracks = tracks.map { byID[$0.id] ?? $0 }
     }
 
+    /// Appends tracks that entered the library via the Import menu (rather
+    /// than a folder scan). Deduplicates by URL — if the same file path is
+    /// already known, the existing entry wins so its UUID (and any queue/
+    /// playlist membership) stays stable.
+    func addImportedTracks(_ imported: [Track]) {
+        guard !imported.isEmpty else { return }
+        let existing = Set(tracks.map { $0.url })
+        let fresh = imported.filter { !existing.contains($0.url) }
+        guard !fresh.isEmpty else { return }
+        tracks = (tracks + fresh).sortedForLibrary()
+    }
+
     func openFolder(_ url: URL) {
         scanTask?.cancel()
         metadataTask?.cancel()

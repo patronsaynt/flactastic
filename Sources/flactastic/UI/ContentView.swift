@@ -5,6 +5,7 @@ struct ContentView: View {
     @Environment(PlayerState.self) private var player
     @Environment(LibraryStore.self) private var library
     @Environment(PlaylistStore.self) private var playlistStore
+    @Environment(ImportCoordinator.self) private var importCoordinator
 
     @State private var selectedTab: AppTab = .collection
     @State private var showSettings = false
@@ -65,6 +66,16 @@ struct ContentView: View {
         .background(Theme.background)
         .sheet(isPresented: $showSettings) {
             SettingsView()
+        }
+        .sheet(item: Binding(
+            get: { importCoordinator.active },
+            set: { if $0 == nil { importCoordinator.dismiss() } }
+        )) { mode in
+            switch mode {
+            case .track:    ImportTrackView()
+            case .album:    ImportAlbumView()
+            case .playlist: ImportPlaylistView()
+            }
         }
         .onChange(of: library.scanState) { _, newState in
             if case .done = newState {

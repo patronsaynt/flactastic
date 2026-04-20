@@ -8,6 +8,7 @@ struct FlactasticApp: App {
     @State private var settings = Settings()
     @State private var playlistStore = PlaylistStore()
     @State private var metadataWriter = MetadataWriter()
+    @State private var importCoordinator = ImportCoordinator()
 
     var body: some Scene {
         WindowGroup {
@@ -17,6 +18,7 @@ struct FlactasticApp: App {
                     .environment(player)
                     .environment(settings)
                     .environment(playlistStore)
+                    .environment(importCoordinator)
                     .environment(\.metadataWriter, metadataWriter)
                     .frame(
                         width: max(1, geo.size.width / settings.uiScale),
@@ -41,6 +43,10 @@ struct FlactasticApp: App {
             CommandMenu("Collection") {
                 Button("Refresh Collection") { library.refreshLibrary() }
                     .keyboardShortcut("r", modifiers: .command)
+                Divider()
+                Button("Import Track…") { importCoordinator.begin(.track) }
+                Button("Import Album…") { importCoordinator.begin(.album) }
+                Button("Import Files as Playlist…") { importCoordinator.begin(.playlist) }
             }
             CommandMenu("Playback") {
                 Button("Play / Pause") { player.engine.togglePlayPause() }
