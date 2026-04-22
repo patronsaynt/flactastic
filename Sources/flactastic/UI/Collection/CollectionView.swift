@@ -209,12 +209,13 @@ struct CollectionView: View {
             columns: [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: Theme.Spacing.lg)],
             spacing: Theme.Spacing.xl
         ) {
-            ForEach(albums) { album in
+            ForEach(Array(albums.enumerated()), id: \.element.id) { index, album in
                 NavigationLink(value: album.id) {
                     AlbumCardView(album: album)
                 }
                 .buttonStyle(.plain)
                 .flContextMenu { albumContextMenu(album) }
+                .riseFadeIn(index: index)
             }
         }
     }
@@ -223,12 +224,13 @@ struct CollectionView: View {
 
     private func albumList(_ albums: [Album]) -> some View {
         LazyVStack(spacing: 0) {
-            ForEach(albums) { album in
+            ForEach(Array(albums.enumerated()), id: \.element.id) { index, album in
                 NavigationLink(value: album.id) {
                     AlbumRowView(album: album)
                 }
                 .buttonStyle(.plain)
                 .flContextMenu { albumContextMenu(album) }
+                .riseFadeIn(index: index)
             }
         }
     }

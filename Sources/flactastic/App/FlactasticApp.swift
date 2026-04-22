@@ -117,7 +117,12 @@ struct FlactasticApp: App {
             let url = URL(fileURLWithPath: path)
             if FileManager.default.fileExists(atPath: url.path) {
                 library.openFolder(url)
+                return
             }
+        }
+        // Nothing to scan — reveal the UI immediately so the empty state shows.
+        withAnimation(.easeOut(duration: 0.35)) {
+            library.hasCompletedInitialLoad = true
         }
     }
 }

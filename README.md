@@ -1,12 +1,12 @@
-# Project FLACtastic: Phase 3
+# Project FLACtastic: Beta
 
-## Feature enhancements
+## Visual overhaul
 
-FLACtastic now has core functionality in place. Phase 3 will expand on this functionality and increase customizability for users.
+With functionality working properly, visual enhancements will be made to the application.
 
 ### Timeline
 
-Phase 3 is now underway with deliverables iterating across design and development in parallel.
+Beta version 2 is now in progress.
 
 ---
 

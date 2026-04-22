@@ -12,14 +12,25 @@ struct ContentView: View {
 
     var body: some View {
         @Bindable var router = router
-        Group {
-            switch router.selectedTab {
-            case .collection:
-                CollectionView()
-            case .playlists:
-                PlaylistsTabView()
-            case .visualizer:
-                VisualizerView()
+        ZStack {
+            Group {
+                switch router.selectedTab {
+                case .collection:
+                    CollectionView()
+                case .playlists:
+                    PlaylistsTabView()
+                case .visualizer:
+                    VisualizerView()
+                }
+            }
+            .id(router.selectedTab)
+            .transition(.opacity)
+
+            // Opaque cover that hides the populating grid/list during the
+            // initial library scan. Fades out once the first load resolves.
+            if !library.hasCompletedInitialLoad {
+                LoadingCoverView()
+                    .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

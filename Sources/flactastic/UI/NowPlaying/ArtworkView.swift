@@ -11,15 +11,18 @@ struct ArtworkView: View {
     }
 
     var body: some View {
-        if let data, let nsImage = NSImage(data: data) {
-            Image(nsImage: nsImage)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(width: size, height: size)
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-        } else {
-            placeholder
+        Group {
+            if let data, let nsImage = NSImage(data: data) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: size, height: size)
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            } else {
+                placeholder
+            }
         }
+        .artworkShadow(size: size)
     }
 
     private var placeholder: some View {

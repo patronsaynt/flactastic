@@ -15,6 +15,7 @@ struct PlaylistCardView: View {
                 .aspectRatio(1, contentMode: .fit)
                 .overlay { playlistArtwork }
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                .artworkShadow(size: 180)
 
             Text(playlist.name)
                 .font(Theme.Font.bodyMedium)

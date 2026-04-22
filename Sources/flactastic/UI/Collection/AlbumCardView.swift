@@ -13,6 +13,7 @@ struct AlbumCardView: View {
                 .aspectRatio(1, contentMode: .fit)
                 .overlay { albumArtwork }
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                .artworkShadow(size: 180)
 
             Text(album.name)
                 .font(Theme.Font.bodyMedium)

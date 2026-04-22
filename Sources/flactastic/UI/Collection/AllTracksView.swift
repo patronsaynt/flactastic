@@ -136,7 +136,7 @@ struct AllTracksView: View {
     private var trackList: some View {
         ScrollView {
             LazyVStack(spacing: 2) {
-                ForEach(cachedVisible, id: \.id) { track in
+                ForEach(Array(cachedVisible.enumerated()), id: \.element.id) { index, track in
                     TrackRow(
                         track: track,
                         isPlaying: player.currentTrack?.id == track.id,
@@ -171,6 +171,7 @@ struct AllTracksView: View {
                         FLContextMenuItem.divider
                         addToPlaylistMenuItem(tracks: tracksForMenu)
                     }
+                    .riseFadeIn(index: index)
                 }
             }
             .padding(.bottom, 100)

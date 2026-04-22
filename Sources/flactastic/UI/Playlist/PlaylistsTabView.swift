@@ -130,7 +130,7 @@ struct PlaylistsTabView: View {
             columns: [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: Theme.Spacing.lg)],
             spacing: Theme.Spacing.xl
         ) {
-            ForEach(filteredPlaylists) { playlist in
+            ForEach(Array(filteredPlaylists.enumerated()), id: \.element.id) { index, playlist in
                 let resolved = playlistStore.resolvedTracks(for: playlist, in: library)
                 NavigationLink(value: playlist.id) {
                     PlaylistCardView(
@@ -141,6 +141,7 @@ struct PlaylistsTabView: View {
                 }
                 .buttonStyle(.plain)
                 .flContextMenu { playlistContextMenu(playlist, tracks: resolved) }
+                .riseFadeIn(index: index)
             }
         }
     }
@@ -149,7 +150,7 @@ struct PlaylistsTabView: View {
 
     private var playlistList: some View {
         LazyVStack(spacing: 0) {
-            ForEach(filteredPlaylists) { playlist in
+            ForEach(Array(filteredPlaylists.enumerated()), id: \.element.id) { index, playlist in
                 let resolved = playlistStore.resolvedTracks(for: playlist, in: library)
                 NavigationLink(value: playlist.id) {
                     PlaylistRowView(
@@ -160,6 +161,7 @@ struct PlaylistsTabView: View {
                 }
                 .buttonStyle(.plain)
                 .flContextMenu { playlistContextMenu(playlist, tracks: resolved) }
+                .riseFadeIn(index: index)
             }
         }
     }

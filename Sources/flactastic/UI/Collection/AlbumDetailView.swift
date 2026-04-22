@@ -150,6 +150,7 @@ struct AlbumDetailView: View {
                             ? Theme.surfaceElevated
                             : Color.clear
                     )
+                    .riseFadeIn(index: index)
 
                 if index < tracks.count - 1 {
                     Divider().foregroundStyle(Theme.divider)

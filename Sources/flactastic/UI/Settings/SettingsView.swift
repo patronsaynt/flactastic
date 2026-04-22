@@ -195,6 +195,7 @@ private struct AppearanceSettingsSection: View {
             settingsToggle("Light Mode", isOn: $settings.useLightMode)
             settingsToggle("List Layout", isOn: $settings.useListLayout)
             settingsToggle("Rounded Album Art", isOn: $settings.roundedArtwork)
+            settingsToggle("Artwork Drop Shadow", isOn: $settings.showArtworkShadow)
 
             Divider().foregroundStyle(Theme.divider)
 

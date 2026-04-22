@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 
 @Observable
 @MainActor
@@ -15,6 +16,12 @@ final class LibraryStore {
     var rootURL: URL?
     var tracks: [Track] = []
     var scanState: ScanState = .idle
+    /// Flips to `true` once the app's initial library load resolves (either a
+    /// successful scan, a failure, or a confirmed no-op when there's nothing
+    /// to scan). The UI gates its first paint on this so albums/tracks don't
+    /// visibly populate during startup. Only the *first* resolution sets it;
+    /// later manual refreshes do not reset it.
+    var hasCompletedInitialLoad: Bool = false
 
     var albums: [Album] {
         // Pass 1: group by normalized album name.
@@ -116,10 +123,17 @@ final class LibraryStore {
                 if Task.isCancelled { return }
                 self.tracks = cheap
                 self.scanState = .done(count: cheap.count)
+                // Note: we deliberately do NOT flip `hasCompletedInitialLoad`
+                // here. The cheap scan gives us URLs but no metadata, so
+                // album grouping would churn as artist/album tags stream in.
+                // The flag flips once `startMetadataLoad` finishes.
                 self.startMetadataLoad()
             } catch {
                 if Task.isCancelled { return }
                 self.scanState = .failed(String(describing: error))
+                withAnimation(.easeOut(duration: 0.35)) {
+                    self.hasCompletedInitialLoad = true
+                }
             }
         }
     }
@@ -220,6 +234,16 @@ final class LibraryStore {
                 // Re-sort after metadata is loaded so albums group properly.
                 if !Task.isCancelled {
                     self.tracks = self.tracks.sortedForLibrary()
+                }
+                // Reveal the UI only once metadata has streamed in, so the
+                // grid doesn't visibly reshuffle as album tags arrive. The
+                // withAnimation wraps the flag flip so LoadingCoverView's
+                // .transition(.opacity) is driven by an explicit animation
+                // rather than any ambient modifier on ContentView.
+                if !self.hasCompletedInitialLoad {
+                    withAnimation(.easeOut(duration: 0.35)) {
+                        self.hasCompletedInitialLoad = true
+                    }
                 }
             }
         }
