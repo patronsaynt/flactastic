@@ -157,21 +157,30 @@ struct FloatingPlayerBar: View {
 
             Button { player.engine.previous() } label: {
                 Image(systemName: "backward.fill")
-                    .font(.system(size: 12))
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(Theme.textPrimary)
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(MonochromeButtonStyle(size: 30))
+            .buttonStyle(.plain)
 
             Button { player.engine.togglePlayPause() } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 14))
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(Theme.textPrimary)
+                    .frame(width: 42, height: 42)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(PrimaryMonochromeButtonStyle(size: 42))
+            .buttonStyle(.plain)
 
             Button { player.next() } label: {
                 Image(systemName: "forward.fill")
-                    .font(.system(size: 12))
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(Theme.textPrimary)
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(MonochromeButtonStyle(size: 30))
+            .buttonStyle(.plain)
 
             Button {
                 switch player.repeatMode {

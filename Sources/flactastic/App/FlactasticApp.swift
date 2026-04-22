@@ -37,6 +37,10 @@ struct FlactasticApp: App {
                 NSApplication.shared.activate(ignoringOtherApps: true)
                 NSWindow.allowsAutomaticWindowTabbing = false
                 installSpacebarMonitor()
+                applyAppearance(useLight: settings.useLightMode)
+            }
+            .onChange(of: settings.useLightMode) { _, useLight in
+                applyAppearance(useLight: useLight)
             }
         }
         .windowToolbarStyle(.unified(showsTitle: false))
@@ -107,6 +111,13 @@ struct FlactasticApp: App {
             player.engine.togglePlayPause()
             return nil // consume the event
         }
+    }
+
+    /// Force the app-wide NSAppearance so AppKit-backed surfaces (MenuBarExtra,
+    /// Picker menus, NSColor dynamic providers) flip alongside SwiftUI's
+    /// `.preferredColorScheme`.
+    private func applyAppearance(useLight: Bool) {
+        NSApplication.shared.appearance = NSAppearance(named: useLight ? .aqua : .darkAqua)
     }
 
     @MainActor

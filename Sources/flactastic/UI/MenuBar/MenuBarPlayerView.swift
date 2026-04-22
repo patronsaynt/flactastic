@@ -70,21 +70,30 @@ struct MenuBarPlayerView: View {
 
             Button { player.engine.previous() } label: {
                 Image(systemName: "backward.fill")
-                    .font(.system(size: 14))
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(Theme.textPrimary)
+                    .frame(width: 34, height: 34)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(MonochromeButtonStyle(size: 34))
+            .buttonStyle(.plain)
 
             Button { player.engine.togglePlayPause() } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 16))
+                    .font(.system(size: 26, weight: .medium))
+                    .foregroundStyle(Theme.textPrimary)
+                    .frame(width: 46, height: 46)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(PrimaryMonochromeButtonStyle(size: 46))
+            .buttonStyle(.plain)
 
             Button { player.next() } label: {
                 Image(systemName: "forward.fill")
-                    .font(.system(size: 14))
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(Theme.textPrimary)
+                    .frame(width: 34, height: 34)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(MonochromeButtonStyle(size: 34))
+            .buttonStyle(.plain)
 
             Spacer()
         }

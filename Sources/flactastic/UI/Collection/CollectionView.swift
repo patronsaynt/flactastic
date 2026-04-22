@@ -5,6 +5,7 @@ struct CollectionView: View {
     @Environment(PlayerState.self) private var player
     @Environment(Settings.self) private var settings
     @Environment(NavigationRouter.self) private var router
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var searchText = ""
     @State private var sortOption: CollectionSortOption = .album
@@ -156,17 +157,20 @@ struct CollectionView: View {
 
             Spacer()
 
-            if contentMode == .albums {
-                Picker("Sort", selection: $sortOption) {
-                    ForEach(CollectionSortOption.allCases) { option in
-                        Text(option.rawValue).tag(option)
+            HStack(spacing: Theme.Spacing.md) {
+                if contentMode == .albums {
+                    Picker("Sort", selection: $sortOption) {
+                        ForEach(CollectionSortOption.allCases) { option in
+                            Text(option.rawValue).tag(option)
+                        }
                     }
+                    .pickerStyle(.menu)
+                    .tint(Theme.textSecondary)
+                    .id(colorScheme)
                 }
-                .pickerStyle(.menu)
-                .tint(Theme.textSecondary)
-            }
 
-            SearchBarView(searchText: $searchText)
+                SearchBarView(searchText: $searchText)
+            }
         }
     }
 
