@@ -10,6 +10,7 @@ struct AllTracksView: View {
     @Environment(PlayerState.self) private var player
     @Environment(LibraryStore.self) private var library
     @Environment(PlaylistStore.self) private var playlistStore
+    @Environment(NavigationRouter.self) private var router
 
     let tracks: [Track]
     let searchText: String
@@ -153,6 +154,12 @@ struct AllTracksView: View {
                     .flContextMenu {
                         let tracksForMenu = contextTracks(primary: track)
                         playbackContextMenuItems(for: tracksForMenu, player: player)
+                        FLContextMenuItem.divider
+                        FLContextMenuItem.button("View Album", systemImage: "square.grid.2x2") {
+                            if let albumID = library.album(for: track)?.id {
+                                router.navigateToAlbum(id: albumID)
+                            }
+                        }
                         FLContextMenuItem.divider
                         if tracksForMenu.count >= 2 {
                             FLContextMenuItem.button("Merge into Album…") {

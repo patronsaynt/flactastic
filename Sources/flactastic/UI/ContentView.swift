@@ -6,13 +6,14 @@ struct ContentView: View {
     @Environment(LibraryStore.self) private var library
     @Environment(PlaylistStore.self) private var playlistStore
     @Environment(ImportCoordinator.self) private var importCoordinator
+    @Environment(NavigationRouter.self) private var router
 
-    @State private var selectedTab: AppTab = .collection
     @State private var showSettings = false
 
     var body: some View {
+        @Bindable var router = router
         Group {
-            switch selectedTab {
+            switch router.selectedTab {
             case .collection:
                 CollectionView()
             case .playlists:
@@ -27,7 +28,7 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
-                TabBarView(selectedTab: $selectedTab)
+                TabBarView(selectedTab: $router.selectedTab)
             }
 
             ToolbarItem(placement: .primaryAction) {

@@ -68,6 +68,10 @@ final class LibraryStore {
     private var scanTask: Task<Void, Never>?
     private var metadataTask: Task<Void, Never>?
 
+    func album(for track: Track) -> Album? {
+        albums.first { $0.tracks.contains { $0.id == track.id } }
+    }
+
     /// Replaces the stored `Track` matching `id` with `updated`.
     /// Because `albums` is a computed property, callers in album-detail views
     /// and the collection grid will automatically see the new metadata.

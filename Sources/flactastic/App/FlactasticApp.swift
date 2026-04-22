@@ -9,6 +9,7 @@ struct FlactasticApp: App {
     @State private var playlistStore = PlaylistStore()
     @State private var metadataWriter = MetadataWriter()
     @State private var importCoordinator = ImportCoordinator()
+    @State private var router = NavigationRouter()
 
     var body: some Scene {
         WindowGroup {
@@ -19,6 +20,7 @@ struct FlactasticApp: App {
                     .environment(settings)
                     .environment(playlistStore)
                     .environment(importCoordinator)
+                    .environment(router)
                     .environment(\.metadataWriter, metadataWriter)
                     .frame(
                         width: max(1, geo.size.width / settings.uiScale),

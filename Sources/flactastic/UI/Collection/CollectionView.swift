@@ -4,6 +4,7 @@ struct CollectionView: View {
     @Environment(LibraryStore.self) private var library
     @Environment(PlayerState.self) private var player
     @Environment(Settings.self) private var settings
+    @Environment(NavigationRouter.self) private var router
 
     @State private var searchText = ""
     @State private var sortOption: CollectionSortOption = .album
@@ -66,7 +67,8 @@ struct CollectionView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        @Bindable var router = router
+        NavigationStack(path: $router.collectionPath) {
             VStack(spacing: 0) {
                 // Header is always pinned above the content area.
                 header

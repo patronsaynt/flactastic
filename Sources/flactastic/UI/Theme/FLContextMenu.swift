@@ -446,29 +446,65 @@ private struct FLRightClickCatcher: NSViewRepresentable {
         nsView.itemsProvider = itemsProvider
     }
 
+    /// Zero-interference right-click catcher. The view is fully transparent to
+    /// `hitTest` (always returns `nil`), so it never participates in AppKit's
+    /// mouse-event routing — this is critical inside `List` rows, where any
+    /// NSView overlay that could be hit-tested breaks the table's drag-to-
+    /// reorder machinery. Right-clicks are instead picked up via a local
+    /// NSEvent monitor that checks whether the click falls inside our bounds.
     final class RightClickView: NSView {
         var itemsProvider: (() -> [FLContextMenuItem])?
+        private var monitor: Any?
 
-        override func rightMouseDown(with event: NSEvent) {
-            guard let provider = itemsProvider else { return }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window != nil {
+                installMonitorIfNeeded()
+            } else {
+                removeMonitor()
+            }
+        }
+
+        private func installMonitorIfNeeded() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+                self?.handleRightClick(event) ?? event
+            }
+        }
+
+        private func removeMonitor() {
+            if let m = monitor {
+                NSEvent.removeMonitor(m)
+                monitor = nil
+            }
+        }
+
+        // Cleanup is handled by `viewDidMoveToWindow` when the view leaves its
+        // window. A deinit-based cleanup would need to access `monitor` from a
+        // nonisolated context, which Swift 6 rejects — and isn't needed since
+        // the view is always removed from its window before deallocation.
+
+        private func handleRightClick(_ event: NSEvent) -> NSEvent? {
+            // Only react to clicks in our own window.
+            guard let window = self.window, event.window === window else { return event }
+            // Convert to our coordinate space and bounds-test.
+            let inWindow = event.locationInWindow
+            let inSelf = convert(inWindow, from: nil)
+            guard bounds.contains(inSelf) else { return event }
+            guard let provider = itemsProvider else { return event }
             let items = provider()
-            guard !items.isEmpty else { return }
+            guard !items.isEmpty else { return event }
             let screenPoint = NSEvent.mouseLocation
             Task { @MainActor in
                 FLContextMenuWindow.present(items: items, at: screenPoint)
             }
+            return nil // consume
         }
 
-        // Let left-clicks pass through to the view below. Only claim the view
-        // when processing a right-click event.
-        override func hitTest(_ point: NSPoint) -> NSView? {
-            switch NSApp.currentEvent?.type {
-            case .rightMouseDown, .rightMouseUp, .rightMouseDragged:
-                return self
-            default:
-                return nil
-            }
-        }
+        // Never participate in hit-testing — makes this view invisible to
+        // every mouse event path (clicks, drags, tracking), so `List`'s
+        // drag-to-reorder and other AppKit gestures are unaffected.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
         override var acceptsFirstResponder: Bool { false }
     }

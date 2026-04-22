@@ -2,6 +2,18 @@ import SwiftUI
 
 struct QueuePanelView: View {
     @Environment(PlayerState.self) private var player
+    @Environment(LibraryStore.self) private var library
+    @Environment(NavigationRouter.self) private var router
+
+    private func viewAlbumMenu(for track: Track) -> [FLContextMenuItem] {
+        [
+            .button("View Album", systemImage: "square.grid.2x2") {
+                if let albumID = library.album(for: track)?.id {
+                    router.navigateToAlbum(id: albumID)
+                }
+            }
+        ]
+    }
 
     /// All upcoming entries (engine indices > currentIndex).
     private var upcoming: [(track: Track, engineIndex: Int)] {
@@ -18,6 +30,9 @@ struct QueuePanelView: View {
     private var sourceUpcoming: [(track: Track, engineIndex: Int)] {
         upcoming.filter { !player.isUserQueued($0.track) }
     }
+
+    @State private var draggingTrackID: UUID? = nil
+    @State private var dropTargetTrackID: UUID? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -41,75 +56,82 @@ struct QueuePanelView: View {
     // MARK: - Queue list
 
     private var queueList: some View {
-        // Base engine index for the source section — immediately after queued items.
-        let queuedBase = player.currentIndex + 1
-        let sourceBase = queuedBase + queuedUpcoming.count
         let sourceTitle = player.playbackSource.map { "Next from: \($0)" } ?? "Up Next"
 
-        return List {
-            // ── Now Playing ────────────────────────────────────────────────
-            if let track = player.currentTrack {
-                Section {
-                    NowPlayingRow(track: track)
-                        .listRowBackground(Theme.surfaceElevated)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets())
-                        .moveDisabled(true)
-                } header: {
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
+                // ── Now Playing ────────────────────────────────────────────
+                if let track = player.currentTrack {
                     listSectionHeader("Now Playing")
+                    NowPlayingRow(track: track)
+                        .background(Theme.surfaceElevated)
+                        .flContextMenu { viewAlbumMenu(for: track) }
                 }
-            }
 
-            // ── Next in Queue (user-queued tracks, yellow dot) ─────────────
-            if !queuedUpcoming.isEmpty {
-                Section {
-                    ForEach(queuedUpcoming, id: \.track.id) { item in
-                        QueueTrackRow(track: item.track, showQueuedDot: true)
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets())
-                            .contentShape(Rectangle())
-                            .onTapGesture(count: 2) {
-                                player.jumpTo(index: item.engineIndex)
-                            }
-                    }
-                    .onMove { source, destination in
-                        player.moveQueueItems(
-                            from: source, to: destination,
-                            baseEngineIndex: queuedBase
-                        )
-                    }
-                } header: {
+                // ── Next in Queue (user-queued tracks, yellow dot) ─────────
+                if !queuedUpcoming.isEmpty {
                     listSectionHeader("Next in Queue")
+                    ForEach(queuedUpcoming, id: \.track.id) { item in
+                        draggableQueueRow(item: item, showQueuedDot: true)
+                    }
                 }
-            }
 
-            // ── Next from Source ───────────────────────────────────────────
-            if !sourceUpcoming.isEmpty {
-                Section {
-                    ForEach(sourceUpcoming, id: \.track.id) { item in
-                        QueueTrackRow(track: item.track, showQueuedDot: false)
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets())
-                            .contentShape(Rectangle())
-                            .onTapGesture(count: 2) {
-                                player.jumpTo(index: item.engineIndex)
-                            }
-                    }
-                    .onMove { source, destination in
-                        player.moveQueueItems(
-                            from: source, to: destination,
-                            baseEngineIndex: sourceBase
-                        )
-                    }
-                } header: {
+                // ── Next from Source ───────────────────────────────────────
+                if !sourceUpcoming.isEmpty {
                     listSectionHeader(sourceTitle)
+                    ForEach(sourceUpcoming, id: \.track.id) { item in
+                        draggableQueueRow(item: item, showQueuedDot: false)
+                    }
                 }
             }
         }
-        .listStyle(.plain)
         .scrollContentBackground(.hidden)
+    }
+
+    @ViewBuilder
+    private func draggableQueueRow(item: (track: Track, engineIndex: Int),
+                                   showQueuedDot: Bool) -> some View {
+        let trackID = item.track.id
+        let isDropTarget = dropTargetTrackID == trackID && draggingTrackID != trackID
+
+        QueueTrackRow(track: item.track, showQueuedDot: showQueuedDot)
+            .opacity(draggingTrackID == trackID ? 0.4 : 1.0)
+            .overlay(alignment: .top) {
+                // Insertion bar shown above the hovered row.
+                if isDropTarget {
+                    Rectangle()
+                        .fill(Theme.accent)
+                        .frame(height: 2)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) {
+                player.jumpTo(index: item.engineIndex)
+            }
+            .flContextMenu { viewAlbumMenu(for: item.track) }
+            .draggable(trackID.uuidString) {
+                // Drag preview — a shrunken row clone.
+                QueueTrackRow(track: item.track, showQueuedDot: showQueuedDot)
+                    .frame(width: 280)
+                    .background(Theme.surfaceElevated)
+                    .cornerRadius(Theme.Radius.sm)
+                    .onAppear { draggingTrackID = trackID }
+                    .onDisappear {
+                        draggingTrackID = nil
+                        dropTargetTrackID = nil
+                    }
+            }
+            .dropDestination(for: String.self) { items, _ in
+                dropTargetTrackID = nil
+                draggingTrackID = nil
+                guard let s = items.first, let srcID = UUID(uuidString: s) else {
+                    return false
+                }
+                player.moveTrack(withID: srcID, before: trackID)
+                return true
+            } isTargeted: { hovering in
+                dropTargetTrackID = hovering ? trackID : (dropTargetTrackID == trackID ? nil : dropTargetTrackID)
+            }
     }
 
     // MARK: - Header

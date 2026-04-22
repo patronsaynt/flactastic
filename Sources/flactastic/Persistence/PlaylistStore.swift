@@ -105,6 +105,22 @@ final class PlaylistStore {
         save()
     }
 
+    /// Move the entry identified by `sourceID` to immediately before the entry
+    /// identified by `destinationID`. Used by drag-and-drop reordering in the
+    /// playlist detail view.
+    func moveEntry(id sourceID: UUID, before destinationID: UUID, in playlistID: UUID) {
+        guard let pIdx = playlists.firstIndex(where: { $0.id == playlistID }) else { return }
+        var entries = playlists[pIdx].entries
+        guard let srcIdx = entries.firstIndex(where: { $0.id == sourceID }),
+              let dstIdx = entries.firstIndex(where: { $0.id == destinationID }),
+              srcIdx != dstIdx else { return }
+        let item = entries.remove(at: srcIdx)
+        let insertIdx = srcIdx < dstIdx ? dstIdx - 1 : dstIdx
+        entries.insert(item, at: insertIdx)
+        playlists[pIdx].entries = entries
+        save()
+    }
+
     // MARK: - Resolution
 
     /// Resolves playlist entries to live Track objects from the library.

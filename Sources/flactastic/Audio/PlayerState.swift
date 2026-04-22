@@ -82,11 +82,19 @@ final class PlayerState {
 
         if !wasShuffled {
             // Turning ON: snapshot the full queue for later restoration, then
-            // rebuild as [current] + [user-queued preserved] + [shuffled source].
+            // rebuild as [current] + [user-queued preserved] + [shuffled rest].
+            // The "rest" includes both upcoming source tracks AND tracks that
+            // already played before the current one — keeping them in the
+            // queue (just at the back of the shuffled section) ensures
+            // repeat-all wraps over the entire album/playlist, not only the
+            // tail that was upcoming when shuffle was toggled on.
             originalQueue = currentQueue
-            var shuffledSource = sourceUpcoming
-            shuffledSource.shuffle()
-            let newQueue = [playing] + userUpcoming + shuffledSource
+            let playedSource = curIdx > 0
+                ? Array(currentQueue[0..<curIdx]).filter { !userQueuedTrackIDs.contains($0.id) }
+                : []
+            var shuffledRest = sourceUpcoming + playedSource
+            shuffledRest.shuffle()
+            let newQueue = [playing] + userUpcoming + shuffledRest
             // reorderQueue rearranges without flushing — playback continues uninterrupted.
             engine.reorderQueue(newQueue, currentIndex: 0)
         } else {
@@ -208,6 +216,32 @@ final class PlayerState {
         let engineDest = destination + baseEngineIndex
 
         q.move(fromOffsets: engineSource, toOffset: engineDest)
+        engine.reorderQueue(q, currentIndex: curIdx)
+    }
+
+    /// Move the track identified by `sourceID` to immediately before the track
+    /// identified by `destinationID`. Used by the queue panel's drag-to-reorder
+    /// drop targets. Both tracks must already exist in the engine queue.
+    func moveTrack(withID sourceID: UUID, before destinationID: UUID) {
+        var q = engine.queue
+        guard let srcIdx = q.firstIndex(where: { $0.id == sourceID }),
+              let dstIdx = q.firstIndex(where: { $0.id == destinationID }),
+              srcIdx != dstIdx else { return }
+        let item = q.remove(at: srcIdx)
+        let insertIdx = srcIdx < dstIdx ? dstIdx - 1 : dstIdx
+        q.insert(item, at: insertIdx)
+
+        // Fix up the engine's current-index pointer so the same audio keeps
+        // playing after the reorder. The current track itself is never
+        // draggable from the UI (Now Playing row is moveDisabled), but adjust
+        // defensively in case the move shifts it.
+        var curIdx = engine.currentIndex
+        if srcIdx == curIdx {
+            curIdx = insertIdx
+        } else {
+            if srcIdx < curIdx { curIdx -= 1 }
+            if insertIdx <= curIdx { curIdx += 1 }
+        }
         engine.reorderQueue(q, currentIndex: curIdx)
     }
 

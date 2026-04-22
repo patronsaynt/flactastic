@@ -6,11 +6,14 @@ struct PlaylistDetailView: View {
     @Environment(PlaylistStore.self) private var playlistStore
     @Environment(LibraryStore.self) private var library
     @Environment(PlayerState.self) private var player
+    @Environment(NavigationRouter.self) private var router
 
     @State private var isEditingName = false
     @State private var editedName = ""
     @State private var selection: Set<UUID> = []
     @State private var showEditor = false
+    @State private var draggingEntryID: UUID? = nil
+    @State private var dropTargetEntryID: UUID? = nil
 
     private var playlist: Playlist? {
         playlistStore.playlists.first { $0.id == playlistID }
@@ -136,45 +139,90 @@ struct PlaylistDetailView: View {
     private func trackList(_ playlist: Playlist) -> some View {
         let tracksByPath = buildTrackLookup()
 
-        List(selection: $selection) {
+        // SwiftUI's List `.onMove` is unreliable on macOS with `.listStyle(.plain)`,
+        // so reordering is implemented with `.draggable` / `.dropDestination`
+        // on a LazyVStack instead.
+        LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(Array(playlist.entries.enumerated()), id: \.element.id) { index, entry in
                 if let track = resolveEntry(entry, lookup: tracksByPath) {
-                    TrackRow(track: track, isPlaying: player.currentTrack?.id == track.id, displayNumber: index + 1, showDragHandle: true)
-                        .contentShape(Rectangle())
-                        .onTapGesture(count: 2) {
-                            playFromEntry(entry, in: playlist)
-                        }
-                        .flContextMenu {
-                            contextMenuItems(for: entry, track: track)
-                        }
-                        .listRowBackground(
-                            player.currentTrack?.id == track.id
-                                ? Theme.surfaceElevated
-                                : (selection.contains(entry.id)
-                                   ? Theme.surfaceElevated.opacity(0.6)
-                                   : Color.clear)
-                        )
-                        .listRowSeparator(.hidden)
-                        .tag(entry.id)
+                    draggablePlaylistRow(
+                        entry: entry,
+                        track: track,
+                        index: index,
+                        playlist: playlist
+                    )
                 }
             }
-            .onMove { source, destination in
-                playlistStore.moveEntries(from: source, to: destination, in: playlistID)
-            }
-            .onDelete { offsets in
-                playlistStore.removeEntries(at: offsets, from: playlistID)
-                selection = []
-            }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .frame(minHeight: CGFloat(playlist.entries.count) * 48)
+    }
+
+    @ViewBuilder
+    private func draggablePlaylistRow(entry: PlaylistEntry,
+                                      track: Track,
+                                      index: Int,
+                                      playlist: Playlist) -> some View {
+        let entryID = entry.id
+        let isDropTarget = dropTargetEntryID == entryID && draggingEntryID != entryID
+        let rowBackground: Color = player.currentTrack?.id == track.id
+            ? Theme.surfaceElevated
+            : (selection.contains(entryID) ? Theme.surfaceElevated.opacity(0.6) : Color.clear)
+
+        TrackRow(track: track,
+                 isPlaying: player.currentTrack?.id == track.id,
+                 displayNumber: index + 1,
+                 showDragHandle: true)
+            .padding(.vertical, 2)
+            .background(rowBackground)
+            .opacity(draggingEntryID == entryID ? 0.4 : 1.0)
+            .overlay(alignment: .top) {
+                if isDropTarget {
+                    Rectangle()
+                        .fill(Theme.accent)
+                        .frame(height: 2)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) {
+                playFromEntry(entry, in: playlist)
+            }
+            .flContextMenu { contextMenuItems(for: entry, track: track) }
+            .draggable(entryID.uuidString) {
+                TrackRow(track: track,
+                         isPlaying: false,
+                         displayNumber: index + 1,
+                         showDragHandle: true)
+                    .frame(width: 360)
+                    .background(Theme.surfaceElevated)
+                    .cornerRadius(Theme.Radius.sm)
+                    .onAppear { draggingEntryID = entryID }
+                    .onDisappear {
+                        draggingEntryID = nil
+                        dropTargetEntryID = nil
+                    }
+            }
+            .dropDestination(for: String.self) { items, _ in
+                dropTargetEntryID = nil
+                draggingEntryID = nil
+                guard let s = items.first, let srcID = UUID(uuidString: s) else {
+                    return false
+                }
+                playlistStore.moveEntry(id: srcID, before: entryID, in: playlistID)
+                return true
+            } isTargeted: { hovering in
+                dropTargetEntryID = hovering ? entryID : (dropTargetEntryID == entryID ? nil : dropTargetEntryID)
+            }
     }
 
     // MARK: - Context Menu
 
     private func contextMenuItems(for entry: PlaylistEntry, track: Track) -> [FLContextMenuItem] {
         var items = playbackContextMenuItems(for: [track], player: player)
+        items.append(.divider)
+        items.append(.button("View Album", systemImage: "square.grid.2x2") {
+            if let albumID = library.album(for: track)?.id {
+                router.navigateToAlbum(id: albumID)
+            }
+        })
         items.append(.divider)
 
         let selectedCount = selection.contains(entry.id) ? selection.count : 0

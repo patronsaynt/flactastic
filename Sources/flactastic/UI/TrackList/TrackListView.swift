@@ -4,6 +4,7 @@ struct TrackListView: View {
     @Environment(LibraryStore.self) private var library
     @Environment(PlayerState.self) private var player
     @Environment(PlaylistStore.self) private var playlistStore
+    @Environment(NavigationRouter.self) private var router
 
     @State private var editingTrack: Track? = nil
 
@@ -19,6 +20,12 @@ struct TrackListView: View {
                     }
                     .flContextMenu {
                         playbackContextMenuItems(for: [track], player: player)
+                        FLContextMenuItem.divider
+                        FLContextMenuItem.button("View Album", systemImage: "square.grid.2x2") {
+                            if let albumID = library.album(for: track)?.id {
+                                router.navigateToAlbum(id: albumID)
+                            }
+                        }
                         FLContextMenuItem.divider
                         FLContextMenuItem.button("Edit...") { editingTrack = track }
                         FLContextMenuItem.divider

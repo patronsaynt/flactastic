@@ -1,10 +1,11 @@
 import SwiftUI
 
 struct FloatingPlayerBar: View {
-    @Environment(PlayerState.self)   private var player
-    @Environment(Settings.self)      private var settings
-    @Environment(PlaylistStore.self) private var playlistStore
-    @Environment(LibraryStore.self)  private var library
+    @Environment(PlayerState.self)       private var player
+    @Environment(Settings.self)          private var settings
+    @Environment(PlaylistStore.self)     private var playlistStore
+    @Environment(LibraryStore.self)      private var library
+    @Environment(NavigationRouter.self)  private var router
 
     @State private var showingNewPlaylistAlert = false
     @State private var newPlaylistName = ""
@@ -64,6 +65,13 @@ struct FloatingPlayerBar: View {
                     }
                 }
                 .frame(maxWidth: 150, alignment: .leading)
+            }
+            .flContextMenu {
+                FLContextMenuItem.button("View Album", systemImage: "square.grid.2x2") {
+                    if let albumID = library.album(for: track)?.id {
+                        router.navigateToAlbum(id: albumID)
+                    }
+                }
             }
         }
     }
