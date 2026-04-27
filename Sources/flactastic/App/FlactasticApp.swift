@@ -14,19 +14,29 @@ struct FlactasticApp: App {
     var body: some Scene {
         WindowGroup {
             GeometryReader { geo in
-                ContentView()
-                    .environment(library)
-                    .environment(player)
-                    .environment(settings)
-                    .environment(playlistStore)
-                    .environment(importCoordinator)
-                    .environment(router)
-                    .environment(\.metadataWriter, metadataWriter)
-                    .frame(
-                        width: max(1, geo.size.width / settings.uiScale),
-                        height: max(1, geo.size.height / settings.uiScale)
-                    )
-                    .scaleEffect(settings.uiScale, anchor: .topLeading)
+                Group {
+                    if settings.hasCompletedOnboarding {
+                        ContentView()
+                            .environment(library)
+                            .environment(player)
+                            .environment(settings)
+                            .environment(playlistStore)
+                            .environment(importCoordinator)
+                            .environment(router)
+                            .environment(\.metadataWriter, metadataWriter)
+                            .transition(.opacity)
+                    } else {
+                        OnboardingView()
+                            .environment(library)
+                            .environment(settings)
+                            .transition(.opacity)
+                    }
+                }
+                .frame(
+                    width: max(1, geo.size.width / settings.uiScale),
+                    height: max(1, geo.size.height / settings.uiScale)
+                )
+                .scaleEffect(settings.uiScale, anchor: .topLeading)
             }
             .preferredColorScheme(settings.useLightMode ? .light : .dark)
             .frame(minWidth: 1000, minHeight: 650)

@@ -47,6 +47,10 @@ final class Settings {
         didSet { UserDefaults.standard.set(fadeAnimationDirection.rawValue, forKey: "flactastic.fadeAnimationDirection") }
     }
 
+    var hasCompletedOnboarding: Bool {
+        didSet { UserDefaults.standard.set(hasCompletedOnboarding, forKey: "flactastic.hasCompletedOnboarding") }
+    }
+
     init() {
         lastRootPath = UserDefaults.standard.string(forKey: "flactastic.lastRootPath")
         let stored = UserDefaults.standard.object(forKey: "flactastic.volume")
@@ -65,6 +69,7 @@ final class Settings {
         fadeAnimationsEnabled = (storedFade as? Bool) ?? true
         let storedDir = UserDefaults.standard.string(forKey: "flactastic.fadeAnimationDirection")
         fadeAnimationDirection = storedDir.flatMap(FadeAnimationDirection.init(rawValue:)) ?? .up
+        hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "flactastic.hasCompletedOnboarding")
     }
 }
 
