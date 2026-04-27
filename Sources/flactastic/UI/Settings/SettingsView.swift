@@ -32,17 +32,17 @@ struct SettingsView: View {
             SettingsTabBar(selectedTab: $selectedTab)
 
             // Tab content
-            Group {
-                switch selectedTab {
-                case .config:
-                    ConfigSettingsSection(openFolder: openFolder)
-                case .appearance:
-                    AppearanceSettingsSection()
+            ScrollView(.vertical, showsIndicators: false) {
+                Group {
+                    switch selectedTab {
+                    case .config:
+                        ConfigSettingsSection(openFolder: openFolder)
+                    case .appearance:
+                        AppearanceSettingsSection()
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-
-            Spacer(minLength: 0)
         }
         .padding(Theme.Spacing.xl)
         .frame(width: 520, height: 380)
@@ -196,6 +196,22 @@ private struct AppearanceSettingsSection: View {
             settingsToggle("List Layout", isOn: $settings.useListLayout)
             settingsToggle("Rounded Album Art", isOn: $settings.roundedArtwork)
             settingsToggle("Artwork Drop Shadow", isOn: $settings.showArtworkShadow)
+            settingsToggle("Fade Animations", isOn: $settings.fadeAnimationsEnabled)
+
+            HStack {
+                Text("Fade Direction")
+                    .font(Theme.Font.body)
+                    .foregroundStyle(Theme.textSecondary)
+                Spacer()
+                Picker("", selection: $settings.fadeAnimationDirection) {
+                    ForEach(FadeAnimationDirection.allCases) { dir in
+                        Text(dir.label).tag(dir)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .disabled(!settings.fadeAnimationsEnabled)
+            }
 
             Divider().foregroundStyle(Theme.divider)
 

@@ -1,19 +1,41 @@
 import SwiftUI
 
 struct RiseFadeIn: ViewModifier {
+    @Environment(Settings.self) private var settings
     let delay: Double
     @State private var appeared = false
 
+    private var offsetX: CGFloat {
+        guard !appeared else { return 0 }
+        switch settings.fadeAnimationDirection {
+        case .up: return 0
+        case .leftToRight: return -10
+        case .rightToLeft: return 10
+        }
+    }
+
+    private var offsetY: CGFloat {
+        guard !appeared else { return 0 }
+        switch settings.fadeAnimationDirection {
+        case .up: return 10
+        case .leftToRight, .rightToLeft: return 0
+        }
+    }
+
     func body(content: Content) -> some View {
-        content
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 10)
-            .onAppear {
-                guard !appeared else { return }
-                withAnimation(.easeOut(duration: 0.28).delay(delay)) {
-                    appeared = true
+        if !settings.fadeAnimationsEnabled {
+            content
+        } else {
+            content
+                .opacity(appeared ? 1 : 0)
+                .offset(x: offsetX, y: offsetY)
+                .onAppear {
+                    guard !appeared else { return }
+                    withAnimation(.easeOut(duration: 0.28).delay(delay)) {
+                        appeared = true
+                    }
                 }
-            }
+        }
     }
 }
 

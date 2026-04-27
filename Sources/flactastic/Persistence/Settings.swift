@@ -39,6 +39,14 @@ final class Settings {
         didSet { UserDefaults.standard.set(showArtworkShadow, forKey: "flactastic.showArtworkShadow") }
     }
 
+    var fadeAnimationsEnabled: Bool {
+        didSet { UserDefaults.standard.set(fadeAnimationsEnabled, forKey: "flactastic.fadeAnimationsEnabled") }
+    }
+
+    var fadeAnimationDirection: FadeAnimationDirection {
+        didSet { UserDefaults.standard.set(fadeAnimationDirection.rawValue, forKey: "flactastic.fadeAnimationDirection") }
+    }
+
     init() {
         lastRootPath = UserDefaults.standard.string(forKey: "flactastic.lastRootPath")
         let stored = UserDefaults.standard.object(forKey: "flactastic.volume")
@@ -53,5 +61,25 @@ final class Settings {
         roundedArtwork = (storedRA as? Bool) ?? true
         let storedShadow = UserDefaults.standard.object(forKey: "flactastic.showArtworkShadow")
         showArtworkShadow = (storedShadow as? Bool) ?? true
+        let storedFade = UserDefaults.standard.object(forKey: "flactastic.fadeAnimationsEnabled")
+        fadeAnimationsEnabled = (storedFade as? Bool) ?? true
+        let storedDir = UserDefaults.standard.string(forKey: "flactastic.fadeAnimationDirection")
+        fadeAnimationDirection = storedDir.flatMap(FadeAnimationDirection.init(rawValue:)) ?? .up
+    }
+}
+
+enum FadeAnimationDirection: String, CaseIterable, Identifiable {
+    case up
+    case leftToRight
+    case rightToLeft
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .up: return "Upward"
+        case .leftToRight: return "Left to Right"
+        case .rightToLeft: return "Right to Left"
+        }
     }
 }
