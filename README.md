@@ -1,12 +1,12 @@
 # Project FLACtastic: Beta
 
-## Visual overhaul
+## Beta v2.1
 
-With functionality working properly, visual enhancements will be made to the application.
+Core functionality and visual design are both complete. Beta testing is now needed to ensure they work smoothly.
 
-### Timeline
+### Installation
 
-Beta version 2 is now in progress.
+Currently, FLACtastic is only available as a MacOS application. It can be installed by opening the dmg and dragging FLACtastic into your Applications folder.
 
 ---
 
