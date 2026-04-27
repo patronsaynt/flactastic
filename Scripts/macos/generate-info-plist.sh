@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Generates Info.plist for the FLACtastic.app bundle.
+# Usage: generate-info-plist.sh <output_path> <version> <build_number>
+
+set -euo pipefail
+
+OUTPUT_PATH="${1:?Output path required}"
+VERSION="${2:?Version required}"
+BUILD_NUMBER="${3:-1}"
+
+# Strip pre-release suffix for CFBundleShortVersionString (Apple expects MAJOR.MINOR.PATCH)
+SHORT_VERSION="${VERSION%%-*}"
+
+cat > "$OUTPUT_PATH" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>FLACtastic</string>
+    <key>CFBundleExecutable</key>
+    <string>flactastic</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.flactastic.app</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>FLACtastic</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>${SHORT_VERSION}</string>
+    <key>CFBundleVersion</key>
+    <string>${BUILD_NUMBER}</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.music</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2026 FLACtastic. All rights reserved.</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSSupportsAutomaticTermination</key>
+    <true/>
+    <key>NSSupportsSuddenTermination</key>
+    <true/>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Audio File</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.audio</string>
+                <string>org.xiph.flac</string>
+                <string>public.mp3</string>
+                <string>com.apple.m4a-audio</string>
+                <string>com.microsoft.waveform-audio</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>
+PLIST
+
+echo "Generated Info.plist at: $OUTPUT_PATH (version: $SHORT_VERSION, build: $BUILD_NUMBER)"

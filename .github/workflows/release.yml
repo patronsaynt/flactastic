@@ -1,0 +1,78 @@
+name: Release
+
+# Triggers a release build when a tag like v1.3.0-beta.2 is pushed.
+# Can also be invoked manually from the Actions tab.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (e.g. 1.3.0-beta.2)"
+        required: true
+
+jobs:
+  build-macos:
+    name: Build macOS DMG
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install TagLib
+        run: brew install taglib
+
+      - name: Sync version.txt with tag
+        if: github.event_name == 'push'
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          echo "$TAG" > version.txt
+          cat version.txt
+
+      - name: Sync version.txt from manual input
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "${{ github.event.inputs.version }}" > version.txt
+          cat version.txt
+
+      - name: Make scripts executable
+        run: chmod +x Scripts/build-release.sh Scripts/macos/*.sh Scripts/test-install.sh
+
+      - name: Build release
+        run: ./Scripts/build-release.sh --skip-tests
+
+      - name: Verify DMG
+        run: ./Scripts/test-install.sh
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FLACtastic-macOS
+          path: dist/*.dmg
+
+      - name: Upload to GitHub Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.dmg
+            dist/RELEASE_NOTES.md
+          body_path: dist/RELEASE_NOTES.md
+          prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') || contains(github.ref, '-rc') }}
+
+  # ── Future: Windows build ───────────────────────────────────────────────
+  # build-windows:
+  #   name: Build Windows MSI
+  #   runs-on: windows-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Build Windows release
+  #       run: pwsh Scripts/windows/package-windows.ps1
+  #     - name: Create MSI
+  #       run: pwsh Scripts/windows/create-msi.ps1
+  #     - uses: actions/upload-artifact@v4
+  #       with:
+  #         name: FLACtastic-Windows
+  #         path: dist/*.msi
