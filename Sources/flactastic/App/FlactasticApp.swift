@@ -7,10 +7,21 @@ struct FlactasticApp: App {
     @State private var player = PlayerState()
     @State private var settings = Settings()
     @State private var playlistStore = PlaylistStore()
-    @State private var artistStore = ArtistStore()
+    @State private var artistStore: ArtistStore
+    @State private var artistRemoteCache: ArtistRemoteCache
+    @State private var artistImageFetcher: ArtistImageFetcher
+
+    init() {
+        let store = ArtistStore()
+        let cache = ArtistRemoteCache()
+        _artistStore = State(initialValue: store)
+        _artistRemoteCache = State(initialValue: cache)
+        _artistImageFetcher = State(initialValue: ArtistImageFetcher(cache: cache, store: store))
+    }
     @State private var metadataWriter = MetadataWriter()
     @State private var importCoordinator = ImportCoordinator()
     @State private var router = NavigationRouter()
+    @State private var discordPresence = DiscordPresenceService()
 
     var body: some Scene {
         WindowGroup {
@@ -23,6 +34,8 @@ struct FlactasticApp: App {
                             .environment(settings)
                             .environment(playlistStore)
                             .environment(artistStore)
+                            .environment(artistRemoteCache)
+                            .environment(artistImageFetcher)
                             .environment(importCoordinator)
                             .environment(router)
                             .environment(\.metadataWriter, metadataWriter)
@@ -136,7 +149,9 @@ struct FlactasticApp: App {
     private func bootstrap() async {
         playlistStore.load()
         artistStore.load()
+        artistRemoteCache.load()
         player.engine.setVolume(settings.volume)
+        discordPresence.attach(player: player, settings: settings)
         if let path = settings.lastRootPath {
             let url = URL(fileURLWithPath: path)
             if FileManager.default.fileExists(atPath: url.path) {

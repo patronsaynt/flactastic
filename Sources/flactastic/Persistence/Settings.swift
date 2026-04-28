@@ -59,6 +59,16 @@ final class Settings {
         didSet { UserDefaults.standard.set(customGenres, forKey: "flactastic.customGenres") }
     }
 
+    /// When true, missing artist profile images are fetched from Deezer.
+    /// User-supplied images always take priority regardless of this setting.
+    var autoFetchArtistImages: Bool {
+        didSet { UserDefaults.standard.set(autoFetchArtistImages, forKey: "flactastic.autoFetchArtistImages") }
+    }
+
+    var discordRichPresenceEnabled: Bool {
+        didSet { UserDefaults.standard.set(discordRichPresenceEnabled, forKey: "flactastic.discordRichPresenceEnabled") }
+    }
+
     init() {
         lastRootPath = UserDefaults.standard.string(forKey: "flactastic.lastRootPath")
         let stored = UserDefaults.standard.object(forKey: "flactastic.volume")
@@ -80,6 +90,10 @@ final class Settings {
         hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "flactastic.hasCompletedOnboarding")
         groupByArtist = UserDefaults.standard.bool(forKey: "flactastic.groupByArtist")
         customGenres = UserDefaults.standard.stringArray(forKey: "flactastic.customGenres") ?? []
+        let storedAutoFetch = UserDefaults.standard.object(forKey: "flactastic.autoFetchArtistImages")
+        autoFetchArtistImages = (storedAutoFetch as? Bool) ?? true
+        let storedDRP = UserDefaults.standard.object(forKey: "flactastic.discordRichPresenceEnabled")
+        discordRichPresenceEnabled = (storedDRP as? Bool) ?? true
     }
 }
 

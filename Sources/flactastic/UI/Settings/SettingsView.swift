@@ -164,6 +164,28 @@ private struct ConfigSettingsSection: View {
                     .tint(Theme.accent)
                     .labelsHidden()
             }
+
+            HStack {
+                Text("Auto-Fetch Artist Images")
+                    .font(Theme.Font.body)
+                    .foregroundStyle(Theme.textSecondary)
+                Spacer()
+                Toggle("", isOn: $settings.autoFetchArtistImages)
+                    .toggleStyle(.switch)
+                    .tint(Theme.accent)
+                    .labelsHidden()
+            }
+
+            HStack {
+                Text("Discord Rich Presence")
+                    .font(Theme.Font.body)
+                    .foregroundStyle(Theme.textSecondary)
+                Spacer()
+                Toggle("", isOn: $settings.discordRichPresenceEnabled)
+                    .toggleStyle(.switch)
+                    .tint(Theme.accent)
+                    .labelsHidden()
+            }
         }
     }
 }

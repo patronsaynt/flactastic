@@ -4,10 +4,12 @@ import AppKit
 struct ArtistDetailView: View {
     let artistKey: String
 
-    @Environment(LibraryStore.self) private var library
-    @Environment(ArtistStore.self)  private var artistStore
-    @Environment(PlayerState.self)  private var player
-    @Environment(Settings.self)     private var settings
+    @Environment(LibraryStore.self)        private var library
+    @Environment(ArtistStore.self)         private var artistStore
+    @Environment(ArtistRemoteCache.self)   private var artistRemoteCache
+    @Environment(ArtistImageFetcher.self)  private var artistImageFetcher
+    @Environment(PlayerState.self)         private var player
+    @Environment(Settings.self)            private var settings
 
     @State private var isEditing = false
 
@@ -33,6 +35,14 @@ struct ArtistDetailView: View {
             }
             .background(Theme.background)
             .navigationTitle(summary.displayName)
+            .task(id: summary.id) {
+                if settings.autoFetchArtistImages {
+                    artistImageFetcher.ensureImage(
+                        forKey: summary.id,
+                        displayName: summary.displayName
+                    )
+                }
+            }
             .sheet(isPresented: $isEditing) {
                 ArtistEditorView(
                     canonicalKey: summary.id,
@@ -53,7 +63,11 @@ struct ArtistDetailView: View {
 
     private func banner(_ summary: ArtistSummary) -> some View {
         let override = artistStore.override(forKey: summary.id)
-        let bannerData = override?.bannerImage ?? summary.artworkSample
+        let remoteImage = artistRemoteCache.entry(forKey: summary.id)?.profileImage
+        // True banner = user-supplied bannerImage. Anything else (remote
+        // profile pic, album-art sample) gets blurred as a backdrop.
+        let isTrueBanner = override?.bannerImage != nil
+        let bannerData = override?.bannerImage ?? remoteImage ?? summary.artworkSample
         let baseColor = ArtistDetailView.dominantColor(from: bannerData) ?? Theme.surfaceElevated
 
         return ZStack(alignment: .bottomLeading) {
@@ -63,7 +77,7 @@ struct ArtistDetailView: View {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .blur(radius: override?.bannerImage == nil ? 30 : 0)
+                        .blur(radius: isTrueBanner ? 0 : 30)
                 } else {
                     baseColor
                 }

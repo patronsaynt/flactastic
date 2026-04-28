@@ -7,6 +7,9 @@ struct ContentView: View {
     @Environment(PlaylistStore.self) private var playlistStore
     @Environment(ImportCoordinator.self) private var importCoordinator
     @Environment(NavigationRouter.self) private var router
+    @Environment(ArtistStore.self) private var artistStore
+    @Environment(ArtistImageFetcher.self) private var artistImageFetcher
+    @Environment(Settings.self) private var settings
 
     @State private var showSettings = false
 
@@ -34,6 +37,12 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: library.hasCompletedInitialLoad) { _, done in
+            if done { prefetchArtistImages() }
+        }
+        .task {
+            if library.hasCompletedInitialLoad { prefetchArtistImages() }
+        }
         .onTapGesture {
             NSApp.keyWindow?.makeFirstResponder(nil)
         }
@@ -109,6 +118,17 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    /// Kick off a background pass over every artist in the library so their
+    /// images are ready before the user opens the Artists tab. Cheap when
+    /// the cache is already warm — `ensureImage` no-ops on hits.
+    private func prefetchArtistImages() {
+        guard settings.autoFetchArtistImages else { return }
+        let resolver = library.makeArtistResolver()
+        let summaries = library.allArtists(resolver: resolver, overrides: artistStore.overrides)
+        let artists = summaries.map { (key: $0.id, displayName: $0.displayName) }
+        artistImageFetcher.prefetchAll(artists)
     }
 
     private func handleRepeat() {
