@@ -65,7 +65,10 @@ struct ArtistResolver: Sendable {
     /// If the string uses one of the explicit multi-artist delimiters, return
     /// the trimmed pieces. Otherwise nil.
     static func explicitlySeparated(_ raw: String) -> [String]? {
-        for delimiter in ["\u{0000}", ";"] {
+        // NUL and ";" are the app's own storage delimiters.
+        // " / " (with spaces) is iTunes/Music.app's multi-artist delimiter —
+        // spaces are required so names like "AC/DC" are left intact.
+        for delimiter in ["\u{0000}", ";", " / "] {
             if raw.contains(delimiter) {
                 return raw
                     .components(separatedBy: delimiter)
