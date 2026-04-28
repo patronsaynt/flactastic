@@ -8,13 +8,19 @@ struct CroppingPayload: Identifiable {
     let data: Data
 }
 
-/// Sheet that lets the user pan + zoom an image inside a fixed square crop
-/// window, then returns the cropped image as PNG `Data` via `onComplete`.
+/// Sheet that lets the user pan + zoom an image inside a fixed crop window
+/// of arbitrary aspect ratio, then returns the cropped image as PNG `Data`
+/// via `onComplete`.
 ///
-/// Used by album and playlist artwork editors so all stored cover images are
-/// guaranteed 1:1, avoiding distortion in the grid/row UI.
-struct SquareImageCropperView: View {
+/// Used by album artwork (1:1), playlist covers (1:1), artist profile
+/// images (1:1), and artist banners (3:1) so all stored images are
+/// guaranteed to match the surface they'll render on.
+struct ImageCropperView: View {
     let sourceData: Data
+    /// Width / height. Defaults to 1.0 (square).
+    var aspectRatio: CGFloat = 1.0
+    /// Title shown in the sheet header.
+    var title: String = "Crop Image"
     let onComplete: (Data) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -23,8 +29,12 @@ struct SquareImageCropperView: View {
     @State private var offset: CGSize = .zero
     @State private var dragStart: CGSize = .zero
 
-    private let cropSize: CGFloat = 320
-    private let outputPixelSize: CGFloat = 1000
+    /// Width of the crop window, in points. Height is derived from aspectRatio.
+    private var cropWidth: CGFloat { aspectRatio >= 1 ? 380 : 320 }
+    private var cropHeight: CGFloat { cropWidth / aspectRatio }
+    /// Output pixel width — keeps ~1000px on the long edge regardless of ratio.
+    private var outputPixelWidth: CGFloat { 1200 }
+    private var outputPixelHeight: CGFloat { outputPixelWidth / aspectRatio }
     private let minScale: CGFloat = 1.0
     private let maxScale: CGFloat = 4.0
 
@@ -45,7 +55,7 @@ struct SquareImageCropperView: View {
             Divider().foregroundStyle(Theme.divider)
             footer
         }
-        .frame(width: 440, height: 540)
+        .frame(width: max(440, cropWidth + 80), height: cropHeight + 220)
         .background(Theme.surface)
     }
 
@@ -53,7 +63,7 @@ struct SquareImageCropperView: View {
 
     private var header: some View {
         HStack {
-            Text("Crop Cover")
+            Text(title)
                 .font(Theme.Font.title)
                 .foregroundStyle(Theme.textPrimary)
             Spacer()
@@ -76,12 +86,12 @@ struct SquareImageCropperView: View {
                 Image(nsImage: nsImage)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .frame(width: cropSize, height: cropSize)
+                    .frame(width: cropWidth, height: cropHeight)
                     .scaleEffect(scale)
                     .offset(offset)
             }
         }
-        .frame(width: cropSize, height: cropSize)
+        .frame(width: cropWidth, height: cropHeight)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
@@ -144,14 +154,14 @@ struct SquareImageCropperView: View {
 
     // MARK: - Geometry helpers
 
-    /// Image dimensions, in *preview-square* coordinates, after the initial
-    /// aspect-fill into the cropSize square (before user zoom is applied).
+    /// Image dimensions, in *preview-window* coordinates, after the initial
+    /// aspect-fill into the crop window (before user zoom is applied).
     private func filledSize() -> CGSize? {
         guard let cg = cgImage else { return nil }
         let imgW = CGFloat(cg.width)
         let imgH = CGFloat(cg.height)
         guard imgW > 0, imgH > 0 else { return nil }
-        let fillScale = cropSize / min(imgW, imgH)
+        let fillScale = max(cropWidth / imgW, cropHeight / imgH)
         return CGSize(width: imgW * fillScale, height: imgH * fillScale)
     }
 
@@ -161,8 +171,8 @@ struct SquareImageCropperView: View {
         guard let filled = filledSize() else { return .zero }
         let renderedW = filled.width * scale
         let renderedH = filled.height * scale
-        let maxX = max(0, (renderedW - cropSize) / 2)
-        let maxY = max(0, (renderedH - cropSize) / 2)
+        let maxX = max(0, (renderedW - cropWidth) / 2)
+        let maxY = max(0, (renderedH - cropHeight) / 2)
         return CGSize(
             width: min(max(offset.width, -maxX), maxX),
             height: min(max(offset.height, -maxY), maxY)
@@ -174,39 +184,34 @@ struct SquareImageCropperView: View {
     private func commit() {
         guard let cg = cgImage, let filled = filledSize() else { return }
 
-        // Map the visible crop window back into source-pixel coordinates.
-        // pixelsPerPreviewPoint converts from preview-square points to source
-        // pixels at the current effective zoom level.
         let totalScale = scale
         let pixelsPerPreviewPoint = CGFloat(cg.width) / filled.width / totalScale
 
-        let srcSize = cropSize * pixelsPerPreviewPoint
+        let srcW = cropWidth * pixelsPerPreviewPoint
+        let srcH = cropHeight * pixelsPerPreviewPoint
 
         let renderedW = filled.width * totalScale
         let renderedH = filled.height * totalScale
 
-        // Top-left of the visible crop window in source pixels:
-        // image is centered at (cropSize/2 + offset, cropSize/2 + offset);
-        // window top-left is (0, 0) in container space, so in image-rendered
-        // space the window starts at (renderedW/2 - cropSize/2 - offset, …)
-        let srcX = (renderedW / 2 - cropSize / 2 - offset.width) * pixelsPerPreviewPoint
-        let srcY = (renderedH / 2 - cropSize / 2 - offset.height) * pixelsPerPreviewPoint
+        let srcX = (renderedW / 2 - cropWidth / 2 - offset.width) * pixelsPerPreviewPoint
+        let srcY = (renderedH / 2 - cropHeight / 2 - offset.height) * pixelsPerPreviewPoint
 
-        let cropRect = CGRect(x: srcX, y: srcY, width: srcSize, height: srcSize).integral
+        let cropRect = CGRect(x: srcX, y: srcY, width: srcW, height: srcH).integral
         guard let cropped = cg.cropping(to: cropRect) else { return }
 
-        let outSize = Int(outputPixelSize)
+        let outW = Int(outputPixelWidth)
+        let outH = Int(outputPixelHeight)
         guard let ctx = CGContext(
             data: nil,
-            width: outSize,
-            height: outSize,
+            width: outW,
+            height: outH,
             bitsPerComponent: 8,
             bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return }
         ctx.interpolationQuality = .high
-        ctx.draw(cropped, in: CGRect(x: 0, y: 0, width: outSize, height: outSize))
+        ctx.draw(cropped, in: CGRect(x: 0, y: 0, width: outW, height: outH))
         guard let outCG = ctx.makeImage() else { return }
 
         let rep = NSBitmapImageRep(cgImage: outCG)
@@ -214,5 +219,22 @@ struct SquareImageCropperView: View {
 
         onComplete(data)
         dismiss()
+    }
+}
+
+/// Backwards-compatible square-only entry point. Existing call sites continue
+/// to work; new callers should use `ImageCropperView` directly to specify a
+/// non-square aspect ratio.
+struct SquareImageCropperView: View {
+    let sourceData: Data
+    let onComplete: (Data) -> Void
+
+    var body: some View {
+        ImageCropperView(
+            sourceData: sourceData,
+            aspectRatio: 1.0,
+            title: "Crop Cover",
+            onComplete: onComplete
+        )
     }
 }

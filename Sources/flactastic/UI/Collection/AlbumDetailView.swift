@@ -71,10 +71,12 @@ struct AlbumDetailView: View {
                     .font(Theme.Font.title)
                     .foregroundStyle(Theme.textPrimary)
 
-                if let artist = album.artist {
-                    Text(artist)
+                if album.isCompilation {
+                    Text("Compilation")
                         .font(Theme.Font.headline)
                         .foregroundStyle(Theme.textSecondary)
+                } else if let artist = album.artist {
+                    ArtistLink(credit: artist)
                 }
 
                 HStack(spacing: Theme.Spacing.md) {

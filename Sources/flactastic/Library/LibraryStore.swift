@@ -108,6 +108,7 @@ final class LibraryStore {
         let fresh = imported.filter { !existing.contains($0.url) }
         guard !fresh.isEmpty else { return }
         tracks = (tracks + fresh).sortedForLibrary()
+        normaliseArtistTags()
     }
 
     func openFolder(_ url: URL) {
@@ -193,6 +194,7 @@ final class LibraryStore {
                 }
                 if !Task.isCancelled {
                     self.tracks = self.tracks.sortedForLibrary()
+                    self.normaliseArtistTags()
                 }
             }
         }
@@ -234,6 +236,7 @@ final class LibraryStore {
                 // Re-sort after metadata is loaded so albums group properly.
                 if !Task.isCancelled {
                     self.tracks = self.tracks.sortedForLibrary()
+                    self.normaliseArtistTags()
                 }
                 // Reveal the UI only once metadata has streamed in, so the
                 // grid doesn't visibly reshuffle as album tags arrive. The

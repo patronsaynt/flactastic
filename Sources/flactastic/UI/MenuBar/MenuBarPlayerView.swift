@@ -42,7 +42,7 @@ struct MenuBarPlayerView: View {
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(2)
                         .truncationMode(.tail)
-                    if let artist = track.artist {
+                    if let artist = ArtistResolver.displayString(track.artist) {
                         Text(artist)
                             .font(Theme.Font.caption)
                             .foregroundStyle(Theme.textSecondary)

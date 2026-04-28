@@ -15,6 +15,20 @@ struct QueuePanelView: View {
         ]
     }
 
+    private func upcomingTrackMenu(track: Track, engineIndex: Int) -> [FLContextMenuItem] {
+        [
+            .button("View Album", systemImage: "square.grid.2x2") {
+                if let albumID = library.album(for: track)?.id {
+                    router.navigateToAlbum(id: albumID)
+                }
+            },
+            .divider,
+            .button("Remove from Queue", systemImage: "minus.circle", destructive: true) {
+                player.removeFromQueue(at: engineIndex)
+            }
+        ]
+    }
+
     /// All upcoming entries (engine indices > currentIndex).
     private var upcoming: [(track: Track, engineIndex: Int)] {
         let q = player.queue
@@ -108,7 +122,7 @@ struct QueuePanelView: View {
             .onTapGesture(count: 2) {
                 player.jumpTo(index: item.engineIndex)
             }
-            .flContextMenu { viewAlbumMenu(for: item.track) }
+            .flContextMenu { upcomingTrackMenu(track: item.track, engineIndex: item.engineIndex) }
             .draggable(trackID.uuidString) {
                 // Drag preview — a shrunken row clone.
                 QueueTrackRow(track: item.track, showQueuedDot: showQueuedDot)
@@ -205,7 +219,7 @@ private struct NowPlayingRow: View {
                     .font(Theme.Font.bodyMedium)
                     .foregroundStyle(Theme.accent)
                     .lineLimit(1)
-                if let artist = track.artist {
+                if let artist = ArtistResolver.displayString(track.artist) {
                     Text(artist)
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.textSecondary)
@@ -241,7 +255,7 @@ private struct QueueTrackRow: View {
                     .font(Theme.Font.bodyMedium)
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
-                if let artist = track.artist {
+                if let artist = ArtistResolver.displayString(track.artist) {
                     Text(artist)
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.textSecondary)

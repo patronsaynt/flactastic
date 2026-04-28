@@ -57,7 +57,7 @@ struct FloatingPlayerBar: View {
                         .fontWeight(.medium)
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
-                    if let artist = track.artist {
+                    if let artist = ArtistResolver.displayString(track.artist) {
                         Text(artist)
                             .font(.system(size: 10))
                             .foregroundStyle(Theme.textSecondary)

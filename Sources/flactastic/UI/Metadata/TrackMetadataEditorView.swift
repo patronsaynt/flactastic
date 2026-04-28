@@ -12,7 +12,7 @@ struct TrackMetadataEditorView: View {
 
     // Editable fields — initialised from the track in `init`.
     @State private var title:       String
-    @State private var artist:      String
+    @State private var artists:     [String]
     @State private var album:       String
     @State private var year:        String
     @State private var genre:       String
@@ -30,7 +30,8 @@ struct TrackMetadataEditorView: View {
     init(track: Track) {
         self.track = track
         _title       = State(initialValue: track.title)
-        _artist      = State(initialValue: track.artist      ?? "")
+        _artists     = State(initialValue: ArtistResolver.explicitlySeparated(track.artist ?? "")
+            ?? (track.artist.flatMap { $0.isEmpty ? nil : [$0] } ?? []))
         _album       = State(initialValue: track.album       ?? "")
         _year        = State(initialValue: track.year.map    { "\($0)" } ?? "")
         _genre       = State(initialValue: track.genre       ?? "")
@@ -133,13 +134,13 @@ struct TrackMetadataEditorView: View {
     private var fieldsSection: some View {
         VStack(spacing: Theme.Spacing.sm) {
             metaField("Song Name",  text: $title,       required: true)
-            metaField("Artist",     text: $artist)
+            ArtistsFieldView(artists: $artists)
             metaField("Album",      text: $album)
             HStack(spacing: Theme.Spacing.md) {
                 metaField("Year",      text: $year,   width: 80,  numericOnly: true)
                 metaField("Track #",   text: $trackNumber, width: 80, numericOnly: true)
             }
-            metaField("Genre",      text: $genre)
+            GenreFieldView(text: $genre)
         }
     }
 
@@ -228,12 +229,20 @@ struct TrackMetadataEditorView: View {
         let parsedTrackNumber = Int(trackNumber)
         let snapshot = track
 
+        let joinedArtist: String? = {
+            let cleaned = artists.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                                 .filter { !$0.isEmpty }
+            if cleaned.isEmpty { return nil }
+            if cleaned.count == 1 { return cleaned[0] }
+            return ArtistResolver.joinExplicit(cleaned)
+        }()
+
         Task {
             do {
                 let updated = try await writer.write(
                     to: snapshot,
                     title:       title.trimmingCharacters(in: .whitespaces),
-                    artist:      artist.isEmpty  ? nil : artist,
+                    artist:      joinedArtist,
                     album:       album.isEmpty   ? nil : album,
                     year:        parsedYear,
                     genre:       genre.isEmpty   ? nil : genre,

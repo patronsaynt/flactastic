@@ -14,6 +14,7 @@ enum AllTracksSortOption: String, CaseIterable, Identifiable {
 enum CollectionContentMode: String, CaseIterable, Identifiable {
     case albums = "Albums"
     case tracks = "Tracks"
+    case artists = "Artists"
 
     var id: String { rawValue }
 }

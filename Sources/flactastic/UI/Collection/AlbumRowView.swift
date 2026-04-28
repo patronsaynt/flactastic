@@ -13,7 +13,9 @@ struct AlbumRowView: View {
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
 
-                Text(album.artist ?? "Unknown Artist")
+                Text(album.isCompilation
+                     ? "Compilation"
+                     : (ArtistResolver.displayString(album.artist) ?? "Unknown Artist"))
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)

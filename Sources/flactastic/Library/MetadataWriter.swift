@@ -49,6 +49,13 @@ actor MetadataWriter {
         case set(String?)
     }
 
+    /// Sentinel for the COMPILATION tag. `.unchanged` skips the write;
+    /// `.set(true)` writes "1"; `.set(false)` clears the tag.
+    enum CompilationChange: Sendable {
+        case unchanged
+        case set(Bool)
+    }
+
     /// Write text tags and optionally artwork to the file at `track.url`.
     ///
     /// - Returns: An updated `Track` value reflecting the written fields.
@@ -63,7 +70,8 @@ actor MetadataWriter {
         genre: String?,
         trackNumber: Int?,
         artworkChange: ArtworkChange = .unchanged,
-        albumArtistChange: AlbumArtistChange = .unchanged
+        albumArtistChange: AlbumArtistChange = .unchanged,
+        compilationChange: CompilationChange = .unchanged
     ) throws -> Track {
         let url = track.url
 
@@ -102,6 +110,14 @@ actor MetadataWriter {
             break
         case .set(let value):
             (value ?? "").withCString { taglib_helper_set_album_artist(file, $0) }
+        }
+
+        // --- Compilation flag ---
+        switch compilationChange {
+        case .unchanged:
+            break
+        case .set(let on):
+            taglib_helper_set_compilation(file, on ? 1 : 0)
         }
 
         // --- Artwork ---
@@ -143,6 +159,10 @@ actor MetadataWriter {
         case .unchanged:        break
         case .set(let value):
             updated.albumArtist = (value?.isEmpty ?? true) ? nil : value
+        }
+        switch compilationChange {
+        case .unchanged:        break
+        case .set(let on):      updated.isCompilation = on
         }
         switch artworkChange {
         case .unchanged:   break

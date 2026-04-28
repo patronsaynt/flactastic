@@ -15,6 +15,11 @@ struct Track: Sendable, Identifiable, Hashable {
     var bitDepth: Int?
     var genre: String?
     var year: Int?
+    /// Mirrors the file's COMPILATION tag (Xiph COMPILATION / ID3v2 TCMP /
+    /// MP4 cpil). When true the album this track belongs to is treated as a
+    /// compilation: it does NOT bucket under any single artist's own releases,
+    /// but each track-level performer still picks it up under "Appears On".
+    var isCompilation: Bool = false
     /// Filesystem-derived timestamp for when this track's file appeared in the
     /// library folder. Prefers the APFS "added to directory" timestamp when
     /// available, otherwise falls back to file creation / modification.
@@ -35,6 +40,7 @@ struct Track: Sendable, Identifiable, Hashable {
         bitDepth: Int? = nil,
         genre: String? = nil,
         year: Int? = nil,
+        isCompilation: Bool = false,
         dateAdded: Date? = nil
     ) {
         self.id = id
@@ -51,6 +57,7 @@ struct Track: Sendable, Identifiable, Hashable {
         self.bitDepth = bitDepth
         self.genre = genre
         self.year = year
+        self.isCompilation = isCompilation
         self.dateAdded = dateAdded
     }
 
@@ -81,6 +88,7 @@ extension Track {
             bitDepth: bitDepth,
             genre: genre,
             year: year,
+            isCompilation: isCompilation,
             dateAdded: dateAdded
         )
     }

@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 private struct EditableTrack: Identifiable {
     let id: UUID
     var title: String
+    var artists: [String]
     let originalTrack: Track
 }
 
@@ -45,11 +46,11 @@ struct AlbumMetadataEditorView: View {
     @Environment(\.metadataWriter)  private var writer
     @Environment(LibraryStore.self) private var library
 
-    @State private var albumName:   String
-    @State private var artist:      String
-    @State private var albumArtist: String
-    @State private var year:        String
-    @State private var genre:       String
+    @State private var albumName:     String
+    @State private var albumArtists:  [String]
+    @State private var year:          String
+    @State private var genre:         String
+    @State private var isCompilation: Bool
 
     @State private var artworkData:    Data?
     @State private var artworkChanged: Bool = false
@@ -65,17 +66,31 @@ struct AlbumMetadataEditorView: View {
 
     init(album: Album) {
         self.album = album
-        _albumName   = State(initialValue: album.name)
-        _artist      = State(initialValue: album.artist ?? "")
-        _albumArtist = State(initialValue: album.albumArtist ?? "")
-        _year        = State(initialValue: album.year.map { "\($0)" } ?? "")
-        _genre       = State(initialValue: album.genre  ?? "")
-        _artworkData = State(initialValue: album.artwork)
+        _albumName    = State(initialValue: album.name)
+        // The single chip-based artist field represents the album-level
+        // owning entity. Prefer the existing albumArtist tag; fall back to
+        // album.artist (the per-track artist roll-up) so editing a record
+        // missing an explicit ALBUMARTIST tag still surfaces a sensible
+        // starting list.
+        let albumOwnerSource = album.albumArtist ?? album.artist
+        _albumArtists = State(initialValue: ArtistResolver.explicitlySeparated(albumOwnerSource ?? "")
+            ?? (albumOwnerSource.flatMap { $0.isEmpty ? nil : [$0] } ?? []))
+        _year          = State(initialValue: album.year.map { "\($0)" } ?? "")
+        _genre         = State(initialValue: album.genre  ?? "")
+        _isCompilation = State(initialValue: album.isCompilation)
+        _artworkData   = State(initialValue: album.artwork)
         let sorted = album.tracks.sorted {
             ($0.trackNumber ?? Int.max) < ($1.trackNumber ?? Int.max)
         }
-        _editableTracks = State(initialValue: sorted.map {
-            EditableTrack(id: $0.id, title: $0.title, originalTrack: $0)
+        _editableTracks = State(initialValue: sorted.map { track in
+            let chips = ArtistResolver.explicitlySeparated(track.artist ?? "")
+                ?? (track.artist.flatMap { $0.isEmpty ? nil : [$0] } ?? [])
+            return EditableTrack(
+                id: track.id,
+                title: track.title,
+                artists: chips,
+                originalTrack: track
+            )
         })
     }
 
@@ -89,7 +104,7 @@ struct AlbumMetadataEditorView: View {
             Divider().foregroundStyle(Theme.divider)
             footer
         }
-        .frame(width: 520, height: 660)
+        .frame(width: 540, height: 720)
         .background(Theme.surface)
         .alert("Save Failed", isPresented: Binding(
             get: { errorMessage != nil },
@@ -126,7 +141,8 @@ struct AlbumMetadataEditorView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(Theme.Spacing.xl)
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.vertical, Theme.Spacing.xl)
     }
 
     // MARK: - Form body
@@ -170,27 +186,35 @@ struct AlbumMetadataEditorView: View {
     }
 
     private var fieldsSection: some View {
-        VStack(spacing: Theme.Spacing.sm) {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             metaField("Album Name",   text: $albumName, required: true)
-            metaField("Artist",       text: $artist)
-            metaField("Album Artist", text: $albumArtist)
+            ArtistsFieldView(artists: $albumArtists, label: "Album Artist")
+
+            Toggle(isOn: $isCompilation) {
+                Text("Compilation")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.textPrimary)
+            }
+            .toggleStyle(.checkbox)
+            .disabled(isSaving)
+
             HStack(spacing: Theme.Spacing.md) {
                 metaField("Year",  text: $year,  width: 80, numericOnly: true)
-                metaField("Genre", text: $genre)
+                GenreFieldView(text: $genre)
             }
 
-            Spacer()
-
-            HStack(spacing: Theme.Spacing.xs) {
-                Image(systemName: "music.note.list")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.textTertiary)
-                Text(isSaving
-                    ? "Saved \(savedCount) of \(editableTracks.count)…"
-                    : "Applies to \(editableTracks.count) track\(editableTracks.count == 1 ? "" : "s")")
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.textTertiary)
+            if isSaving {
+                HStack(spacing: Theme.Spacing.xs) {
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textTertiary)
+                    Text("Saved \(savedCount) of \(editableTracks.count)…")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                }
             }
+
+            Spacer(minLength: 0)
         }
     }
 
@@ -242,40 +266,53 @@ struct AlbumMetadataEditorView: View {
                 .padding(.top, Theme.Spacing.md)
 
             ScrollView {
-                VStack(spacing: 4) {
+                VStack(spacing: 6) {
                     ForEach(editableTracks.indices, id: \.self) { index in
-                        HStack(spacing: Theme.Spacing.sm) {
-                            Text("\(index + 1)")
-                                .font(Theme.Font.captionMono)
-                                .foregroundStyle(Theme.textTertiary)
-                                .frame(width: 24, alignment: .trailing)
+                        VStack(spacing: 4) {
+                            HStack(spacing: Theme.Spacing.sm) {
+                                Text("\(index + 1)")
+                                    .font(Theme.Font.captionMono)
+                                    .foregroundStyle(Theme.textTertiary)
+                                    .frame(width: 24, alignment: .trailing)
 
-                            TextField("", text: $editableTracks[index].title)
-                                .textFieldStyle(.plain)
-                                .font(Theme.Font.body)
-                                .foregroundStyle(Theme.textPrimary)
-                                .padding(.horizontal, Theme.Spacing.sm)
-                                .padding(.vertical, 5)
-                                .background(
-                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                        .fill(Theme.surfaceElevated)
-                                )
+                                TextField("", text: $editableTracks[index].title)
+                                    .textFieldStyle(.plain)
+                                    .font(Theme.Font.body)
+                                    .foregroundStyle(Theme.textPrimary)
+                                    .padding(.horizontal, Theme.Spacing.sm)
+                                    .padding(.vertical, 5)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                            .fill(Theme.surfaceElevated)
+                                    )
 
-                            Image(systemName: "line.3.horizontal")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(
-                                    draggingIndex == index
-                                        ? Theme.accent.opacity(0.8)
-                                        : Theme.textTertiary.opacity(0.6)
+                                Image(systemName: "line.3.horizontal")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(
+                                        draggingIndex == index
+                                            ? Theme.accent.opacity(0.8)
+                                            : Theme.textTertiary.opacity(0.6)
+                                    )
+                                    .frame(width: 18)
+                                    .onDrag {
+                                        draggingIndex = index
+                                        return NSItemProvider(object: "\(index)" as NSString)
+                                    }
+                            }
+
+                            HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+                                Color.clear.frame(width: 24)
+                                ArtistsFieldView(
+                                    artists: $editableTracks[index].artists,
+                                    label: nil,
+                                    placeholder: "Artists for this track…",
+                                    compact: true
                                 )
-                                .frame(width: 18)
-                                .onDrag {
-                                    draggingIndex = index
-                                    return NSItemProvider(object: "\(index)" as NSString)
-                                }
+                                Color.clear.frame(width: 18)
+                            }
                         }
                         .padding(.horizontal, Theme.Spacing.xl)
-                        .padding(.vertical, 2)
+                        .padding(.vertical, 4)
                         .background(
                             draggingIndex == index
                                 ? Theme.surfaceElevated.opacity(0.6)
@@ -293,7 +330,7 @@ struct AlbumMetadataEditorView: View {
                 }
                 .padding(.bottom, Theme.Spacing.md)
             }
-            .frame(maxHeight: 210)
+            .frame(maxHeight: 260)
         }
     }
 
@@ -311,7 +348,21 @@ struct AlbumMetadataEditorView: View {
                 .disabled(isSaving || albumName.trimmingCharacters(in: .whitespaces).isEmpty)
         }
         .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.vertical, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.xl)
+    }
+
+    // MARK: - Helpers
+
+    /// Trim, drop empties, and serialise a chip list into the canonical
+    /// `Artist A ; Artist B` form. Returns nil if the list is empty so the
+    /// writer treats that as "clear the tag".
+    private static func joinedChips(_ chips: [String]) -> String? {
+        let cleaned = chips
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if cleaned.isEmpty { return nil }
+        if cleaned.count == 1 { return cleaned[0] }
+        return ArtistResolver.joinExplicit(cleaned)
     }
 
     // MARK: - Actions
@@ -339,38 +390,52 @@ struct AlbumMetadataEditorView: View {
             artChange = .unchanged
         }
 
-        let parsedYear    = Int(year)
-        let newAlbum      = albumName.trimmingCharacters(in: .whitespaces)
-        let newArtist     = artist.isEmpty ? nil : artist
-        let newGenre      = genre.isEmpty  ? nil : genre
-        let trimmedAA     = albumArtist.trimmingCharacters(in: .whitespaces)
-        // Only write the albumArtist tag when the field is visibly different
-        // from what's already on the album — avoids clobbering existing
-        // per-file tags on a no-op edit. Empty field + no existing value = no-op;
-        // empty field + existing value = explicit clear.
+        let parsedYear = Int(year)
+        let newAlbum   = albumName.trimmingCharacters(in: .whitespaces)
+        let newGenre   = genre.isEmpty ? nil : genre
+
+        // Album-level artist — written to the ALBUMARTIST tag on every track.
+        // Always treated as explicit: a no-op edit yields the same string the
+        // album already had, so the writer's idempotent path still applies.
+        let newAlbumArtist: String? = Self.joinedChips(albumArtists)
         let aaChange: MetadataWriter.AlbumArtistChange = {
             let existing = album.albumArtist ?? ""
-            if trimmedAA == existing { return .unchanged }
-            return .set(trimmedAA.isEmpty ? nil : trimmedAA)
+            let target = newAlbumArtist ?? ""
+            if existing == target { return .unchanged }
+            return .set(newAlbumArtist)
         }()
-        let orderedTracks = editableTracks  // snapshot current order + edited titles
+
+        // Compilation tag: only write when the toggle differs from the
+        // album's current state (any track flagged) — avoids touching every
+        // file on a no-op save.
+        let compilationChange: MetadataWriter.CompilationChange = {
+            isCompilation == album.isCompilation ? .unchanged : .set(isCompilation)
+        }()
+
+        let orderedTracks = editableTracks  // snapshot current order + edited fields
 
         Task {
             var collected: [Track] = []
             var firstError: String? = nil
             for (index, item) in orderedTracks.enumerated() {
                 let newTitle = item.title.trimmingCharacters(in: .whitespaces)
+                // Per-track artist: prefer the row's chips. If the user
+                // cleared them entirely, inherit from the album-level chips
+                // so we never write an empty artist tag for a track that
+                // clearly belongs to the album's owner.
+                let perTrackArtist = Self.joinedChips(item.artists) ?? newAlbumArtist
                 do {
                     let updated = try await writer.write(
                         to: item.originalTrack,
                         title:             newTitle.isEmpty ? item.originalTrack.title : newTitle,
-                        artist:            newArtist,
+                        artist:            perTrackArtist,
                         album:             newAlbum,
                         year:              parsedYear,
                         genre:             newGenre,
                         trackNumber:       index + 1,
                         artworkChange:     artChange,
-                        albumArtistChange: aaChange
+                        albumArtistChange: aaChange,
+                        compilationChange: compilationChange
                     )
                     collected.append(updated)
                     await MainActor.run { savedCount += 1 }

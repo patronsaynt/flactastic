@@ -48,6 +48,14 @@ char *taglib_helper_get_album_artist(void *file);
  *  empty string ("") to clear the tag. */
 void taglib_helper_set_album_artist(void *file, const char *value);
 
+/** Read the COMPILATION property (Xiph COMPILATION / ID3v2 TCMP / MP4 cpil).
+ *  Returns 1 when the tag is present and equal to "1", 0 otherwise. */
+int taglib_helper_get_compilation(void *file);
+
+/** Write the COMPILATION property. Non-zero `value` writes "1"; zero clears
+ *  the tag entirely. */
+void taglib_helper_set_compilation(void *file, int value);
+
 #ifdef __cplusplus
 }
 #endif

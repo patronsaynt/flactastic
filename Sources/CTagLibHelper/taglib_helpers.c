@@ -36,6 +36,31 @@ void taglib_helper_set_album_artist(void *file, const char *value) {
     taglib_property_set((TagLib_File *)file, "ALBUMARTIST", value);
 }
 
+int taglib_helper_get_compilation(void *file) {
+    if (!file) return 0;
+    char **values = taglib_property_get((TagLib_File *)file, "COMPILATION");
+    if (!values) return 0;
+    int result = 0;
+    if (values[0] && values[0][0] != '\0') {
+        // Anything starting with '1' / 't' / 'T' / 'y' / 'Y' counts as truthy
+        // — handles "1", "true", and the occasional "yes" written by other apps.
+        char c = values[0][0];
+        if (c == '1' || c == 't' || c == 'T' || c == 'y' || c == 'Y') result = 1;
+    }
+    taglib_property_free(values);
+    return result;
+}
+
+void taglib_helper_set_compilation(void *file, int value) {
+    if (!file) return;
+    if (value) {
+        taglib_property_set((TagLib_File *)file, "COMPILATION", "1");
+    } else {
+        // Empty value clears the property cross-format.
+        taglib_property_set((TagLib_File *)file, "COMPILATION", "");
+    }
+}
+
 unsigned char *taglib_helper_read_picture(void *file, unsigned int *out_size) {
     if (!file || !out_size) return NULL;
     *out_size = 0;

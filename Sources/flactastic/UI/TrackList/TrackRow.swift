@@ -24,7 +24,7 @@ struct TrackRow: View {
                     .foregroundStyle(isPlaying ? Theme.accent : Theme.textPrimary)
                     .lineLimit(1)
 
-                if let artist = track.artist {
+                if let artist = ArtistResolver.displayString(track.artist) {
                     Text(artist)
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.textSecondary)

@@ -7,6 +7,7 @@ struct FlactasticApp: App {
     @State private var player = PlayerState()
     @State private var settings = Settings()
     @State private var playlistStore = PlaylistStore()
+    @State private var artistStore = ArtistStore()
     @State private var metadataWriter = MetadataWriter()
     @State private var importCoordinator = ImportCoordinator()
     @State private var router = NavigationRouter()
@@ -21,6 +22,7 @@ struct FlactasticApp: App {
                             .environment(player)
                             .environment(settings)
                             .environment(playlistStore)
+                            .environment(artistStore)
                             .environment(importCoordinator)
                             .environment(router)
                             .environment(\.metadataWriter, metadataWriter)
@@ -133,6 +135,7 @@ struct FlactasticApp: App {
     @MainActor
     private func bootstrap() async {
         playlistStore.load()
+        artistStore.load()
         player.engine.setVolume(settings.volume)
         if let path = settings.lastRootPath {
             let url = URL(fileURLWithPath: path)

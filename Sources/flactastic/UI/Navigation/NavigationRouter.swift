@@ -18,4 +18,27 @@ final class NavigationRouter {
             self.collectionPath = [id]
         }
     }
+
+    /// Push an artist detail page. Encoded as `"artist:<canonicalKey>"` so it
+    /// flows through the existing String-typed navigation stack alongside
+    /// album IDs.
+    func navigateToArtist(key: String) {
+        selectedTab = .collection
+        let value = NavigationRoute.artist(key: key)
+        if collectionPath.last == value { return }
+        collectionPath.append(value)
+    }
+}
+
+/// Encoding helpers for the shared String-typed navigation stack. Album IDs
+/// flow through as plain strings; artist pages use the `"artist:"` prefix.
+enum NavigationRoute {
+    static let artistPrefix = "artist:"
+
+    static func artist(key: String) -> String { "\(artistPrefix)\(key)" }
+
+    static func artistKey(from value: String) -> String? {
+        guard value.hasPrefix(artistPrefix) else { return nil }
+        return String(value.dropFirst(artistPrefix.count))
+    }
 }

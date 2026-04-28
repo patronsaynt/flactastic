@@ -64,7 +64,7 @@ struct CollectionView: View {
     }
 
     private var shouldGroup: Bool {
-        sortOption == .artist || sortOption == .genre
+        sortOption == .genre || (sortOption == .artist && settings.groupByArtist)
     }
 
     var body: some View {
@@ -98,11 +98,17 @@ struct CollectionView: View {
                     // List can take full height and scroll on its own.
                     AllTracksView(tracks: library.tracks, searchText: searchText)
                         .padding(.horizontal, Theme.Spacing.xl)
+                case .artists:
+                    ArtistsCollectionView(searchText: searchText)
                 }
             }
             .background(Theme.background)
-            .navigationDestination(for: String.self) { albumID in
-                AlbumDetailView(albumID: albumID)
+            .navigationDestination(for: String.self) { value in
+                if let artistKey = NavigationRoute.artistKey(from: value) {
+                    ArtistDetailView(artistKey: artistKey)
+                } else {
+                    AlbumDetailView(albumID: value)
+                }
             }
             .sheet(item: $editingAlbum) { album in
                 AlbumMetadataEditorView(album: album)
@@ -182,6 +188,10 @@ struct CollectionView: View {
         case .tracks:
             let n = library.tracks.count
             return "LIBRARY — \(n) TRACK\(n == 1 ? "" : "S")"
+        case .artists:
+            let resolver = library.makeArtistResolver()
+            let n = library.allArtists(resolver: resolver).count
+            return "LIBRARY — \(n) ARTIST\(n == 1 ? "" : "S")"
         }
     }
 

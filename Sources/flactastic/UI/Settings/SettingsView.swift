@@ -194,6 +194,7 @@ private struct AppearanceSettingsSection: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             settingsToggle("Light Mode", isOn: $settings.useLightMode)
             settingsToggle("List Layout", isOn: $settings.useListLayout)
+            settingsToggle("Group Albums by Artist (Icon View)", isOn: $settings.groupByArtist)
             settingsToggle("Rounded Album Art", isOn: $settings.roundedArtwork)
             settingsToggle("Artwork Drop Shadow", isOn: $settings.showArtworkShadow)
             settingsToggle("Fade Animations", isOn: $settings.fadeAnimationsEnabled)

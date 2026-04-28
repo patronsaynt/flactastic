@@ -51,6 +51,14 @@ final class Settings {
         didSet { UserDefaults.standard.set(hasCompletedOnboarding, forKey: "flactastic.hasCompletedOnboarding") }
     }
 
+    var groupByArtist: Bool {
+        didSet { UserDefaults.standard.set(groupByArtist, forKey: "flactastic.groupByArtist") }
+    }
+
+    var customGenres: [String] {
+        didSet { UserDefaults.standard.set(customGenres, forKey: "flactastic.customGenres") }
+    }
+
     init() {
         lastRootPath = UserDefaults.standard.string(forKey: "flactastic.lastRootPath")
         let stored = UserDefaults.standard.object(forKey: "flactastic.volume")
@@ -70,6 +78,8 @@ final class Settings {
         let storedDir = UserDefaults.standard.string(forKey: "flactastic.fadeAnimationDirection")
         fadeAnimationDirection = storedDir.flatMap(FadeAnimationDirection.init(rawValue:)) ?? .up
         hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "flactastic.hasCompletedOnboarding")
+        groupByArtist = UserDefaults.standard.bool(forKey: "flactastic.groupByArtist")
+        customGenres = UserDefaults.standard.stringArray(forKey: "flactastic.customGenres") ?? []
     }
 }
 
