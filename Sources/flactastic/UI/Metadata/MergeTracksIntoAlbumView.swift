@@ -32,17 +32,15 @@ struct MergeTracksIntoAlbumView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider().foregroundStyle(Theme.divider)
-            form
-            Divider().foregroundStyle(Theme.divider)
-            trackPreview
-            Divider().foregroundStyle(Theme.divider)
-            footer
+        FLSheet(title: "Merge into Album", width: 460, height: 510) {
+            VStack(alignment: .leading, spacing: 0) {
+                form
+                Divider().foregroundStyle(Theme.divider)
+                trackPreview
+            }
+        } footer: {
+            footerButtons
         }
-        .frame(width: 460, height: 510)
-        .background(Theme.surface)
         .alert("Save Failed", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -51,24 +49,6 @@ struct MergeTracksIntoAlbumView: View {
         } message: {
             Text(errorMessage ?? "")
         }
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        HStack {
-            Text("Merge into Album")
-                .font(Theme.Font.title)
-                .foregroundStyle(Theme.textPrimary)
-            Spacer()
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(Theme.Spacing.xl)
     }
 
     // MARK: - Form
@@ -164,7 +144,7 @@ struct MergeTracksIntoAlbumView: View {
 
     // MARK: - Footer
 
-    private var footer: some View {
+    private var footerButtons: some View {
         HStack {
             if isSaving {
                 Text("Saving \(savedCount) of \(tracks.count)…")
@@ -180,8 +160,6 @@ struct MergeTracksIntoAlbumView: View {
                 .buttonStyle(PillButtonStyle(isPrimary: true))
                 .disabled(isSaving || albumName.trimmingCharacters(in: .whitespaces).isEmpty)
         }
-        .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.vertical, Theme.Spacing.lg)
     }
 
     // MARK: - Save

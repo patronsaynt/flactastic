@@ -6,6 +6,8 @@ struct AlbumDetailView: View {
     @Environment(LibraryStore.self) private var library
     @Environment(PlayerState.self) private var player
     @Environment(PlaylistStore.self) private var playlistStore
+    @Environment(PlaylistAddCoordinator.self) private var playlistAddCoordinator
+    @Environment(NavigationRouter.self) private var router
 
     /// Track IDs we've observed belonging to this album. Used as a fallback
     /// for resolving the album after a metadata edit renames the album/artist
@@ -145,6 +147,15 @@ struct AlbumDetailView: View {
                         FLContextMenuItem.button("Edit...") { editingTrack = track }
                         FLContextMenuItem.divider
                         addToPlaylistMenuItem(track: track)
+                        let artistItems = artistContextMenuItems(
+                            credit: track.artist ?? track.albumArtist,
+                            library: library,
+                            router: router
+                        )
+                        if !artistItems.isEmpty {
+                            FLContextMenuItem.divider
+                            artistItems
+                        }
                     }
                     .padding(.vertical, Theme.Spacing.xs)
                     .background(
@@ -162,14 +173,30 @@ struct AlbumDetailView: View {
     }
 
     private func addToPlaylistMenuItem(track: Track) -> FLContextMenuItem {
-        if playlistStore.playlists.isEmpty {
-            return .label("No playlists yet")
+        let newItem: FLContextMenuItem = .textField("New playlist name…", systemImage: "plus") { name in
+            playlistAddCoordinator.createPlaylistAndAdd(
+                name: name,
+                tracks: [track],
+                rootURL: library.rootURL,
+                store: playlistStore
+            )
         }
-        let children: [FLContextMenuItem] = playlistStore.playlists.map { playlist in
-            .button(playlist.name) {
-                playlistStore.addTracks([track], to: playlist.id, relativeTo: library.rootURL)
+        var children: [FLContextMenuItem] = []
+        if !playlistStore.playlists.isEmpty {
+            for playlist in playlistStore.playlists {
+                children.append(.button(playlist.name) {
+                    playlistAddCoordinator.request(
+                        tracks: [track],
+                        playlistID: playlist.id,
+                        playlistName: playlist.name,
+                        rootURL: library.rootURL,
+                        store: playlistStore
+                    )
+                })
             }
+            children.append(.divider)
         }
+        children.append(newItem)
         return .submenu("Add to Playlist", systemImage: "plus.square.on.square", items: children)
     }
 

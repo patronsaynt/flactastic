@@ -32,7 +32,7 @@ struct SettingsView: View {
             SettingsTabBar(selectedTab: $selectedTab)
 
             // Tab content
-            ScrollView(.vertical, showsIndicators: false) {
+            ScrollView(.vertical, showsIndicators: true) {
                 Group {
                     switch selectedTab {
                     case .config:
@@ -42,10 +42,13 @@ struct SettingsView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(.trailing, Theme.Spacing.sm)
+                .padding(.bottom, Theme.Spacing.md)
             }
+            .scrollBounceBehavior(.basedOnSize)
         }
         .padding(Theme.Spacing.xl)
-        .frame(width: 520, height: 380)
+        .frame(width: 600, height: 560)
         .background(Theme.surface)
     }
 

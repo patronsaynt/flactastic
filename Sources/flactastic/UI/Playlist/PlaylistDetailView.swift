@@ -237,6 +237,15 @@ struct PlaylistDetailView: View {
                 selection.remove(entry.id)
             })
         }
+        let artistItems = artistContextMenuItems(
+            credit: track.artist ?? track.albumArtist,
+            library: library,
+            router: router
+        )
+        if !artistItems.isEmpty {
+            items.append(.divider)
+            items.append(contentsOf: artistItems)
+        }
         return items
     }
 

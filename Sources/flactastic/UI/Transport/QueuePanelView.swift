@@ -6,17 +6,27 @@ struct QueuePanelView: View {
     @Environment(NavigationRouter.self) private var router
 
     private func viewAlbumMenu(for track: Track) -> [FLContextMenuItem] {
-        [
+        var items: [FLContextMenuItem] = [
             .button("View Album", systemImage: "square.grid.2x2") {
                 if let albumID = library.album(for: track)?.id {
                     router.navigateToAlbum(id: albumID)
                 }
             }
         ]
+        let artistItems = artistContextMenuItems(
+            credit: track.artist ?? track.albumArtist,
+            library: library,
+            router: router
+        )
+        if !artistItems.isEmpty {
+            items.append(.divider)
+            items.append(contentsOf: artistItems)
+        }
+        return items
     }
 
     private func upcomingTrackMenu(track: Track, engineIndex: Int) -> [FLContextMenuItem] {
-        [
+        var items: [FLContextMenuItem] = [
             .button("View Album", systemImage: "square.grid.2x2") {
                 if let albumID = library.album(for: track)?.id {
                     router.navigateToAlbum(id: albumID)
@@ -27,6 +37,16 @@ struct QueuePanelView: View {
                 player.removeFromQueue(at: engineIndex)
             }
         ]
+        let artistItems = artistContextMenuItems(
+            credit: track.artist ?? track.albumArtist,
+            library: library,
+            router: router
+        )
+        if !artistItems.isEmpty {
+            items.append(.divider)
+            items.append(contentsOf: artistItems)
+        }
+        return items
     }
 
     /// All upcoming entries (engine indices > currentIndex).

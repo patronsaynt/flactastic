@@ -6,6 +6,7 @@ struct ContentView: View {
     @Environment(LibraryStore.self) private var library
     @Environment(PlaylistStore.self) private var playlistStore
     @Environment(ImportCoordinator.self) private var importCoordinator
+    @Environment(PlaylistAddCoordinator.self) private var playlistAddCoordinator
     @Environment(NavigationRouter.self) private var router
     @Environment(ArtistStore.self) private var artistStore
     @Environment(ArtistImageFetcher.self) private var artistImageFetcher
@@ -98,6 +99,29 @@ struct ContentView: View {
             case .playlist: ImportPlaylistView()
             }
         }
+        .confirmationDialog(
+            duplicateDialogTitle,
+            isPresented: Binding(
+                get: { playlistAddCoordinator.pending != nil },
+                set: { if !$0 { playlistAddCoordinator.cancel() } }
+            ),
+            titleVisibility: .visible,
+            presenting: playlistAddCoordinator.pending
+        ) { pending in
+            if pending.newCount > 0 {
+                Button("Skip Duplicates (Add \(pending.newCount))") {
+                    playlistAddCoordinator.resolveSkipDuplicates(store: playlistStore)
+                }
+            }
+            Button("Add Anyway") {
+                playlistAddCoordinator.resolveAddAll(store: playlistStore)
+            }
+            Button("Cancel", role: .cancel) {
+                playlistAddCoordinator.cancel()
+            }
+        } message: { pending in
+            Text(duplicateDialogMessage(for: pending))
+        }
         .onChange(of: library.scanState) { _, newState in
             if case .done = newState {
                 playlistStore.reconcile(with: library)
@@ -129,6 +153,22 @@ struct ContentView: View {
         let summaries = library.allArtists(resolver: resolver, overrides: artistStore.overrides)
         let artists = summaries.map { (key: $0.id, displayName: $0.displayName) }
         artistImageFetcher.prefetchAll(artists)
+    }
+
+    private var duplicateDialogTitle: String {
+        guard let p = playlistAddCoordinator.pending else { return "" }
+        return p.duplicateCount == p.totalCount
+            ? "Already in Playlist"
+            : "Duplicate Tracks"
+    }
+
+    private func duplicateDialogMessage(for p: PlaylistAddCoordinator.PendingAdd) -> String {
+        if p.duplicateCount == p.totalCount {
+            let noun = p.totalCount == 1 ? "track is" : "tracks are"
+            return "All \(p.totalCount) \(noun) already in \"\(p.playlistName)\"."
+        }
+        let dupNoun = p.duplicateCount == 1 ? "track" : "tracks"
+        return "\(p.duplicateCount) of \(p.totalCount) \(dupNoun) are already in \"\(p.playlistName)\"."
     }
 
     private func handleRepeat() {

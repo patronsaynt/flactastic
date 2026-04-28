@@ -10,6 +10,9 @@ enum FLContextMenuItem: Identifiable {
     case divider(id: UUID)
     case submenu(id: UUID, title: String, systemImage: String?, items: [FLContextMenuItem])
     case label(id: UUID, title: String)
+    /// Inline text field. Submitting (Return) calls `onSubmit` with the
+    /// trimmed text and dismisses the menu. Empty submissions are ignored.
+    case textField(id: UUID, placeholder: String, systemImage: String?, onSubmit: (String) -> Void)
 
     var id: UUID {
         switch self {
@@ -17,6 +20,7 @@ enum FLContextMenuItem: Identifiable {
         case .divider(let id): return id
         case .submenu(let id, _, _, _): return id
         case .label(let id, _): return id
+        case .textField(let id, _, _, _): return id
         }
     }
 
@@ -37,6 +41,14 @@ enum FLContextMenuItem: Identifiable {
 
     static func label(_ title: String) -> FLContextMenuItem {
         .label(id: UUID(), title: title)
+    }
+
+    static func textField(
+        _ placeholder: String,
+        systemImage: String? = nil,
+        onSubmit: @escaping (String) -> Void
+    ) -> FLContextMenuItem {
+        .textField(id: UUID(), placeholder: placeholder, systemImage: systemImage, onSubmit: onSubmit)
     }
 }
 
@@ -174,6 +186,58 @@ struct FLContextMenuView: View {
                 .foregroundStyle(Theme.textTertiary)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 6)
+        case .textField(_, let placeholder, let systemImage, let onSubmit):
+            FLMenuTextFieldRow(
+                placeholder: placeholder,
+                systemImage: systemImage,
+                onSubmit: { text in
+                    let trimmed = text.trimmingCharacters(in: .whitespaces)
+                    guard !trimmed.isEmpty else { return }
+                    onSubmit(trimmed)
+                    onCommit()
+                }
+            )
+        }
+    }
+}
+
+private struct FLMenuTextFieldRow: View {
+    let placeholder: String
+    let systemImage: String?
+    let onSubmit: (String) -> Void
+
+    @State private var text: String = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            if let icon = systemImage {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 16)
+                    .foregroundStyle(Theme.textTertiary)
+            } else {
+                Spacer().frame(width: 16)
+            }
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+                .font(Theme.Font.body)
+                .foregroundStyle(Theme.textPrimary)
+                .focused($focused)
+                .onSubmit { onSubmit(text) }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .fill(Theme.surfaceHover.opacity(0.5))
+                .padding(.horizontal, 4)
+        )
+        .onAppear {
+            // Defer one runloop tick so the hosting window has finished
+            // becoming key before we ask for focus.
+            DispatchQueue.main.async { focused = true }
         }
     }
 }
@@ -234,6 +298,8 @@ private struct SubmenuRow: View {
     let isHovered: Bool
     let onHover: (Bool, NSRect) -> Void
 
+    @State private var rowScreenFrame: NSRect = .zero
+
     var body: some View {
         FLMenuRow(
             title: title,
@@ -242,18 +308,30 @@ private struct SubmenuRow: View {
             isDestructive: false,
             isHovered: isHovered,
             onHover: { hovering in
-                onHover(hovering, FLContextMenuWindow.submenuAnchor())
+                onHover(hovering, FLContextMenuWindow.submenuAnchor(rowScreenFrame: rowScreenFrame))
             },
             onTap: {
-                onHover(true, FLContextMenuWindow.submenuAnchor())
+                onHover(true, FLContextMenuWindow.submenuAnchor(rowScreenFrame: rowScreenFrame))
             }
         )
+        .background(RowFrameReporter { rowScreenFrame = $0 })
     }
 }
 
-private struct FLMenuRowFrameKey: PreferenceKey {
-    static let defaultValue: CGRect = .zero
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
+/// Reports the view's frame in screen coordinates via AppKit, bypassing
+/// SwiftUI coordinate space ambiguities entirely.
+private struct RowFrameReporter: NSViewRepresentable {
+    let onFrame: (NSRect) -> Void
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            guard let window = nsView.window else { return }
+            let frameInScreen = window.convertToScreen(nsView.convert(nsView.bounds, to: nil))
+            onFrame(frameInScreen)
+        }
+    }
 }
 
 // MARK: - Window
@@ -271,6 +349,7 @@ final class FLContextMenuWindow: NSPanel {
         window.configure(items: items, at: screenPoint, isChild: false)
         FLContextMenuController.shared.rootWindow = window
         window.orderFrontRegardless()
+        window.makeKey()
     }
 
     static func presentChild(items: [FLContextMenuItem], anchor: NSRect, onCommit: @escaping () -> Void) {
@@ -279,17 +358,20 @@ final class FLContextMenuWindow: NSPanel {
         window.configureChild(items: items, anchor: anchor, onCommit: onCommit)
         FLContextMenuController.shared.childWindow = window
         window.orderFrontRegardless()
+        window.makeKey()
     }
 
-    /// Anchor point for a submenu: right edge of the root menu, at the current
-    /// cursor Y. Stable and reliable — doesn't depend on SwiftUI preference
-    /// timing, and always flies out sideways like a native submenu.
-    static func submenuAnchor() -> NSRect {
-        let cursor = NSEvent.mouseLocation
+    /// Anchor for a submenu: right edge of the root menu, aligned to the
+    /// parent row's top edge in screen coordinates. `rowScreenFrame` is the
+    /// NSRect of the SubmenuRow in screen coords, reported directly by AppKit.
+    static func submenuAnchor(rowScreenFrame: NSRect) -> NSRect {
         guard let root = FLContextMenuController.shared.rootWindow else {
-            return NSRect(origin: cursor, size: .zero)
+            return NSRect(origin: NSEvent.mouseLocation, size: .zero)
         }
-        return NSRect(x: root.frame.maxX, y: cursor.y, width: 0, height: 0)
+        // rowScreenFrame.maxY is the top edge of the row (NSRect Y-up origin).
+        // Subtract 4pt (menu's outer vertical padding) so the first child row
+        // aligns with the parent row.
+        return NSRect(x: root.frame.maxX, y: rowScreenFrame.maxY - 4, width: 0, height: 0)
     }
 
     init() {
@@ -309,7 +391,7 @@ final class FLContextMenuWindow: NSPanel {
         self.animationBehavior = .utilityWindow
     }
 
-    override var canBecomeKey: Bool { false }
+    override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
     func configure(items: [FLContextMenuItem], at screenPoint: NSPoint, isChild: Bool) {
@@ -328,11 +410,10 @@ final class FLContextMenuWindow: NSPanel {
             onCommit()
             FLContextMenuController.shared.dismissAll()
         }
-        // Top-align the submenu roughly with the hovered row: anchor.y is the
-        // cursor Y, and menu rows are ~28pt tall — nudge up so the first item
-        // sits next to the parent row. `installHosting` subtracts height to
-        // convert this top edge into an AppKit bottom-left origin.
-        let origin = NSPoint(x: anchor.origin.x + 2, y: anchor.origin.y + 18)
+        // anchor.origin.y is the desired top edge of the submenu window in
+        // screen coords; `installHosting` subtracts height to convert this
+        // top edge into an AppKit bottom-left origin.
+        let origin = NSPoint(x: anchor.origin.x + 2, y: anchor.origin.y)
         installHosting(view: AnyView(view), origin: origin, anchorRight: true)
         // Child windows share the root's dismiss monitor.
     }

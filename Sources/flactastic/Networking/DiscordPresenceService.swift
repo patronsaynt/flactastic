@@ -17,6 +17,7 @@ final class DiscordPresenceService {
     private static let clientID = "1498596791971741756"
 
     private let ipc = DiscordIPC()
+    private let artworkLookup = AlbumArtworkLookup()
     private var watcher: Task<Void, Never>?
     private weak var player: PlayerState?
     private weak var settings: Settings?
@@ -56,22 +57,36 @@ final class DiscordPresenceService {
         let title: String
         let artist: String
         let album: String
+        let rawArtist: String     // for artwork lookup
+        let rawAlbum: String
         let startUnixMs: Int64?
         let endUnixMs: Int64?
     }
 
     private var lastKey: SnapshotKey?
+    private var lastStartMs: Int64?
+
+    /// Threshold (ms) for treating a `startMs` change as a real seek vs. float
+    /// jitter from polling. Normal playback drifts a few hundred ms between
+    /// 2-second polls; a rewind/scrub jumps multiple seconds.
+    private static let seekDriftThresholdMs: Int64 = 1500
 
     private func runLoop() async {
         while !Task.isCancelled {
             let snap = makeSnapshot()
-            if snap.key != lastKey {
+            let seeked: Bool = {
+                guard let new = snap.startUnixMs, let old = lastStartMs else { return false }
+                return abs(new - old) >= Self.seekDriftThresholdMs
+            }()
+            if snap.key != lastKey || seeked {
                 let ok: Bool
                 if snap.key.enabled, snap.key.activeTrackID != nil {
+                    let artURL = await artworkLookup.url(artist: snap.rawArtist, album: snap.rawAlbum)
                     ok = await ipc.setActivity(
                         details: snap.title,
                         state: snap.artist,
                         album: snap.album,
+                        artworkURL: artURL,
                         startMs: snap.startUnixMs,
                         endMs: snap.endUnixMs
                     )
@@ -81,7 +96,10 @@ final class DiscordPresenceService {
                 // Only commit the key on success — otherwise a transient write
                 // failure (Discord restart, broken pipe) would mark the change
                 // "delivered" and we'd never retry until the track changes again.
-                if ok { lastKey = snap.key }
+                if ok {
+                    lastKey = snap.key
+                    lastStartMs = snap.startUnixMs
+                }
             }
             try? await Task.sleep(for: .seconds(2))
         }
@@ -92,7 +110,7 @@ final class DiscordPresenceService {
         guard let p = player, let track = p.currentTrack, p.isPlaying else {
             return Snapshot(
                 key: SnapshotKey(activeTrackID: nil, enabled: enabled, hasTimestamps: false),
-                title: "", artist: "", album: "",
+                title: "", artist: "", album: "", rawArtist: "", rawAlbum: "",
                 startUnixMs: nil, endUnixMs: nil
             )
         }
@@ -106,7 +124,14 @@ final class DiscordPresenceService {
             startMs = s
             endMs = s + Int64(dur * 1000)
         }
-        let artist = track.artist ?? track.albumArtist ?? ""
+        // FLAC/Vorbis tags commonly join multiple artists with " ; " or ";".
+        // Normalise to ", " so Discord shows "Artist1, Artist2" instead.
+        let rawTag = track.artist ?? track.albumArtist ?? ""
+        let artist = rawTag
+            .components(separatedBy: ";")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
         let album = track.album ?? ""
         // Keep the artist on the state line; album shows below as the large_text
         // (Discord renders it under the artwork), so duplicating it here is clutter.
@@ -123,9 +148,52 @@ final class DiscordPresenceService {
             title: track.title,
             artist: displayState,
             album: album,
+            rawArtist: artist,
+            rawAlbum: album,
             startUnixMs: startMs,
             endUnixMs: endMs
         )
+    }
+}
+
+// MARK: - Album artwork lookup (iTunes Search API)
+//
+// Discord's RPC accepts arbitrary HTTPS URLs in `large_image`/`small_image`
+// (proxied through Discord's media CDN). We resolve a per-album cover URL via
+// Apple's keyless iTunes Search endpoint and pass it along; if no match is
+// found we fall back to the FLACtastic logo asset uploaded in the Dev Portal.
+private actor AlbumArtworkLookup {
+    private var cache: [String: String?] = [:]
+
+    func url(artist: String, album: String) async -> String? {
+        let key = "\(artist.lowercased())|\(album.lowercased())"
+        if let cached = cache[key] { return cached }
+        let resolved = await fetch(artist: artist, album: album)
+        cache[key] = resolved
+        return resolved
+    }
+
+    private func fetch(artist: String, album: String) async -> String? {
+        guard !album.isEmpty else { return nil }
+        let term = artist.isEmpty ? album : "\(artist) \(album)"
+        var comps = URLComponents(string: "https://itunes.apple.com/search")!
+        comps.queryItems = [
+            URLQueryItem(name: "term", value: term),
+            URLQueryItem(name: "entity", value: "album"),
+            URLQueryItem(name: "limit", value: "1"),
+        ]
+        guard let url = comps.url else { return nil }
+        struct Resp: Decodable { let results: [Result] }
+        struct Result: Decodable { let artworkUrl100: String? }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let decoded = try JSONDecoder().decode(Resp.self, from: data)
+            guard let small = decoded.results.first?.artworkUrl100 else { return nil }
+            // Upgrade Apple's tiny 100×100 thumbnail to 512×512 for crisp art.
+            return small.replacingOccurrences(of: "100x100bb", with: "512x512bb")
+        } catch {
+            return nil
+        }
     }
 }
 
@@ -163,12 +231,22 @@ private actor DiscordIPC {
         return out
     }
 
-    func setActivity(details: String, state: String, album: String, startMs: Int64?, endMs: Int64?) -> Bool {
+    func setActivity(details: String, state: String, album: String, artworkURL: String?, startMs: Int64?, endMs: Int64?) -> Bool {
         guard ensureConnected() else { return false }
         // Discord rejects the entire SET_ACTIVITY when any string field is < 2
         // bytes or > 128 bytes (UTF-8). Clamp to keep payloads accepted.
-        var assets: [String: Any] = ["large_image": "flactastic_logo"]
-        assets["large_text"] = Self.clampField(album.isEmpty ? "FLACtastic" : album)
+        // When we resolved a cover URL, use it as large_image and demote the
+        // FLACtastic logo to the small overlay. Otherwise the logo stays large.
+        var assets: [String: Any] = [:]
+        if let artworkURL, !artworkURL.isEmpty {
+            assets["large_image"] = artworkURL
+            assets["large_text"] = Self.clampField(album.isEmpty ? "FLACtastic" : album)
+            assets["small_image"] = "flactastic_logo"
+            assets["small_text"] = "FLACtastic"
+        } else {
+            assets["large_image"] = "flactastic_logo"
+            assets["large_text"] = Self.clampField(album.isEmpty ? "FLACtastic" : album)
+        }
         var activity: [String: Any] = [
             "type": 2,
             "details": Self.clampField(details.isEmpty ? "Unknown Track" : details),

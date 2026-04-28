@@ -72,19 +72,49 @@ final class PlaylistStore {
 
     // MARK: - Track operations
 
-    func addTracks(_ tracks: [Track], to playlistID: UUID, relativeTo rootURL: URL?) {
+    func addTracks(
+        _ tracks: [Track],
+        to playlistID: UUID,
+        relativeTo rootURL: URL?,
+        skipDuplicates: Bool = false
+    ) {
         guard let index = playlists.firstIndex(where: { $0.id == playlistID }),
               let rootURL else { return }
 
         let rootPath = rootURL.path
+        var existing = skipDuplicates
+            ? Set(playlists[index].entries.map { $0.relativePath })
+            : Set<String>()
+
         for track in tracks {
             let trackPath = track.url.path
-            if trackPath.hasPrefix(rootPath) {
-                let relative = String(trackPath.dropFirst(rootPath.count).drop(while: { $0 == "/" }))
-                playlists[index].entries.append(PlaylistEntry(relativePath: relative))
+            guard trackPath.hasPrefix(rootPath) else { continue }
+            let relative = String(trackPath.dropFirst(rootPath.count).drop(while: { $0 == "/" }))
+            if skipDuplicates {
+                if existing.contains(relative) { continue }
+                existing.insert(relative)
             }
+            playlists[index].entries.append(PlaylistEntry(relativePath: relative))
         }
         save()
+    }
+
+    /// Counts how many of the given tracks already exist in the playlist
+    /// (matched by relative path). Used by the add-to-playlist UI to decide
+    /// whether to prompt the user before inserting duplicates.
+    func duplicateCount(of tracks: [Track], in playlistID: UUID, relativeTo rootURL: URL?) -> Int {
+        guard let playlist = playlists.first(where: { $0.id == playlistID }),
+              let rootURL else { return 0 }
+        let rootPath = rootURL.path
+        let existing = Set(playlist.entries.map { $0.relativePath })
+        var count = 0
+        for track in tracks {
+            let trackPath = track.url.path
+            guard trackPath.hasPrefix(rootPath) else { continue }
+            let relative = String(trackPath.dropFirst(rootPath.count).drop(while: { $0 == "/" }))
+            if existing.contains(relative) { count += 1 }
+        }
+        return count
     }
 
     func removeEntries(at offsets: IndexSet, from playlistID: UUID) {

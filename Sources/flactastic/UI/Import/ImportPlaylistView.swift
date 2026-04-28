@@ -28,15 +28,11 @@ struct ImportPlaylistView: View {
     private let scanner = LibraryScanner()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider().foregroundStyle(Theme.divider)
+        FLSheet(title: "Import Files as Playlist", width: 480, height: 460) {
             content
-            Divider().foregroundStyle(Theme.divider)
-            footer
+        } footer: {
+            footerButtons
         }
-        .frame(width: 480, height: 460)
-        .background(Theme.surface)
         .alert("Import Failed", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -53,24 +49,6 @@ struct ImportPlaylistView: View {
                 artworkData = cropped
             }
         }
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        HStack {
-            Text("Import Files as Playlist")
-                .font(Theme.Font.title)
-                .foregroundStyle(Theme.textPrimary)
-            Spacer()
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(Theme.Spacing.xl)
     }
 
     // MARK: - Content
@@ -195,7 +173,7 @@ struct ImportPlaylistView: View {
 
     // MARK: - Footer
 
-    private var footer: some View {
+    private var footerButtons: some View {
         HStack {
             Spacer()
             Button("Cancel") { dismiss() }
@@ -211,8 +189,6 @@ struct ImportPlaylistView: View {
                         || loadedTracks.isEmpty
                 )
         }
-        .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.vertical, Theme.Spacing.lg)
     }
 
     // MARK: - Actions

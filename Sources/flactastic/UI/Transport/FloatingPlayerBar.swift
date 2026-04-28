@@ -4,11 +4,9 @@ struct FloatingPlayerBar: View {
     @Environment(PlayerState.self)       private var player
     @Environment(Settings.self)          private var settings
     @Environment(PlaylistStore.self)     private var playlistStore
+    @Environment(PlaylistAddCoordinator.self) private var playlistAddCoordinator
     @Environment(LibraryStore.self)      private var library
     @Environment(NavigationRouter.self)  private var router
-
-    @State private var showingNewPlaylistAlert = false
-    @State private var newPlaylistName = ""
 
     var body: some View {
         if player.currentTrack != nil {
@@ -72,6 +70,15 @@ struct FloatingPlayerBar: View {
                         router.navigateToAlbum(id: albumID)
                     }
                 }
+                let artistItems = artistContextMenuItems(
+                    credit: track.artist ?? track.albumArtist,
+                    library: library,
+                    router: router
+                )
+                if !artistItems.isEmpty {
+                    FLContextMenuItem.divider
+                    artistItems
+                }
             }
         }
     }
@@ -91,11 +98,6 @@ struct FloatingPlayerBar: View {
         .buttonStyle(.plain)
         .frame(width: 22, height: 22)
         .help("Add to playlist")
-        .alert("New Playlist", isPresented: $showingNewPlaylistAlert) {
-            TextField("Playlist name", text: $newPlaylistName)
-            Button("Create") { createPlaylistAndAdd() }
-            Button("Cancel", role: .cancel) { newPlaylistName = "" }
-        }
     }
 
     private func buildAddToPlaylistItems() -> [FLContextMenuItem] {
@@ -108,21 +110,28 @@ struct FloatingPlayerBar: View {
             }
             items.append(.divider)
         }
-        items.append(.button("New Playlist…") { showingNewPlaylistAlert = true })
+        items.append(.textField("New playlist name…", systemImage: "plus") { name in
+            guard let track = player.currentTrack else { return }
+            playlistAddCoordinator.createPlaylistAndAdd(
+                name: name,
+                tracks: [track],
+                rootURL: library.rootURL,
+                store: playlistStore
+            )
+        })
         return items
     }
 
     private func addCurrentTrack(to playlistID: UUID) {
-        guard let track = player.currentTrack else { return }
-        playlistStore.addTracks([track], to: playlistID, relativeTo: library.rootURL)
-    }
-
-    private func createPlaylistAndAdd() {
-        let name = newPlaylistName.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty else { newPlaylistName = ""; return }
-        let playlist = playlistStore.createPlaylist(name: name)
-        addCurrentTrack(to: playlist.id)
-        newPlaylistName = ""
+        guard let track = player.currentTrack,
+              let playlist = playlistStore.playlists.first(where: { $0.id == playlistID }) else { return }
+        playlistAddCoordinator.request(
+            tracks: [track],
+            playlistID: playlistID,
+            playlistName: playlist.name,
+            rootURL: library.rootURL,
+            store: playlistStore
+        )
     }
 
     // MARK: - Queue Toggle

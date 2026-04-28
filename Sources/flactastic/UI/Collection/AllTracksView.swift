@@ -10,6 +10,7 @@ struct AllTracksView: View {
     @Environment(PlayerState.self) private var player
     @Environment(LibraryStore.self) private var library
     @Environment(PlaylistStore.self) private var playlistStore
+    @Environment(PlaylistAddCoordinator.self) private var playlistAddCoordinator
     @Environment(NavigationRouter.self) private var router
 
     let tracks: [Track]
@@ -170,6 +171,15 @@ struct AllTracksView: View {
                         FLContextMenuItem.button("Edit...") { editingTrack = track }
                         FLContextMenuItem.divider
                         addToPlaylistMenuItem(tracks: tracksForMenu)
+                        let artistItems = artistContextMenuItems(
+                            credit: track.artist ?? track.albumArtist,
+                            library: library,
+                            router: router
+                        )
+                        if !artistItems.isEmpty {
+                            FLContextMenuItem.divider
+                            artistItems
+                        }
                     }
                     .riseFadeIn(index: index)
                 }
@@ -235,14 +245,29 @@ struct AllTracksView: View {
     }
 
     private func addToPlaylistMenuItem(tracks: [Track]) -> FLContextMenuItem {
-        if playlistStore.playlists.isEmpty {
-            return .label("No playlists yet")
-        }
-        let children: [FLContextMenuItem] = playlistStore.playlists.map { playlist in
-            .button(playlist.name) {
-                playlistStore.addTracks(tracks, to: playlist.id, relativeTo: library.rootURL)
+        var children: [FLContextMenuItem] = []
+        if !playlistStore.playlists.isEmpty {
+            for playlist in playlistStore.playlists {
+                children.append(.button(playlist.name) {
+                    playlistAddCoordinator.request(
+                        tracks: tracks,
+                        playlistID: playlist.id,
+                        playlistName: playlist.name,
+                        rootURL: library.rootURL,
+                        store: playlistStore
+                    )
+                })
             }
+            children.append(.divider)
         }
+        children.append(.textField("New playlist name…", systemImage: "plus") { name in
+            playlistAddCoordinator.createPlaylistAndAdd(
+                name: name,
+                tracks: tracks,
+                rootURL: library.rootURL,
+                store: playlistStore
+            )
+        })
         return .submenu("Add to Playlist", systemImage: "plus.square.on.square", items: children)
     }
 

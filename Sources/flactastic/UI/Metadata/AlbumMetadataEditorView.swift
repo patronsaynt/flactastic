@@ -95,17 +95,15 @@ struct AlbumMetadataEditorView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider().foregroundStyle(Theme.divider)
-            formBody
-            Divider().foregroundStyle(Theme.divider)
-            trackListSection
-            Divider().foregroundStyle(Theme.divider)
-            footer
+        FLSheet(title: "Edit Album", width: 540, height: 720) {
+            VStack(alignment: .leading, spacing: 0) {
+                formBody
+                Divider().foregroundStyle(Theme.divider)
+                trackListSection
+            }
+        } footer: {
+            footerButtons
         }
-        .frame(width: 540, height: 720)
-        .background(Theme.surface)
         .alert("Save Failed", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -124,25 +122,6 @@ struct AlbumMetadataEditorView: View {
                 artworkRemoved = false
             }
         }
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        HStack {
-            Text("Edit Album")
-                .font(Theme.Font.title)
-                .foregroundStyle(Theme.textPrimary)
-            Spacer()
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.vertical, Theme.Spacing.xl)
     }
 
     // MARK: - Form body
@@ -336,7 +315,7 @@ struct AlbumMetadataEditorView: View {
 
     // MARK: - Footer
 
-    private var footer: some View {
+    private var footerButtons: some View {
         HStack {
             Spacer()
             Button("Cancel") { dismiss() }
@@ -347,8 +326,6 @@ struct AlbumMetadataEditorView: View {
                 .buttonStyle(PillButtonStyle(isPrimary: true))
                 .disabled(isSaving || albumName.trimmingCharacters(in: .whitespaces).isEmpty)
         }
-        .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.vertical, Theme.Spacing.xl)
     }
 
     // MARK: - Helpers

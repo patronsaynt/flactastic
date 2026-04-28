@@ -20,6 +20,7 @@ struct FlactasticApp: App {
     }
     @State private var metadataWriter = MetadataWriter()
     @State private var importCoordinator = ImportCoordinator()
+    @State private var playlistAddCoordinator = PlaylistAddCoordinator()
     @State private var router = NavigationRouter()
     @State private var discordPresence = DiscordPresenceService()
 
@@ -37,6 +38,7 @@ struct FlactasticApp: App {
                             .environment(artistRemoteCache)
                             .environment(artistImageFetcher)
                             .environment(importCoordinator)
+                            .environment(playlistAddCoordinator)
                             .environment(router)
                             .environment(\.metadataWriter, metadataWriter)
                             .transition(.opacity)
@@ -103,6 +105,7 @@ struct FlactasticApp: App {
                 .environment(player)
                 .environment(settings)
                 .environment(playlistStore)
+                .environment(playlistAddCoordinator)
         } label: {
             Image(systemName: "music.note")
         }

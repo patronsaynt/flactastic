@@ -253,6 +253,17 @@ struct CollectionView: View {
         var items = playbackContextMenuItems(for: album.tracks, player: player)
         items.append(.divider)
         items.append(.button("Edit...") { editingAlbum = album })
+        if !album.isCompilation {
+            let artistItems = artistContextMenuItems(
+                credit: album.albumArtist ?? album.artist,
+                library: library,
+                router: router
+            )
+            if !artistItems.isEmpty {
+                items.append(.divider)
+                items.append(contentsOf: artistItems)
+            }
+        }
         return items
     }
 }

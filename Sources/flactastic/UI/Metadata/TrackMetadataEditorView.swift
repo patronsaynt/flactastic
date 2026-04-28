@@ -40,15 +40,11 @@ struct TrackMetadataEditorView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider().foregroundStyle(Theme.divider)
+        FLSheet(title: "Edit Track", width: 520, height: 500) {
             formBody
-            Divider().foregroundStyle(Theme.divider)
-            footer
+        } footer: {
+            footerButtons
         }
-        .frame(width: 520, height: 500)
-        .background(Theme.surface)
         .alert("Save Failed", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -57,24 +53,6 @@ struct TrackMetadataEditorView: View {
         } message: {
             Text(errorMessage ?? "")
         }
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        HStack {
-            Text("Edit Track")
-                .font(Theme.Font.title)
-                .foregroundStyle(Theme.textPrimary)
-            Spacer()
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(Theme.Spacing.xl)
     }
 
     // MARK: - Form body
@@ -137,8 +115,10 @@ struct TrackMetadataEditorView: View {
             ArtistsFieldView(artists: $artists)
             metaField("Album",      text: $album)
             HStack(spacing: Theme.Spacing.md) {
-                metaField("Year",      text: $year,   width: 80,  numericOnly: true)
-                metaField("Track #",   text: $trackNumber, width: 80, numericOnly: true)
+                metaField("Year",    text: $year,        numericOnly: true)
+                    .frame(maxWidth: .infinity)
+                metaField("Track #", text: $trackNumber, numericOnly: true)
+                    .frame(maxWidth: .infinity)
             }
             GenreFieldView(text: $genre)
         }
@@ -185,7 +165,7 @@ struct TrackMetadataEditorView: View {
 
     // MARK: - Footer
 
-    private var footer: some View {
+    private var footerButtons: some View {
         HStack {
             Spacer()
             Button("Cancel") { dismiss() }
@@ -196,8 +176,6 @@ struct TrackMetadataEditorView: View {
                 .buttonStyle(PillButtonStyle(isPrimary: true))
                 .disabled(isSaving || title.trimmingCharacters(in: .whitespaces).isEmpty)
         }
-        .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.vertical, Theme.Spacing.lg)
     }
 
     // MARK: - Actions

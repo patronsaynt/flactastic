@@ -16,15 +16,11 @@ struct PlaylistEditorView: View {
     @State private var pendingCropData: Data?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider().foregroundStyle(Theme.divider)
+        FLSheet(title: "Edit Playlist", width: 480, height: 420) {
             formBody
-            Divider().foregroundStyle(Theme.divider)
-            footer
+        } footer: {
+            footerButtons
         }
-        .frame(width: 480, height: 420)
-        .background(Theme.surface)
         .onAppear(perform: loadIfNeeded)
         .sheet(item: Binding(
             get: { pendingCropData.map { CroppingPayload(data: $0) } },
@@ -34,24 +30,6 @@ struct PlaylistEditorView: View {
                 artworkData = cropped
             }
         }
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        HStack {
-            Text("Edit Playlist")
-                .font(Theme.Font.title)
-                .foregroundStyle(Theme.textPrimary)
-            Spacer()
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(Theme.Spacing.xl)
     }
 
     // MARK: - Form
@@ -146,7 +124,7 @@ struct PlaylistEditorView: View {
 
     // MARK: - Footer
 
-    private var footer: some View {
+    private var footerButtons: some View {
         HStack {
             Spacer()
             Button("Cancel") { dismiss() }
@@ -158,8 +136,6 @@ struct PlaylistEditorView: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
         }
-        .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.vertical, Theme.Spacing.lg)
     }
 
     // MARK: - Actions
