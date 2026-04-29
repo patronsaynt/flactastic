@@ -169,11 +169,7 @@ struct PlaylistsTabView: View {
     private func playlistContextMenu(_ playlist: Playlist, tracks: [Track]) -> [FLContextMenuItem] {
         var items = playbackContextMenuItems(for: tracks, player: player)
         items.append(.divider)
-        items.append(.button("Edit…") { editingPlaylistID = playlist.id })
-        items.append(.button("Rename") {
-            renameText = playlist.name
-            renamingPlaylistID = playlist.id
-        })
+        items.append(.button("Edit…", systemImage: "pencil") { editingPlaylistID = playlist.id })
         items.append(.divider)
         items.append(.button("Delete", destructive: true) {
             playlistStore.deletePlaylist(id: playlist.id)

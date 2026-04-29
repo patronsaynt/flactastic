@@ -28,7 +28,7 @@ struct TrackListView: View {
                             }
                         }
                         FLContextMenuItem.divider
-                        FLContextMenuItem.button("Edit...") { editingTrack = track }
+                        FLContextMenuItem.button("Edit...", systemImage: "pencil") { editingTrack = track }
                         FLContextMenuItem.divider
                         addToPlaylistMenuItem(track: track)
                         let artistItems = artistContextMenuItems(

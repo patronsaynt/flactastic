@@ -76,6 +76,28 @@ final class FLContextMenuController {
     weak var rootWindow: FLContextMenuWindow?
     weak var childWindow: FLContextMenuWindow?
 
+    // Deduplication: when multiple RightClickCatchers overlap (e.g. queue panel
+    // over underlying track rows), collect all claims for a single event and
+    // show only the highest-priority menu.
+    private var pendingClaim: (eventNumber: Int, items: [FLContextMenuItem], point: NSPoint, priority: Int)?
+
+    func claimRightClick(eventNumber: Int, items: [FLContextMenuItem], point: NSPoint, priority: Int) {
+        if let existing = pendingClaim, existing.eventNumber == eventNumber {
+            if priority > existing.priority {
+                pendingClaim = (eventNumber, items, point, priority)
+            }
+        } else {
+            pendingClaim = (eventNumber, items, point, priority)
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let pending = self.pendingClaim,
+                      pending.eventNumber == eventNumber else { return }
+                self.pendingClaim = nil
+                FLContextMenuWindow.present(items: pending.items, at: pending.point)
+            }
+        }
+    }
+
     func dismissAll() {
         childWindow?.closeImmediately()
         rootWindow?.closeImmediately()
@@ -509,22 +531,29 @@ extension View {
     /// Shows a themed custom context menu on right-click. Items are built with
     /// `FLContextMenuBuilder` — mirrors SwiftUI's `.contextMenu` but renders
     /// the app's monochrome style.
-    func flContextMenu(@FLContextMenuBuilder items: @escaping () -> [FLContextMenuItem]) -> some View {
-        self.overlay(FLRightClickCatcher(itemsProvider: items))
+    ///
+    /// `priority` controls which menu wins when multiple overlapping catchers
+    /// (e.g. a floating panel over the main content) all receive the same
+    /// right-click. Higher value wins; default is 0.
+    func flContextMenu(priority: Int = 0, @FLContextMenuBuilder items: @escaping () -> [FLContextMenuItem]) -> some View {
+        self.overlay(FLRightClickCatcher(itemsProvider: items, priority: priority))
     }
 }
 
 private struct FLRightClickCatcher: NSViewRepresentable {
     let itemsProvider: () -> [FLContextMenuItem]
+    var priority: Int = 0
 
     func makeNSView(context: Context) -> RightClickView {
         let v = RightClickView()
         v.itemsProvider = itemsProvider
+        v.menuPriority = priority
         return v
     }
 
     func updateNSView(_ nsView: RightClickView, context: Context) {
         nsView.itemsProvider = itemsProvider
+        nsView.menuPriority = priority
     }
 
     /// Zero-interference right-click catcher. The view is fully transparent to
@@ -535,6 +564,7 @@ private struct FLRightClickCatcher: NSViewRepresentable {
     /// NSEvent monitor that checks whether the click falls inside our bounds.
     final class RightClickView: NSView {
         var itemsProvider: (() -> [FLContextMenuItem])?
+        var menuPriority: Int = 0
         private var monitor: Any?
 
         override func viewDidMoveToWindow() {
@@ -576,8 +606,15 @@ private struct FLRightClickCatcher: NSViewRepresentable {
             let items = provider()
             guard !items.isEmpty else { return event }
             let screenPoint = NSEvent.mouseLocation
+            let eventNumber = event.eventNumber
+            let priority = menuPriority
             Task { @MainActor in
-                FLContextMenuWindow.present(items: items, at: screenPoint)
+                FLContextMenuController.shared.claimRightClick(
+                    eventNumber: eventNumber,
+                    items: items,
+                    point: screenPoint,
+                    priority: priority
+                )
             }
             return nil // consume
         }

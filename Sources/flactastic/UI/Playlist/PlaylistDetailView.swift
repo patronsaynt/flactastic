@@ -223,28 +223,25 @@ struct PlaylistDetailView: View {
                 router.navigateToAlbum(id: albumID)
             }
         })
-        items.append(.divider)
-
-        let selectedCount = selection.contains(entry.id) ? selection.count : 0
-        if selectedCount > 1 {
-            items.append(.button("Remove \(selectedCount) Tracks", destructive: true) {
-                playlistStore.removeEntries(ids: selection, from: playlistID)
-                selection = []
-            })
-        } else {
-            items.append(.button("Remove from Playlist", destructive: true) {
-                playlistStore.removeEntries(ids: [entry.id], from: playlistID)
-                selection.remove(entry.id)
-            })
-        }
         let artistItems = artistContextMenuItems(
             credit: track.artist ?? track.albumArtist,
             library: library,
             router: router
         )
-        if !artistItems.isEmpty {
-            items.append(.divider)
-            items.append(contentsOf: artistItems)
+        items.append(contentsOf: artistItems)
+        items.append(.divider)
+
+        let selectedCount = selection.contains(entry.id) ? selection.count : 0
+        if selectedCount > 1 {
+            items.append(.button("Remove \(selectedCount) Tracks", systemImage: "minus.circle") {
+                playlistStore.removeEntries(ids: selection, from: playlistID)
+                selection = []
+            })
+        } else {
+            items.append(.button("Remove from Playlist", systemImage: "minus.circle") {
+                playlistStore.removeEntries(ids: [entry.id], from: playlistID)
+                selection.remove(entry.id)
+            })
         }
         return items
     }

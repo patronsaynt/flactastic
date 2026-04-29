@@ -4,6 +4,10 @@ struct QueuePanelView: View {
     @Environment(PlayerState.self) private var player
     @Environment(LibraryStore.self) private var library
     @Environment(NavigationRouter.self) private var router
+    @Environment(PlaylistStore.self) private var playlistStore
+    @Environment(PlaylistAddCoordinator.self) private var playlistAddCoordinator
+
+    @State private var editingTrack: Track? = nil
 
     private func viewAlbumMenu(for track: Track) -> [FLContextMenuItem] {
         var items: [FLContextMenuItem] = [
@@ -27,14 +31,16 @@ struct QueuePanelView: View {
 
     private func upcomingTrackMenu(track: Track, engineIndex: Int) -> [FLContextMenuItem] {
         var items: [FLContextMenuItem] = [
+            addToPlaylistMenuItem(track: track),
+            .divider,
+            .button("Remove from Queue", systemImage: "minus.circle") {
+                player.removeFromQueue(at: engineIndex)
+            },
+            .divider,
             .button("View Album", systemImage: "square.grid.2x2") {
                 if let albumID = library.album(for: track)?.id {
                     router.navigateToAlbum(id: albumID)
                 }
-            },
-            .divider,
-            .button("Remove from Queue", systemImage: "minus.circle", destructive: true) {
-                player.removeFromQueue(at: engineIndex)
             }
         ]
         let artistItems = artistContextMenuItems(
@@ -46,7 +52,36 @@ struct QueuePanelView: View {
             items.append(.divider)
             items.append(contentsOf: artistItems)
         }
+        items.append(.divider)
+        items.append(.button("Edit...", systemImage: "pencil") { editingTrack = track })
         return items
+    }
+
+    private func addToPlaylistMenuItem(track: Track) -> FLContextMenuItem {
+        var children: [FLContextMenuItem] = []
+        if !playlistStore.playlists.isEmpty {
+            for playlist in playlistStore.playlists {
+                children.append(.button(playlist.name) {
+                    playlistAddCoordinator.request(
+                        tracks: [track],
+                        playlistID: playlist.id,
+                        playlistName: playlist.name,
+                        rootURL: library.rootURL,
+                        store: playlistStore
+                    )
+                })
+            }
+            children.append(.divider)
+        }
+        children.append(.textField("New playlist name…", systemImage: "plus") { name in
+            playlistAddCoordinator.createPlaylistAndAdd(
+                name: name,
+                tracks: [track],
+                rootURL: library.rootURL,
+                store: playlistStore
+            )
+        })
+        return .submenu("Add to Playlist", systemImage: "plus.square.on.square", items: children)
     }
 
     /// All upcoming entries (engine indices > currentIndex).
@@ -85,6 +120,10 @@ struct QueuePanelView: View {
                 .fill(Theme.surface)
                 .shadow(color: .black.opacity(0.5), radius: 20, y: 8)
         )
+        .sheet(item: $editingTrack) { track in
+            TrackMetadataEditorView(track: track)
+                .environment(library)
+        }
     }
 
     // MARK: - Queue list
@@ -99,7 +138,7 @@ struct QueuePanelView: View {
                     listSectionHeader("Now Playing")
                     NowPlayingRow(track: track)
                         .background(Theme.surfaceElevated)
-                        .flContextMenu { viewAlbumMenu(for: track) }
+                        .flContextMenu(priority: 1) { viewAlbumMenu(for: track) }
                 }
 
                 // ── Next in Queue (user-queued tracks, yellow dot) ─────────
@@ -142,7 +181,7 @@ struct QueuePanelView: View {
             .onTapGesture(count: 2) {
                 player.jumpTo(index: item.engineIndex)
             }
-            .flContextMenu { upcomingTrackMenu(track: item.track, engineIndex: item.engineIndex) }
+            .flContextMenu(priority: 1) { upcomingTrackMenu(track: item.track, engineIndex: item.engineIndex) }
             .draggable(trackID.uuidString) {
                 // Drag preview — a shrunken row clone.
                 QueueTrackRow(track: item.track, showQueuedDot: showQueuedDot)

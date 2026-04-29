@@ -252,7 +252,7 @@ struct CollectionView: View {
     private func albumContextMenu(_ album: Album) -> [FLContextMenuItem] {
         var items = playbackContextMenuItems(for: album.tracks, player: player)
         items.append(.divider)
-        items.append(.button("Edit...") { editingAlbum = album })
+        items.append(.button("Edit...", systemImage: "pencil") { editingAlbum = album })
         if !album.isCompilation {
             let artistItems = artistContextMenuItems(
                 credit: album.albumArtist ?? album.artist,
