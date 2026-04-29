@@ -249,11 +249,10 @@ final class PlayerState {
     /// upcoming tracks (index > currentIndex); attempts to remove the
     /// currently-playing track or already-played tracks are ignored.
     func removeFromQueue(at engineIndex: Int) {
-        var q = engine.queue
+        let q = engine.queue
         guard engineIndex > engine.currentIndex, engineIndex < q.count else { return }
-        let removed = q.remove(at: engineIndex)
-        userQueuedTrackIDs.remove(removed.id)
-        engine.reorderQueue(q, currentIndex: engine.currentIndex)
+        userQueuedTrackIDs.remove(q[engineIndex].id)
+        engine.removeFromQueue(at: engineIndex)
     }
 
     /// Jump to a specific index within the current queue.

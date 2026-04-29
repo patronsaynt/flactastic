@@ -237,6 +237,35 @@ final class PlayerEngine {
         if wasPlaying { play() }
     }
 
+    /// Remove a single upcoming track from the queue. Only valid for indices
+    /// strictly greater than `currentIndex`. Always rebuilds the decode pipeline
+    /// so any pre-decoded audio for the removed track is flushed — a brief seam
+    /// in the current track's playback is acceptable in exchange for guaranteed
+    /// correctness, since `reorderQueue`'s continuation path makes assumptions
+    /// that hold for shuffle (same set of tracks, just rearranged) but not for
+    /// removal (queue shrinks).
+    func removeFromQueue(at index: Int) {
+        guard index > _currentIndex, index < _queue.count else { return }
+        _queue.remove(at: index)
+
+        let wasPlaying = isPlaying
+        let savedTime = currentTime
+        cancelDecode()
+        graph.flush()
+        scheduledEntries.removeAll()
+        nextScheduleFrame = 0
+        liveScheduleEnd.withLock { $0 = 0 }
+        currentEntryStartFrame = -1
+        seekTimeOffset = savedTime
+        currentTime = savedTime
+        currentTrack = _queue[_currentIndex]
+        duration = currentTrack?.duration
+        notifyStateUpdate()
+
+        startDecoding(from: _currentIndex, seekOffset: savedTime)
+        if wasPlaying { play() }
+    }
+
     func previous() {
         guard !_queue.isEmpty else { return }
         if currentTime > 3 {

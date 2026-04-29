@@ -422,6 +422,7 @@ struct AlbumMetadataEditorView: View {
             }
             await MainActor.run {
                 library.replaceTracks(collected)
+                library.invalidateAlbumArtwork(albumID: album.id)
                 isSaving = false
                 if let err = firstError {
                     errorMessage = err

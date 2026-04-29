@@ -8,20 +8,52 @@ struct ArtistResolver: Sendable {
     /// Maps normalised key → preferred display casing observed in tags.
     let canonicalByKey: [String: String]
 
-    /// Build a resolver from a track collection. Canonical names are taken
-    /// from any `albumArtist` or `artist` tag whose value contains no
-    /// separator tokens — those are the strings we trust as full names.
+    /// Build a resolver from a track collection.
+    ///
+    /// **Pass 1** – single-artist tags (no separator tokens) are the most
+    /// trustworthy source of a display name; first occurrence wins.
+    ///
+    /// **Pass 2** – multi-artist strings are split permissively so that
+    /// artists who *only* appear inside collaborative credits (e.g. "A, B, C")
+    /// still get their tag casing stored rather than falling back to the
+    /// lowercase normalized key. Pass-1 names are never overwritten, so a
+    /// well-tagged solo artist like "Earth, Wind & Fire" keeps its full name
+    /// intact even if pass 2 would split it.
     init(tracks: [Track]) {
         var byKey: [String: String] = [:]
+        var multiRaws: [String] = []
+
+        // Pass 1 – standalone (non-separator) tags → primary display names.
         for track in tracks {
             for raw in [track.albumArtist, track.artist] {
                 guard let raw, !raw.isEmpty else { continue }
                 let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !Self.containsSeparator(trimmed) else { continue }
-                let key = Self.key(for: trimmed)
-                if byKey[key] == nil { byKey[key] = trimmed }
+                if Self.containsSeparator(trimmed) || Self.explicitlySeparated(trimmed) != nil {
+                    multiRaws.append(trimmed)
+                } else {
+                    let key = Self.key(for: trimmed)
+                    if byKey[key] == nil { byKey[key] = trimmed }
+                }
             }
         }
+
+        // Pass 2 – harvest display names from multi-artist strings.
+        // Explicit delimiters (NUL / ";" / " / ") are always split.
+        // Heuristic delimiters (", " / "feat." / "&" etc.) are split
+        // unconditionally here *only* for name storage — the strict
+        // all-known-fragments check in split() is preserved for navigation.
+        // False-positive fragments (e.g. "Earth" from "Earth, Wind & Fire")
+        // are harmless: they only get a display-name entry in byKey; they
+        // never appear in allArtists() unless a track actually credits them
+        // as a standalone artist.
+        for raw in Set(multiRaws) {
+            let pieces = Self.explicitlySeparated(raw) ?? Self.splitOnSeparators(raw)
+            for piece in pieces {
+                let key = Self.key(for: piece)
+                if byKey[key] == nil { byKey[key] = piece }
+            }
+        }
+
         self.canonicalByKey = byKey
     }
 
@@ -32,8 +64,10 @@ struct ArtistResolver: Sendable {
         return collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Display name for a key — uses the first observed casing from tags
-    /// when available, otherwise echoes the key.
+    /// Display name for a key — uses the casing harvested from tags when
+    /// available (pass 1 or pass 2 of init), otherwise echoes the key as-is.
+    /// The user-facing override in ArtistStore takes precedence over this
+    /// value and is applied at the allArtists() call site.
     func displayName(forKey key: String) -> String {
         canonicalByKey[key] ?? key
     }
