@@ -23,6 +23,8 @@ struct ContentView: View {
                     CollectionView()
                 case .playlists:
                     PlaylistsTabView()
+                case .download:
+                    DownloadTabView()
                 case .visualizer:
                     VisualizerView()
                 }

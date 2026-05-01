@@ -17,12 +17,35 @@ struct FlactasticApp: App {
         _artistStore = State(initialValue: store)
         _artistRemoteCache = State(initialValue: cache)
         _artistImageFetcher = State(initialValue: ArtistImageFetcher(cache: cache, store: store))
+
+        // Streaming downloads: build the registry, register any providers
+        // that already have credentials in the keychain, then construct the
+        // coordinator that ties them to LibraryStore + MetadataWriter.
+        let registry = StreamerRegistry()
+        let credentials = CredentialStore()
+        if !(credentials.read(.qobuzAppID) ?? "").isEmpty {
+            registry.register(QobuzProvider(credentials: credentials))
+        }
+        if !(credentials.read(.deezerARL) ?? "").isEmpty {
+            registry.register(DeezerProvider(credentials: credentials))
+        }
+        let lib = LibraryStore()
+        let writer = MetadataWriter()
+        _streamerRegistry = State(initialValue: registry)
+        _downloadCoordinator = State(initialValue: DownloadCoordinator(
+            registry: registry, library: lib, writer: writer
+        ))
+        // Reuse the same library/writer instances above.
+        _library = State(initialValue: lib)
+        _metadataWriter = State(initialValue: writer)
     }
     @State private var metadataWriter = MetadataWriter()
     @State private var importCoordinator = ImportCoordinator()
     @State private var playlistAddCoordinator = PlaylistAddCoordinator()
     @State private var router = NavigationRouter()
     @State private var discordPresence = DiscordPresenceService()
+    @State private var streamerRegistry = StreamerRegistry()
+    @State private var downloadCoordinator: DownloadCoordinator
 
     var body: some Scene {
         WindowGroup {
@@ -40,6 +63,8 @@ struct FlactasticApp: App {
                             .environment(importCoordinator)
                             .environment(playlistAddCoordinator)
                             .environment(router)
+                            .environment(streamerRegistry)
+                            .environment(downloadCoordinator)
                             .environment(\.metadataWriter, metadataWriter)
                             .transition(.opacity)
                     } else {

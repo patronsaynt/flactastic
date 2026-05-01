@@ -1,0 +1,84 @@
+import Foundation
+import Observation
+
+/// Routes URLs by hostname and aggregates searches across all configured
+/// providers. Owns the live `StreamerProvider` instances; rebuild it (or call
+/// `replace(provider:)`) after the user edits credentials in Settings.
+@Observable
+@MainActor
+final class StreamerRegistry {
+    private(set) var providers: [String: any StreamerProvider] = [:]   // serviceID → provider
+
+    var allProviders: [any StreamerProvider] {
+        providers.values.sorted { $0.displayName < $1.displayName }
+    }
+
+    func register(_ provider: any StreamerProvider) {
+        providers[provider.serviceID] = provider
+    }
+
+    func unregister(serviceID: String) {
+        providers.removeValue(forKey: serviceID)
+    }
+
+    func provider(serviceID: String) -> (any StreamerProvider)? {
+        providers[serviceID]
+    }
+
+    /// Returns the provider whose `hostnames` match `url.host`, or `nil`.
+    /// Compares case-insensitively and tolerates a leading `www.` on either side.
+    func provider(for url: URL) -> (any StreamerProvider)? {
+        guard let host = url.host?.lowercased() else { return nil }
+        let normalized = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        for provider in providers.values {
+            for h in provider.hostnames {
+                let target = h.lowercased()
+                let targetNorm = target.hasPrefix("www.") ? String(target.dropFirst(4)) : target
+                if normalized == targetNorm { return provider }
+            }
+        }
+        return nil
+    }
+
+    /// Resolves a URL to a remote item, picking the right provider by hostname.
+    func resolve(_ url: URL) async throws -> RemoteResolveResponse {
+        guard let provider = provider(for: url) else {
+            throw StreamerError.unsupportedURL(url)
+        }
+        return try await provider.resolve(url)
+    }
+
+    /// Returns search results from every configured provider, keyed by
+    /// `serviceID`. Failures from individual providers are swallowed (the UI
+    /// still wants to show results from the working ones); callers can inspect
+    /// the optional `errors` map.
+    struct AggregatedSearch: Sendable {
+        let perService: [String: StreamerSearchResults]
+        let errors: [String: Error]
+    }
+
+    func searchAll(_ query: String, limit: Int = 20) async -> AggregatedSearch {
+        let snapshot = providers
+        var perService: [String: StreamerSearchResults] = [:]
+        var errors: [String: Error] = [:]
+        await withTaskGroup(of: (String, Result<StreamerSearchResults, Error>).self) { group in
+            for (id, provider) in snapshot {
+                group.addTask {
+                    do {
+                        let r = try await provider.search(query, limit: limit)
+                        return (id, .success(r))
+                    } catch {
+                        return (id, .failure(error))
+                    }
+                }
+            }
+            for await (id, result) in group {
+                switch result {
+                case .success(let r): perService[id] = r
+                case .failure(let e): errors[id] = e
+                }
+            }
+        }
+        return AggregatedSearch(perService: perService, errors: errors)
+    }
+}
