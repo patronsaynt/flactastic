@@ -18,17 +18,14 @@ struct FlactasticApp: App {
         _artistRemoteCache = State(initialValue: cache)
         _artistImageFetcher = State(initialValue: ArtistImageFetcher(cache: cache, store: store))
 
-        // Streaming downloads: build the registry, register any providers
-        // that already have credentials in the keychain, then construct the
-        // coordinator that ties them to LibraryStore + MetadataWriter.
+        // Streaming downloads: a single Lucida provider backed by a hidden
+        // WKWebView pointed at lucida.to. The WebView clears Cloudflare in
+        // the background so the first paste-and-resolve is fast.
         let registry = StreamerRegistry()
-        let credentials = CredentialStore()
-        if !(credentials.read(.qobuzAppID) ?? "").isEmpty {
-            registry.register(QobuzProvider(credentials: credentials))
-        }
-        if !(credentials.read(.deezerARL) ?? "").isEmpty {
-            registry.register(DeezerProvider(credentials: credentials))
-        }
+        let lucidaController = LucidaWebController()
+        lucidaController.warmUp()
+        registry.register(LucidaWebProvider(controller: lucidaController))
+        _lucidaController = State(initialValue: lucidaController)
         let lib = LibraryStore()
         let writer = MetadataWriter()
         _streamerRegistry = State(initialValue: registry)
@@ -46,6 +43,10 @@ struct FlactasticApp: App {
     @State private var discordPresence = DiscordPresenceService()
     @State private var streamerRegistry = StreamerRegistry()
     @State private var downloadCoordinator: DownloadCoordinator
+    @State private var lucidaController: LucidaWebController
+    /// Persisted across launches so a debugger doesn't have to re-toggle
+    /// the View menu every run.
+    @AppStorage("flactastic.debug.lucidaWindowEnabled") private var lucidaDebugEnabled = false
 
     var body: some Scene {
         WindowGroup {
@@ -94,6 +95,7 @@ struct FlactasticApp: App {
             .onChange(of: settings.useLightMode) { _, useLight in
                 applyAppearance(useLight: useLight)
             }
+            .background(DebugWindowController(enabled: $lucidaDebugEnabled))
         }
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
@@ -119,7 +121,24 @@ struct FlactasticApp: App {
                 Button("Volume Down") { player.engine.volumeDown() }
                     .keyboardShortcut(.downArrow, modifiers: .command)
             }
+            // Add to the standard View menu (appears under "Show/Hide
+            // Sidebar"). Using CommandGroup avoids creating a duplicate
+            // top-level "View" menu next to the system one.
+            CommandGroup(after: .sidebar) {
+                Divider()
+                Toggle("Enable Debugging", isOn: $lucidaDebugEnabled)
+                    .keyboardShortcut("d", modifiers: [.command, .option])
+            }
         }
+
+        // Auxiliary debug window for the Lucida WebKit bridge. Hidden by
+        // default; toggled from View → "Enable Debugging".
+        Window("Lucida Debug", id: "lucida-debug") {
+            LucidaDebugView()
+                .environment(lucidaController)
+                .frame(minWidth: 900, minHeight: 600)
+        }
+        .windowResizability(.contentSize)
 
         // Menu bar mini-player. The `isInserted` binding reflects the Settings
         // toggle live (Settings is @Observable), so flipping the option in
