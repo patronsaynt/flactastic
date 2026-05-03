@@ -27,6 +27,8 @@ struct ContentView: View {
                     DownloadTabView()
                 case .visualizer:
                     VisualizerView()
+                case .organizer:
+                    OrganizerView()
                 }
             }
             .id(router.selectedTab)
@@ -86,7 +88,14 @@ struct ContentView: View {
                 .padding(.bottom, 16)
                 .offset(x: player.isQueueVisible ? -180 : 0)
         }
+        .overlay {
+            if let data = router.artworkZoomData {
+                artworkZoomOverlay(data: data)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
+        }
         .animation(.easeInOut(duration: 0.28), value: player.isQueueVisible)
+        .animation(.easeInOut(duration: 0.3), value: router.artworkZoomData != nil)
         .background(Theme.background)
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -141,6 +150,43 @@ struct ContentView: View {
                 }
                 if reachedEnd {
                     handleRepeat()
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func artworkZoomOverlay(data: Data) -> some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .ignoresSafeArea()
+            Color.black.opacity(0.55)
+                .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                Spacer()
+                GeometryReader { geo in
+                    let size = min(geo.size.width, geo.size.height) * 0.85
+                    ArtworkView(data: data, size: size)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                Spacer()
+                Button("Back") {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        router.artworkZoomData = nil
+                    }
+                }
+                .buttonStyle(PillButtonStyle())
+                .padding(.bottom, Theme.Spacing.xl)
+                .background {
+                    Button("") {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            router.artworkZoomData = nil
+                        }
+                    }
+                    .keyboardShortcut(.escape, modifiers: [])
+                    .hidden()
                 }
             }
         }

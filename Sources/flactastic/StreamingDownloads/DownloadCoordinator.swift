@@ -73,7 +73,7 @@ final class DownloadCoordinator {
         let id = job.id
         jobTasks[id] = Task { [weak self] in
             await self?.run(jobID: id)
-            await self?.removeJobTask(id)
+            self?.removeJobTask(id)
         }
     }
 

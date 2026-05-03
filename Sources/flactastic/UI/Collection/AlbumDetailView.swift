@@ -29,14 +29,16 @@ struct AlbumDetailView: View {
 
     var body: some View {
         if let album {
-            ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-                    albumHeader(album)
-                    trackList(album.tracks)
+            ZStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+                        albumHeader(album)
+                        trackList(album.tracks)
+                    }
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.top, Theme.Spacing.lg)
+                    .padding(.bottom, 100)
                 }
-                .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.top, Theme.Spacing.lg)
-                .padding(.bottom, 100)
             }
             .background(Theme.background)
             .navigationTitle(album.name)
@@ -67,6 +69,14 @@ struct AlbumDetailView: View {
     private func albumHeader(_ album: Album) -> some View {
         HStack(alignment: .top, spacing: Theme.Spacing.xl) {
             ArtworkView(data: album.artwork, size: 200)
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        router.artworkZoomData = album.artwork
+                    }
+                }
+                .onHover { hovering in
+                    if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                }
 
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 Text(album.name)

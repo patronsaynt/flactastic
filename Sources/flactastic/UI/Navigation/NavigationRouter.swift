@@ -6,6 +6,7 @@ import Observation
 final class NavigationRouter {
     var selectedTab: AppTab = .collection
     var collectionPath: [String] = []
+    var artworkZoomData: Data? = nil
 
     func navigateToAlbum(id: String) {
         // Pop any current album, switch tabs, then push the new one on the
