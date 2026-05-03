@@ -58,6 +58,13 @@ final class LucidaWebProvider: NSObject, StreamerProvider {
             "window.__flac.metadata(\(jsString(url.absoluteString)))",
             as: LucidaMetadata.self
         )
+        // lucida.to wraps every endpoint in a `{success, ...}` envelope.
+        // Our bridge only flags transport-level failures; an explicit
+        // `success: false` (e.g. region-locked, removed, geo-blocked)
+        // would otherwise come back as a track with empty everything.
+        if raw.success == false {
+            throw StreamerError.unavailable(raw.error ?? "lucida metadata unavailable")
+        }
         return raw.toRemote(originalURL: url)
     }
 
@@ -159,10 +166,12 @@ final class LucidaWebProvider: NSObject, StreamerProvider {
 // MARK: - Wire types
 
 /// Loose decoder for the metadata payload. lucida.to returns a track or
-/// album shape inspired by Lucida's `GetByUrlResponse`; field availability
+/// album shape mirroring Lucida's `GetByUrlResponse` (Resources/lucida/src/
+/// types.ts) on top of a `{success, error?}` envelope. Field availability
 /// varies by upstream service so almost everything is optional.
 private struct LucidaMetadata: Decodable {
     let success: Bool?
+    let error: String?
     let type: String?
     let title: String?
     let artists: [Artist]?
@@ -173,11 +182,19 @@ private struct LucidaMetadata: Decodable {
     let isrc: String?
     let url: String?
     let coverArtwork: [Artwork]?
+    /// Lucida types.ts uses `releaseDate?: Date` — JSON-encoded as an ISO
+    /// string. We don't need full date precision, just the year for tags.
+    let releaseDate: String?
+    let genres: [String]?
     let tracks: [TrackEntry]?
 
     struct Artist: Decodable { let name: String?; let url: String?; let pictures: [Artwork]? }
     struct Album: Decodable {
         let title: String?
+        /// Lucida's canonical field is `releaseDate`, not `releaseYear`. Some
+        /// streamer adapters ship a numeric `releaseYear` for convenience —
+        /// accept either.
+        let releaseDate: String?
         let releaseYear: Int?
         let trackCount: Int?
         let url: String?
@@ -213,6 +230,14 @@ private struct LucidaMetadata: Decodable {
         let discNumber: Int?
         let isrc: String?
         let url: String?
+        let releaseDate: String?
+    }
+
+    /// Pull the year out of an ISO-8601 / partial-ISO date string. Supports
+    /// `2024`, `2024-08`, `2024-08-15`, and `2024-08-15T12:34:56Z`.
+    static func year(from raw: String?) -> Int? {
+        guard let raw, raw.count >= 4 else { return nil }
+        return Int(raw.prefix(4))
     }
 
     func toRemote(originalURL: URL) -> RemoteResolveResponse {
@@ -233,21 +258,38 @@ private struct LucidaMetadata: Decodable {
                 pictureURL: a.pictures?.first?.url.flatMap(URL.init(string:))
             )
         }
-        let albumRef = album.map { al in
-            RemoteAlbumRef(
-                id: al.title ?? "",
-                title: al.title ?? "",
+        let trackTitle = title ?? originalURL.lastPathComponent
+        // For services with no album concept (notably SoundCloud), the
+        // metadata comes back with `album = nil`. Rather than write an empty
+        // album tag (which the library shows as "Unknown" / "Untitled"),
+        // synthesize an album from the track itself: the on-disk album tag
+        // becomes the track title, and the library-side grouping shows the
+        // track as a single rather than dumping it into a nameless bucket.
+        let resolvedAlbum: RemoteAlbumRef
+        if let al = album, let albTitle = al.title, !albTitle.isEmpty {
+            resolvedAlbum = RemoteAlbumRef(
+                id: albTitle,
+                title: albTitle,
                 url: al.url.flatMap(URL.init(string:)),
                 coverArt: (al.coverArtwork ?? []).compactMap(Self.toCover),
-                releaseYear: al.releaseYear,
+                releaseYear: al.releaseYear ?? Self.year(from: al.releaseDate),
                 trackCount: al.trackCount
+            )
+        } else {
+            resolvedAlbum = RemoteAlbumRef(
+                id: "single:\(originalURL.absoluteString)",
+                title: trackTitle,
+                url: nil,
+                coverArt: (coverArtwork ?? []).compactMap(Self.toCover),
+                releaseYear: Self.year(from: releaseDate),
+                trackCount: 1
             )
         }
         return RemoteTrack(
             id: originalURL.absoluteString,
-            title: title ?? originalURL.lastPathComponent,
+            title: trackTitle,
             artists: arts,
-            album: albumRef,
+            album: resolvedAlbum,
             trackNumber: trackNumber,
             discNumber: discNumber,
             durationSeconds: durationMs.map { $0 / 1000 },
@@ -264,6 +306,8 @@ private struct LucidaMetadata: Decodable {
             RemoteArtist(id: a.name ?? "", name: a.name ?? "Unknown Artist",
                          url: nil, pictureURL: nil)
         }
+        let albumTitle = album?.title ?? title ?? originalURL.lastPathComponent
+        let albumYear = album?.releaseYear ?? Self.year(from: album?.releaseDate ?? releaseDate)
         let trackList: [RemoteTrack] = (tracks ?? []).enumerated().map { idx, t in
             RemoteTrack(
                 id: "\(originalURL.absoluteString)#\(idx)",
@@ -273,9 +317,9 @@ private struct LucidaMetadata: Decodable {
                                  url: nil, pictureURL: nil)
                 },
                 album: RemoteAlbumRef(
-                    id: album?.title ?? "", title: album?.title ?? "",
+                    id: albumTitle, title: albumTitle,
                     url: originalURL, coverArt: albumArts,
-                    releaseYear: album?.releaseYear, trackCount: album?.trackCount
+                    releaseYear: albumYear, trackCount: album?.trackCount
                 ),
                 trackNumber: t.trackNumber ?? (idx + 1),
                 discNumber: t.discNumber,
@@ -288,9 +332,9 @@ private struct LucidaMetadata: Decodable {
         }
         return RemoteAlbum(
             id: originalURL.absoluteString,
-            title: album?.title ?? title ?? originalURL.lastPathComponent,
+            title: albumTitle,
             artists: mainArtists,
-            releaseYear: album?.releaseYear,
+            releaseYear: albumYear,
             coverArt: albumArts,
             url: originalURL,
             trackCount: album?.trackCount ?? trackList.count,
@@ -326,7 +370,7 @@ private struct LucidaStreamRequest: Encodable {
         self.handoff    = true
         self.account    = .init(id: options.region, type: "country")
         self.upload     = .init(enabled: false, service: "pixeldrain")
-        self.downscale  = options.format.rawValue
+        self.downscale  = options.downscale
     }
 }
 

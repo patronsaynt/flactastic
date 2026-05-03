@@ -131,7 +131,11 @@ final class LucidaWebController: NSObject {
             guard let v = env.value else {
                 throw StreamerError.decoding("bridge ok=true but value missing")
             }
-            addLog(.ok, "bridge ok (\(str.count) chars)")
+            // Include a truncated preview so the debug pane reveals what
+            // lucida actually returned — invaluable for diagnosing missing
+            // metadata fields without re-running with extra logging.
+            let preview = str.count > 600 ? "\(str.prefix(600))…" : str
+            addLog(.ok, "bridge ok (\(str.count) chars): \(preview)")
             return v
         } catch {
             addLog(.error, "bridge threw: \(error)")

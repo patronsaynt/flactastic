@@ -44,9 +44,10 @@ struct FlactasticApp: App {
     @State private var streamerRegistry = StreamerRegistry()
     @State private var downloadCoordinator: DownloadCoordinator
     @State private var lucidaController: LucidaWebController
-    /// Persisted across launches so a debugger doesn't have to re-toggle
-    /// the View menu every run.
-    @AppStorage("flactastic.debug.lucidaWindowEnabled") private var lucidaDebugEnabled = false
+    /// In-memory only — the Lucida debug window is a developer tool and
+    /// always starts OFF on launch, even if the user left it enabled in
+    /// the previous session.
+    @State private var lucidaDebugEnabled = false
 
     var body: some Scene {
         WindowGroup {

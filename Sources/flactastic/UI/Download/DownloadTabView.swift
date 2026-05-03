@@ -73,6 +73,24 @@ struct DownloadTabView: View {
                 }
             }
             .pickerStyle(.menu)
+            // When the user picks a format that takes a quality (mp3, flac,
+            // opus, …), default `quality` to the highest preset. Picking a
+            // suffix-less format (original/wav/bitcrush) clears it so the
+            // downscale field comes out clean.
+            .onChange(of: options.format) { _, newFormat in
+                options.quality = newFormat.qualities.first?.value
+            }
+
+            // Quality picker only appears for formats that actually take one.
+            if !options.format.qualities.isEmpty {
+                Picker("Quality", selection: qualityBinding) {
+                    ForEach(options.format.qualities) { q in
+                        Text(q.label).tag(q.value)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+
             HStack {
                 Text("Region")
                     .foregroundStyle(Theme.textSecondary)
@@ -86,6 +104,19 @@ struct DownloadTabView: View {
         }
         .padding(Theme.Spacing.sm)
         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.surfaceElevated))
+    }
+
+    /// `Binding<String>` over `options.quality`. Reads with a fallback to
+    /// the format's first preset so the Picker always has a valid selection
+    /// even before the user touches it (`options.quality` is `nil` for the
+    /// default-Original case).
+    private var qualityBinding: Binding<String> {
+        Binding(
+            get: {
+                options.quality ?? options.format.qualities.first?.value ?? ""
+            },
+            set: { options.quality = $0 }
+        )
     }
 
     @ViewBuilder
@@ -191,6 +222,19 @@ struct DownloadTabView: View {
                     Text(jobStatusLabel(job.status))
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.textSecondary)
+                    // Only in-flight jobs show a Cancel button; terminal
+                    // statuses (.completed/.failed/.cancelled/.skipped)
+                    // hide it.
+                    if job.status.canCancel {
+                        Button {
+                            downloads.cancel(job.id)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(Theme.textTertiary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Cancel download")
+                    }
                 }
             }
         }
@@ -209,6 +253,8 @@ struct DownloadTabView: View {
         case .finishing:  return "Moving into library…"
         case .completed:  return "Done"
         case .failed(let m): return "Failed — \(m)"
+        case .cancelled:  return "Cancelled"
+        case .skipped:    return "Already in library"
         }
     }
 

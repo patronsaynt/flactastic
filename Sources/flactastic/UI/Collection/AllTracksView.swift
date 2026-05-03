@@ -16,11 +16,13 @@ struct AllTracksView: View {
     let tracks: [Track]
     let searchText: String
 
-    @State private var sortOption: AllTracksSortOption = .dateAdded
+    /// Persisted across launches. Default stays `.dateAdded` for first-time
+    /// users; subsequent runs honour whatever was last picked.
+    @AppStorage("flactastic.allTracksSort") private var sortOption: AllTracksSortOption = .dateAdded
     /// `false` for `.dateAdded` means newest-first (the natural default for a
     /// "recently added" sort). For alphabetical sorts the default flips to
-    /// ascending (A→Z) via `.onChange` below.
-    @State private var ascending: Bool = false
+    /// ascending (A→Z) via `.onChange` below. Persisted alongside `sortOption`.
+    @AppStorage("flactastic.allTracksAscending") private var ascending: Bool = false
     @State private var editingTrack: Track? = nil
     @State private var selection: Set<UUID> = []
     /// Anchor row for shift-click range selection.

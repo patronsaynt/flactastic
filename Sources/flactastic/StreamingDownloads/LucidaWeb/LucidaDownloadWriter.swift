@@ -45,6 +45,10 @@ final class LucidaDownloadWriter: NSObject, WKDownloadDelegate {
     private var readHandle: FileHandle?
     private var observation: NSKeyValueObservation?
     private var lastOffset: UInt64 = 0
+    /// Weak ref so `tearDown()` (called on stream cancellation) can abort
+    /// the in-flight WKDownload — otherwise the network transfer keeps
+    /// running until the file is fully fetched even after the user cancels.
+    private weak var activeDownload: WKDownload?
 
     override init() {
         var cont: AsyncThrowingStream<Data, Error>.Continuation!
@@ -125,6 +129,7 @@ final class LucidaDownloadWriter: NSObject, WKDownloadDelegate {
     // MARK: - File tailing
 
     private func installObservation(on download: WKDownload, file: URL) {
+        self.activeDownload = download
         Task { @MainActor in
             // WKDownload may not have created the file yet at this exact
             // instant; give it a brief window to appear before observing.
@@ -163,6 +168,13 @@ final class LucidaDownloadWriter: NSObject, WKDownloadDelegate {
     }
 
     private func tearDown() {
+        // Abort the WKDownload if it's still running — fires when the
+        // coordinator's Task is cancelled. Pass an empty completion so
+        // we don't capture resume data we'll never use.
+        if let dl = activeDownload {
+            dl.cancel { _ in }
+            activeDownload = nil
+        }
         observation?.invalidate(); observation = nil
         try? readHandle?.close(); readHandle = nil
         if let url = tempURL {

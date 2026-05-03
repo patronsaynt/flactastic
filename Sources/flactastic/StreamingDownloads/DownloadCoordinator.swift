@@ -15,13 +15,23 @@ final class DownloadCoordinator {
         case finishing
         case completed(URL)
         case failed(String)
+        /// User aborted via `cancel(_:)` — the in-flight WKDownload (if any)
+        /// is torn down and the temp file is cleaned up.
+        case cancelled
+        /// A track with matching title + artist already exists in the
+        /// library. We don't re-download; the existing file's URL is shown
+        /// so the user can find it.
+        case skipped(URL)
 
         var isTerminal: Bool {
             switch self {
-            case .completed, .failed: return true
+            case .completed, .failed, .cancelled, .skipped: return true
             default: return false
             }
         }
+        /// Only in-flight jobs (anything before completion/failure) can be
+        /// cancelled. Used by the UI to gate the cancel button.
+        var canCancel: Bool { !isTerminal }
     }
 
     struct Job: Identifiable, Sendable {
@@ -36,6 +46,12 @@ final class DownloadCoordinator {
     private let library: LibraryStore
     private let writer: MetadataWriter
     private let urlSession: URLSession
+
+    /// Per-job Task handle so `cancel(_:)` can interrupt the pipeline. The
+    /// Task tear-down propagates through `AsyncThrowingStream.onTermination`
+    /// to the underlying provider (WKDownload, URLSession) and cleans temp
+    /// files.
+    private var jobTasks: [UUID: Task<Void, Never>] = [:]
 
     init(
         registry: StreamerRegistry,
@@ -54,11 +70,30 @@ final class DownloadCoordinator {
     func enqueue(_ track: RemoteTrack) {
         let job = Job(id: UUID(), track: track, status: .queued)
         jobs.append(job)
-        Task { await run(jobID: job.id) }
+        let id = job.id
+        jobTasks[id] = Task { [weak self] in
+            await self?.run(jobID: id)
+            await self?.removeJobTask(id)
+        }
+    }
+
+    /// Drop the finished Task's handle. Main-actor isolated so callers from
+    /// the cooperative pool hop here once their `run` returns.
+    private func removeJobTask(_ id: UUID) {
+        jobTasks.removeValue(forKey: id)
     }
 
     func enqueue(_ tracks: [RemoteTrack]) {
         for t in tracks { enqueue(t) }
+    }
+
+    /// Cancel an in-flight job. Cancelling a terminal job is a no-op. The
+    /// Task's cancellation propagates through `AsyncThrowingStream` —
+    /// WKDownload sees its byte stream terminate and stops fetching.
+    func cancel(_ id: UUID) {
+        guard let job = jobs.first(where: { $0.id == id }), job.status.canCancel else { return }
+        jobTasks[id]?.cancel()
+        update(id, .cancelled)
     }
 
     func clearCompleted() {
@@ -82,6 +117,15 @@ final class DownloadCoordinator {
         }
         guard let rootURL = library.rootURL else {
             update(jobID, .failed("No music folder selected. Open Settings → Config first."))
+            return
+        }
+
+        // Duplicate guard: if a track with the same title + primary artist is
+        // already in the library, skip the network round-trip. Match is case-
+        // insensitive and whitespace-trimmed so trivial differences (e.g.
+        // trailing space, capitalisation) don't cause double-downloads.
+        if let existing = Self.findExistingMatch(for: track, in: library.tracks) {
+            update(jobID, .skipped(existing.url))
             return
         }
 
@@ -161,9 +205,35 @@ final class DownloadCoordinator {
 
             update(jobID, .completed(dest))
             library.refreshLibrary()
+        } catch is CancellationError {
+            // Task was cancelled via `cancel(_:)`. The status has already
+            // been set to `.cancelled` there; don't overwrite with a
+            // generic .failed.
+            return
         } catch {
+            // A torn-down AsyncThrowingStream raised by `Task.cancel()`
+            // surfaces as URLError(.cancelled) here, not CancellationError.
+            if (error as NSError).code == NSURLErrorCancelled {
+                return
+            }
             update(jobID, .failed((error as? LocalizedError)?.errorDescription ?? "\(error)"))
         }
+    }
+
+    /// Returns the first library `Track` whose normalized title + artist
+    /// matches the remote track. `nil` when nothing matches.
+    private static func findExistingMatch(for remote: RemoteTrack, in tracks: [Track]) -> Track? {
+        let needleTitle = normalize(remote.title)
+        let needleArtist = normalize(remote.artists.first?.name ?? "")
+        guard !needleTitle.isEmpty else { return nil }
+        return tracks.first { t in
+            normalize(t.title) == needleTitle &&
+            normalize(t.artist ?? "") == needleArtist
+        }
+    }
+
+    private static func normalize(_ s: String) -> String {
+        s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     // MARK: - Helpers

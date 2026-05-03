@@ -8,7 +8,10 @@ struct CollectionView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var searchText = ""
-    @State private var sortOption: CollectionSortOption = .album
+    /// Persisted across launches so the user's preferred grouping (e.g.
+    /// "Artist") survives quitting the app. Default stays `.album` for
+    /// first-time users.
+    @AppStorage("flactastic.collectionSort") private var sortOption: CollectionSortOption = .album
     @State private var contentMode: CollectionContentMode = .albums
     @State private var editingAlbum: Album? = nil
     @State private var refreshRotation: Double = 0
