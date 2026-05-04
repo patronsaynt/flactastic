@@ -4,6 +4,7 @@ import AppKit
 struct OnboardingFolderPage: View {
     @Environment(Settings.self) private var settings
     @Environment(LibraryStore.self) private var library
+    @Environment(PlaylistStore.self) private var playlistStore
 
     let onAdvance: () -> Void
 
@@ -55,6 +56,7 @@ struct OnboardingFolderPage: View {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             settings.lastRootPath = dir.path
             library.openFolder(dir)
+            playlistStore.load(from: dir)
             onAdvance()
         } catch {
             print("[Onboarding] Failed to create music folder: \(error)")
@@ -70,6 +72,7 @@ struct OnboardingFolderPage: View {
         if panel.runModal() == .OK, let url = panel.url {
             settings.lastRootPath = url.path
             library.openFolder(url)
+            playlistStore.load(from: url)
             onAdvance()
         }
     }

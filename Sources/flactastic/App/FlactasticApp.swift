@@ -195,7 +195,6 @@ struct FlactasticApp: App {
 
     @MainActor
     private func bootstrap() async {
-        playlistStore.load()
         artistStore.load()
         artistRemoteCache.load()
         player.engine.setVolume(settings.volume)
@@ -204,6 +203,7 @@ struct FlactasticApp: App {
             let url = URL(fileURLWithPath: path)
             if FileManager.default.fileExists(atPath: url.path) {
                 library.openFolder(url)
+                playlistStore.load(from: url)
                 return
             }
         }

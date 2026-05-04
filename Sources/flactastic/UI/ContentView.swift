@@ -25,10 +25,10 @@ struct ContentView: View {
                     PlaylistsTabView()
                 case .download:
                     DownloadTabView()
-                case .visualizer:
-                    VisualizerView()
                 case .organizer:
                     OrganizerView()
+                case .visualizer:
+                    VisualizerView()
                 }
             }
             .id(router.selectedTab)

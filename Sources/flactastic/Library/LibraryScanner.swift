@@ -71,7 +71,7 @@ actor LibraryScanner {
                 updated.title = String(cString: ptr)
             }
             if let ptr = taglib_tag_artist(tag), ptr.pointee != 0 {
-                updated.artist = Self.normalizeArtist(String(cString: ptr))
+                updated.artist = String(cString: ptr)
             }
             if let ptr = taglib_tag_album(tag), ptr.pointee != 0 {
                 updated.album = String(cString: ptr)
@@ -85,7 +85,7 @@ actor LibraryScanner {
             if track > 0 { updated.trackNumber = Int(track) }
 
             if let aaPtr = taglib_helper_get_album_artist(file) {
-                let aa = Self.normalizeArtist(String(cString: aaPtr))
+                let aa = String(cString: aaPtr)
                 if !aa.isEmpty { updated.albumArtist = aa }
                 free(aaPtr)
             }
@@ -119,11 +119,4 @@ actor LibraryScanner {
         return updated
     }
 
-    /// Applies title-case only when every character in the string is lowercase,
-    /// so already-cased names ("MGMT", "FKA Twigs") are left untouched.
-    /// Handles explicit multi-artist separators (`;`) correctly since
-    /// `String.capitalized` title-cases each word regardless of punctuation.
-    private static func normalizeArtist(_ raw: String) -> String {
-        raw == raw.lowercased() ? raw.capitalized : raw
-    }
 }

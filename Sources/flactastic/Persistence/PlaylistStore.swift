@@ -6,19 +6,23 @@ import Observation
 final class PlaylistStore {
     var playlists: [Playlist] = []
 
-    private let fileURL: URL = {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = appSupport.appendingPathComponent("flactastic", isDirectory: true)
+    private var currentRootURL: URL?
+
+    private var fileURL: URL? {
+        guard let rootURL = currentRootURL else { return nil }
+        let dir = rootURL.appendingPathComponent(".flactastic", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("playlists.json")
-    }()
+    }
 
     // MARK: - Persistence
 
-    func load() {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+    func load(from libraryRootURL: URL) {
+        currentRootURL = libraryRootURL
+
+        guard let url = fileURL, FileManager.default.fileExists(atPath: url.path) else { return }
         do {
-            let data = try Data(contentsOf: fileURL)
+            let data = try Data(contentsOf: url)
             playlists = try JSONDecoder().decode([Playlist].self, from: data)
         } catch {
             print("[PlaylistStore] Failed to load playlists: \(error)")
@@ -26,9 +30,13 @@ final class PlaylistStore {
     }
 
     func save() {
+        guard let url = fileURL else {
+            print("[PlaylistStore] Cannot save: no library root URL set")
+            return
+        }
         do {
             let data = try JSONEncoder().encode(playlists)
-            try data.write(to: fileURL, options: .atomic)
+            try data.write(to: url, options: .atomic)
         } catch {
             print("[PlaylistStore] Failed to save playlists: \(error)")
         }

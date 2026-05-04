@@ -4,6 +4,7 @@ import AppKit
 struct SettingsView: View {
     @Environment(LibraryStore.self) private var library
     @Environment(Settings.self) private var settings
+    @Environment(PlaylistStore.self) private var playlistStore
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedTab: SettingsTab = .config
@@ -61,6 +62,7 @@ struct SettingsView: View {
         if panel.runModal() == .OK, let url = panel.url {
             settings.lastRootPath = url.path
             library.openFolder(url)
+            playlistStore.load(from: url)
         }
     }
 }

@@ -217,7 +217,7 @@ struct OrganizerView: View {
 
                 tokenReference
             }
-            .frame(maxWidth: 520, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -287,18 +287,15 @@ struct OrganizerView: View {
                         }
                     }
                 } label: {
-                    HStack(spacing: Theme.Spacing.xs) {
-                        Text(level.groupBy.displayName)
-                            .font(Theme.Font.bodyMedium)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 9, weight: .semibold))
-                    }
-                    .foregroundStyle(Theme.textPrimary)
-                    .padding(.horizontal, Theme.Spacing.sm)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Theme.surfaceElevated))
+                    Text(level.groupBy.displayName)
+                        .font(Theme.Font.bodyMedium)
+                        .foregroundStyle(Theme.textPrimary)
+                        .padding(.horizontal, Theme.Spacing.sm)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Theme.surfaceElevated))
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
                 .fixedSize()
 
                 templateField(
@@ -414,23 +411,47 @@ struct OrganizerView: View {
         }
     }
 
+    @State private var isTagGuideExpanded = false
+
     private var tokenReference: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            Text("Tokens")
-                .font(Theme.Font.caption)
-                .foregroundStyle(Theme.textTertiary)
-            ForEach(OrganizerTemplate.allTokens) { token in
-                HStack(spacing: Theme.Spacing.sm) {
-                    Text(token.placeholder)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(Theme.textPrimary)
-                        .frame(width: 110, alignment: .leading)
-                    Text(token.description)
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.textTertiary)
+        DisclosureGroup(isExpanded: $isTagGuideExpanded) {
+            // Two-column grid of tokens for compact, scannable browsing.
+            let columns = [
+                GridItem(.flexible(), spacing: Theme.Spacing.lg, alignment: .leading),
+                GridItem(.flexible(), spacing: Theme.Spacing.lg, alignment: .leading)
+            ]
+            LazyVGrid(columns: columns, alignment: .leading, spacing: Theme.Spacing.sm) {
+                ForEach(OrganizerTemplate.allTokens) { token in
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Text(token.placeholder)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(Theme.textPrimary)
+                            .padding(.horizontal, Theme.Spacing.xs)
+                            .padding(.vertical, 2)
+                            .background(RoundedRectangle(cornerRadius: Theme.Radius.sm).fill(Theme.surfaceElevated))
+                        Text(token.description)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.textTertiary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
                 }
             }
+            .padding(.top, Theme.Spacing.sm)
+        } label: {
+            HStack(spacing: Theme.Spacing.xs) {
+                Image(systemName: "tag")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textSecondary)
+                Text("Tag Guide")
+                    .font(Theme.Font.bodyMedium)
+                    .foregroundStyle(Theme.textPrimary)
+                Text("\(OrganizerTemplate.allTokens.count) tokens")
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.textTertiary)
+            }
         }
+        .tint(Theme.textSecondary)
     }
 
     private func examplePreview(template: String, fallback: String) -> String? {
@@ -440,48 +461,55 @@ struct OrganizerView: View {
     }
 
     private var primaryArtistToggle: some View {
-        let binding = Binding(
-            get: { store.selected.usePrimaryArtistOnly },
-            set: { newValue in
-                var s = store.selected
-                s.usePrimaryArtistOnly = newValue
-                store.selected = s
-                model.markStale()
-            }
+        settingRow(
+            title: "Use primary artist only",
+            subtitle: "For tracks credited to multiple artists (\u{201C}A & B\u{201D}, \u{201C}A feat. B\u{201D}, \u{201C}A; B\u{201D}), file under just the first.",
+            isOn: Binding(
+                get: { store.selected.usePrimaryArtistOnly },
+                set: { newValue in
+                    var s = store.selected
+                    s.usePrimaryArtistOnly = newValue
+                    store.selected = s
+                    model.markStale()
+                }
+            )
         )
-        return VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            Toggle(isOn: binding) {
-                Text("Use primary artist only")
-                    .font(Theme.Font.bodyMedium)
-                    .foregroundStyle(Theme.textPrimary)
-            }
-            .toggleStyle(.switch)
-            Text("For tracks credited to multiple artists (\u{201C}A & B\u{201D}, \u{201C}A feat. B\u{201D}, \u{201C}A; B\u{201D}), file under just the first.")
-                .font(Theme.Font.caption)
-                .foregroundStyle(Theme.textTertiary)
-        }
     }
 
     private var deleteEmptyOriginalsToggle: some View {
-        let binding = Binding(
-            get: { store.selected.deleteEmptyOriginals },
-            set: { newValue in
-                var s = store.selected
-                s.deleteEmptyOriginals = newValue
-                store.selected = s
-            }
+        settingRow(
+            title: "Delete empty original folders",
+            subtitle: "After moves complete, remove any source folders that no longer contain audio (cover art and other leftovers are swept up too).",
+            isOn: Binding(
+                get: { store.selected.deleteEmptyOriginals },
+                set: { newValue in
+                    var s = store.selected
+                    s.deleteEmptyOriginals = newValue
+                    store.selected = s
+                }
+            )
         )
-        return VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            Toggle(isOn: binding) {
-                Text("Delete empty original folders")
+    }
+
+    /// Title + subtitle on the left, switch pinned to the trailing edge so all
+    /// toggles in the column align in a single vertical column.
+    private func settingRow(title: String, subtitle: String, isOn: Binding<Bool>) -> some View {
+        HStack(alignment: .center, spacing: Theme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
                     .font(Theme.Font.bodyMedium)
                     .foregroundStyle(Theme.textPrimary)
+                Text(subtitle)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .toggleStyle(.switch)
-            Text("After moves complete, remove any source folders that are now empty (walks up to your library root).")
-                .font(Theme.Font.caption)
-                .foregroundStyle(Theme.textTertiary)
+            Spacer(minLength: Theme.Spacing.md)
+            Toggle("", isOn: isOn)
+                .toggleStyle(.switch)
+                .labelsHidden()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Preview column
