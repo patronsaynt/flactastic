@@ -1,12 +1,15 @@
 # Project FLACtastic: Beta
 
-## Visual overhaul
+## Beta v2.1
 
-With functionality working properly, visual enhancements will be made to the application.
+Core functionality and visual design are both complete. Beta testing is now needed to ensure they work smoothly.
 
-### Timeline
+### Installation
 
-Beta version 2 is now in progress.
+1. Download `FLACtastic-1.3.0-beta.2.dmg`.
+2. Open the DMG and drag **FLACtastic.app** into your **Applications** folder.
+3. The first time you launch, right-click the app and choose **Open** to
+   bypass macOS Gatekeeper (the build is ad-hoc signed for beta testing).
 
 ---
 
