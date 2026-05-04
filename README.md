@@ -61,7 +61,7 @@ Playlists are _persistent to your library_, so you don't have to worry about los
  
 ### Method 1: DMG Installer (Recommended)
  
-1. **Download** `FLACtastic-3.0.dmg`
+1. **Download** <https://github.com/patronsaynt/flactastic/releases/tag/v3.0>
 2. **Mount the DMG** by double-clicking it in Finder
 3. **Drag FLACtastic** into the **Applications** folder
 4. **Eject the DMG** by right-clicking and selecting "Eject"
