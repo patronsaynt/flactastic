@@ -199,10 +199,11 @@ final class PlayerEngine {
         notifyStateUpdate()
     }
 
-    /// Insert tracks into the queue at the given index. Flushes in-flight audio and
-    /// re-decodes from the current track, which causes a brief audible seam when
-    /// insertion point is after the current track. The current track restarts at its
-    /// current playback time to preserve continuity as much as possible.
+    /// Insert tracks into the queue at the given index without interrupting playback
+    /// when possible. If the decode task hasn't pre-buffered any future track yet,
+    /// the inserted tracks are picked up on the next decode iteration and no flush
+    /// is needed. Falls back to a full pipeline rebuild only when a future track has
+    /// already been loaded into the player node and would be played out of order.
     func insertTracks(_ tracks: [Track], at index: Int) {
         guard !tracks.isEmpty else { return }
         ensurePrepared()
@@ -219,6 +220,26 @@ final class PlayerEngine {
             _currentIndex += tracks.count
         }
 
+        // If no future track has been pre-buffered yet, the running decode task will
+        // encounter the inserted tracks naturally on its next queue read — no flush needed.
+        let nextTrackAlreadyScheduled = scheduledEntries.contains(where: {
+            $0.track.id != currentTrack?.id
+        })
+
+        if !nextTrackAlreadyScheduled {
+            // If the decoder went idle before we inserted (e.g. single-track queue),
+            // kick it off from the next position so new tracks get decoded.
+            if !isDecoding {
+                let nextIdx = _currentIndex + 1
+                if nextIdx < _queue.count {
+                    startDecoding(from: nextIdx)
+                }
+            }
+            notifyStateUpdate()
+            return
+        }
+
+        // A pre-buffered future track would be displaced — flush and rebuild.
         let wasPlaying = isPlaying
         let savedTime = currentTime
         cancelDecode()
@@ -237,17 +258,39 @@ final class PlayerEngine {
         if wasPlaying { play() }
     }
 
-    /// Remove a single upcoming track from the queue. Only valid for indices
-    /// strictly greater than `currentIndex`. Always rebuilds the decode pipeline
-    /// so any pre-decoded audio for the removed track is flushed — a brief seam
-    /// in the current track's playback is acceptable in exchange for guaranteed
-    /// correctness, since `reorderQueue`'s continuation path makes assumptions
-    /// that hold for shuffle (same set of tracks, just rearranged) but not for
-    /// removal (queue shrinks).
+    /// Remove a single upcoming track from the queue without interrupting playback
+    /// when possible. If the removed track and no other future track has been
+    /// pre-buffered, the decode task is cancelled and restarted from the current
+    /// continuation point — identical to `reorderQueue`'s seamless path. Falls back
+    /// to a full flush only when the removed track's audio is already in the player node.
     func removeFromQueue(at index: Int) {
         guard index > _currentIndex, index < _queue.count else { return }
+
+        let removedTrack = _queue[index]
+        let alreadyScheduled = scheduledEntries.contains(where: { $0.track.id == removedTrack.id })
+        let nextTrackAlreadyScheduled = scheduledEntries.contains(where: { $0.track.id != currentTrack?.id })
+
         _queue.remove(at: index)
 
+        // Common case: decoder is still on the current track and the removed track's
+        // audio hasn't been loaded. Cancel and restart from the current continuation
+        // point — no flush, so the playing audio is uninterrupted.
+        if !alreadyScheduled && !nextTrackAlreadyScheduled && !scheduledEntries.isEmpty {
+            let endFrame = liveScheduleEnd.withLock { $0 }
+            let canonicalRate = graph.canonicalFormat.sampleRate
+            let currentEntryStart = scheduledEntries.last?.startFrame ?? 0
+            let preScheduledSeconds = Double(endFrame - currentEntryStart) / canonicalRate
+            let continuationOffset = seekTimeOffset + preScheduledSeconds
+
+            cancelDecode()
+            nextScheduleFrame = endFrame
+            notifyStateUpdate()
+            startDecoding(from: _currentIndex, seekOffset: continuationOffset, appendingEntry: !scheduledEntries.isEmpty)
+            return
+        }
+
+        // Fallback: the removed track's audio is in the player node (or another future
+        // track is already buffered) — flush and rebuild to restore correct order.
         let wasPlaying = isPlaying
         let savedTime = currentTime
         cancelDecode()

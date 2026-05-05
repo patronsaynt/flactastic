@@ -268,6 +268,8 @@ final class DownloadCoordinator {
         let bad: Set<Character> = ["/", ":"]
         let cleaned = String(raw.map { bad.contains($0) ? "-" : $0 })
         let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Untitled" : trimmed
+        if trimmed.isEmpty { return "Untitled" }
+        // Files starting with "." are hidden on macOS/Unix; prefix with "_" to keep them visible.
+        return trimmed.hasPrefix(".") ? "_" + trimmed : trimmed
     }
 }

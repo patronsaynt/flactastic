@@ -51,7 +51,9 @@ enum ImportCopy {
         let cleaned = name
             .filter { !invalid.contains($0) }
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? fallback : cleaned
+        if cleaned.isEmpty { return fallback }
+        // Files starting with "." are hidden on macOS/Unix; prefix with "_" to keep them visible.
+        return cleaned.hasPrefix(".") ? "_" + cleaned : cleaned
     }
 
     /// Builds the standard album folder name used by `Import Album`:
