@@ -37,11 +37,16 @@ enum OrganizerPlanner {
                                                    primaryArtistOnly: profile.usePrimaryArtistOnly)
                 folder.appendPathComponent(raw, isDirectory: true)
             }
+            // Preserve the original extension casing. Lowercasing extensions
+            // caused a silent no-op on macOS's case-insensitive filesystem:
+            // moveItem(Song.FLAC → Song.flac) succeeds but doesn't rename, so
+            // the file stays .FLAC, the next scan picks it up again, and it
+            // permanently appeared as needing a move.
             let ext = track.url.pathExtension
             let renderedName = OrganizerTemplate.render(profile.fileTemplate, for: track,
                                                         fallback: "Untitled",
                                                         primaryArtistOnly: profile.usePrimaryArtistOnly)
-            let filename = ext.isEmpty ? renderedName : "\(renderedName).\(ext.lowercased())"
+            let filename = ext.isEmpty ? renderedName : "\(renderedName).\(ext)"
             let dest = folder.appendingPathComponent(filename).standardizedFileURL
             preliminary.append((track, dest))
         }
@@ -57,7 +62,11 @@ enum OrganizerPlanner {
         for (track, dest) in preliminary {
             let source = track.url.standardizedFileURL
             let status: OrganizerOperation.Status
-            if source == dest {
+            // Use case-insensitive path comparison: macOS filesystems are
+            // case-insensitive, so "Song.FLAC" and "Song.flac" are the same
+            // file even though they're unequal as Swift strings.
+            let alreadyInPlace = source.path.caseInsensitiveCompare(dest.path) == .orderedSame
+            if alreadyInPlace {
                 status = .unchanged
             } else if (collisionCount[dest] ?? 0) > 1 {
                 status = .conflict(reason: "Multiple tracks resolve to this destination")
