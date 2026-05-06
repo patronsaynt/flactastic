@@ -170,7 +170,8 @@ struct PlaylistDetailView: View {
         TrackRow(track: track,
                  isPlaying: player.currentTrack?.id == track.id,
                  displayNumber: index + 1,
-                 showDragHandle: true)
+                 showDragHandle: true,
+                 showAlbumArt: true)
             .padding(.vertical, 2)
             .background(rowBackground)
             .opacity(draggingEntryID == entryID ? 0.4 : 1.0)
@@ -190,7 +191,8 @@ struct PlaylistDetailView: View {
                 TrackRow(track: track,
                          isPlaying: false,
                          displayNumber: index + 1,
-                         showDragHandle: true)
+                         showDragHandle: true,
+                         showAlbumArt: true)
                     .frame(width: 360)
                     .background(Theme.surfaceElevated)
                     .cornerRadius(Theme.Radius.sm)

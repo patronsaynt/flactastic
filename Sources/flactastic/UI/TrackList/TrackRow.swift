@@ -11,7 +11,9 @@ struct TrackRow: View {
 
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
-            if showAlbumArt {
+            if showAlbumArt && displayNumber != nil {
+                numberWithAlbumArt
+            } else if showAlbumArt {
                 albumArtOrIndicator
             } else {
                 trackNumberOrIndicator
@@ -75,6 +77,26 @@ struct TrackRow: View {
                         .shadow(radius: 2)
                 }
         } else {
+            ArtworkView(data: track.artwork, size: 36)
+        }
+    }
+
+    @ViewBuilder
+    private var numberWithAlbumArt: some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            Group {
+                if isPlaying {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.accent)
+                } else if let num = displayNumber {
+                    Text("\(num)")
+                        .font(Theme.Font.captionMono)
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
+            .frame(width: 22, alignment: .trailing)
+
             ArtworkView(data: track.artwork, size: 36)
         }
     }

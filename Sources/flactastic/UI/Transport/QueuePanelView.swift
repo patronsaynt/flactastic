@@ -92,14 +92,6 @@ struct QueuePanelView: View {
         return (start..<q.count).map { (q[$0], $0) }
     }
 
-    private var queuedUpcoming: [(track: Track, engineIndex: Int)] {
-        upcoming.filter { player.isUserQueued($0.track) }
-    }
-
-    private var sourceUpcoming: [(track: Track, engineIndex: Int)] {
-        upcoming.filter { !player.isUserQueued($0.track) }
-    }
-
     @State private var draggingTrackID: UUID? = nil
     @State private var dropTargetTrackID: UUID? = nil
 
@@ -129,9 +121,7 @@ struct QueuePanelView: View {
     // MARK: - Queue list
 
     private var queueList: some View {
-        let sourceTitle = player.playbackSource.map { "Next from: \($0)" } ?? "Up Next"
-
-        return ScrollView {
+        ScrollView {
             LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
                 // ── Now Playing ────────────────────────────────────────────
                 if let track = player.currentTrack {
@@ -141,19 +131,11 @@ struct QueuePanelView: View {
                         .flContextMenu(priority: 1) { viewAlbumMenu(for: track) }
                 }
 
-                // ── Next in Queue (user-queued tracks, yellow dot) ─────────
-                if !queuedUpcoming.isEmpty {
-                    listSectionHeader("Next in Queue")
-                    ForEach(queuedUpcoming, id: \.track.id) { item in
-                        draggableQueueRow(item: item, showQueuedDot: true)
-                    }
-                }
-
-                // ── Next from Source ───────────────────────────────────────
-                if !sourceUpcoming.isEmpty {
-                    listSectionHeader(sourceTitle)
-                    ForEach(sourceUpcoming, id: \.track.id) { item in
-                        draggableQueueRow(item: item, showQueuedDot: false)
+                // ── Unified upcoming queue (user-queued shown with yellow dot)
+                if !upcoming.isEmpty {
+                    listSectionHeader("Next Up")
+                    ForEach(upcoming, id: \.track.id) { item in
+                        draggableQueueRow(item: item, showQueuedDot: player.isUserQueued(item.track))
                     }
                 }
             }
