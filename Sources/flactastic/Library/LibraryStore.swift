@@ -108,6 +108,10 @@ final class LibraryStore {
     private var scanTask: Task<Void, Never>?
     private var metadataTask: Task<Void, Never>?
 
+    /// Persists relativePath → UUID so Track identities survive restarts.
+    /// Loaded in `openFolder` and consulted during every scan.
+    private(set) var trackIDStore = TrackIDStore()
+
     func album(for track: Track) -> Album? {
         albums.first { $0.tracks.contains { $0.id == track.id } }
     }
@@ -156,8 +160,14 @@ final class LibraryStore {
     func addImportedTracks(_ imported: [Track]) {
         guard !imported.isEmpty else { return }
         let existing = Set(tracks.map { $0.url })
-        let fresh = imported.filter { !existing.contains($0.url) }
+        var fresh = imported.filter { !existing.contains($0.url) }
         guard !fresh.isEmpty else { return }
+        // Assign stable IDs to newly-imported tracks so playlist membership
+        // survives the next app restart.
+        if let url = rootURL {
+            fresh = applyStableIDs(to: fresh, rootURL: url)
+            trackIDStore.save()
+        }
         tracks = (tracks + fresh).sortedForLibrary()
         normaliseArtistTags()
         seedAlbumArtworkCache()
@@ -170,12 +180,18 @@ final class LibraryStore {
         scanState = .scanning
         tracks = []
 
+        // Load the sidecar before scanning so assign() returns persisted UUIDs.
+        trackIDStore.load(from: url)
+
         scanTask = Task { [scanner] in
             do {
                 let cheap = try await scanner.scan(root: url)
                 if Task.isCancelled { return }
-                self.tracks = cheap
-                self.scanState = .done(count: cheap.count)
+                // Rewrite ephemeral UUIDs → stable IDs from the sidecar.
+                let stable = self.applyStableIDs(to: cheap, rootURL: url)
+                self.trackIDStore.save()
+                self.tracks = stable
+                self.scanState = .done(count: stable.count)
                 // Note: we deliberately do NOT flip `hasCompletedInitialLoad`
                 // here. The cheap scan gives us URLs but no metadata, so
                 // album grouping would churn as artist/album tags stream in.
@@ -208,14 +224,27 @@ final class LibraryStore {
                     self.tracks.map { ($0.url, $0) },
                     uniquingKeysWith: { _, last in last }
                 )
-                let merged: [Track] = scanned.map { stub in existingByURL[stub.url] ?? stub }
+
+                // Assign stable IDs only to genuinely new files — existing
+                // in-memory tracks already carry their stable UUID from the
+                // last openFolder/refresh call.
+                let rawNewStubs = scanned.filter { existingByURL[$0.url] == nil }
+                let stableNewStubs = self.applyStableIDs(to: rawNewStubs, rootURL: url)
+                if !stableNewStubs.isEmpty { self.trackIDStore.save() }
+
+                let stableByURL = Dictionary(
+                    stableNewStubs.map { ($0.url, $0) },
+                    uniquingKeysWith: { _, last in last }
+                )
+                let merged: [Track] = scanned.map { stub in
+                    existingByURL[stub.url] ?? stableByURL[stub.url] ?? stub
+                }
 
                 self.tracks = merged
                 self.scanState = .done(count: merged.count)
 
-                let newStubs = merged.filter { existingByURL[$0.url] == nil }
-                if !newStubs.isEmpty {
-                    self.startMetadataLoadForTracks(newStubs)
+                if !stableNewStubs.isEmpty {
+                    self.startMetadataLoadForTracks(stableNewStubs)
                 }
             } catch {
                 if Task.isCancelled { return }
@@ -250,6 +279,41 @@ final class LibraryStore {
                     self.seedAlbumArtworkCache()
                 }
             }
+        }
+    }
+
+    /// Rewrites each track's `id` to the stable UUID from `trackIDStore`,
+    /// using the track's relative path as the lookup key.  New paths are
+    /// assigned a fresh UUID and recorded.
+    ///
+    /// **Does not save** — callers must call `trackIDStore.save()` once after
+    /// the full batch to avoid per-track disk writes.
+    @discardableResult
+    private func applyStableIDs(to tracks: [Track], rootURL: URL) -> [Track] {
+        let rootPath = rootURL.path
+        return tracks.map { track in
+            guard track.url.path.hasPrefix(rootPath) else { return track }
+            let rel = String(track.url.path.dropFirst(rootPath.count).drop(while: { $0 == "/" }))
+            let stableID = trackIDStore.assign(fileURL: track.url, relativePath: rel)
+            guard stableID != track.id else { return track }
+            return Track(
+                id: stableID,
+                url: track.url,
+                title: track.title,
+                artist: track.artist,
+                albumArtist: track.albumArtist,
+                album: track.album,
+                trackNumber: track.trackNumber,
+                duration: track.duration,
+                artwork: track.artwork,
+                fileFormat: track.fileFormat,
+                sampleRate: track.sampleRate,
+                bitDepth: track.bitDepth,
+                genre: track.genre,
+                year: track.year,
+                isCompilation: track.isCompilation,
+                dateAdded: track.dateAdded
+            )
         }
     }
 

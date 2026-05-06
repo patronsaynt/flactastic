@@ -90,37 +90,45 @@ final class PlaylistStore {
               let rootURL else { return }
 
         let rootPath = rootURL.path
-        var existing = skipDuplicates
-            ? Set(playlists[index].entries.map { $0.relativePath })
-            : Set<String>()
+
+        // Prefer trackID-based duplicate detection (rename-safe) and fall back
+        // to relative-path matching for legacy entries that lack a trackID.
+        let existingByTrackID: Set<UUID> = skipDuplicates
+            ? Set(playlists[index].entries.compactMap { $0.trackID })
+            : []
+        let existingByPath: Set<String> = skipDuplicates
+            ? Set(playlists[index].entries.filter { $0.trackID == nil }.map { $0.relativePath })
+            : []
 
         for track in tracks {
             let trackPath = track.url.path
             guard trackPath.hasPrefix(rootPath) else { continue }
             let relative = String(trackPath.dropFirst(rootPath.count).drop(while: { $0 == "/" }))
             if skipDuplicates {
-                if existing.contains(relative) { continue }
-                existing.insert(relative)
+                if existingByTrackID.contains(track.id) { continue }
+                if existingByPath.contains(relative) { continue }
             }
-            playlists[index].entries.append(PlaylistEntry(relativePath: relative))
+            playlists[index].entries.append(PlaylistEntry(trackID: track.id, relativePath: relative))
         }
         save()
     }
 
-    /// Counts how many of the given tracks already exist in the playlist
-    /// (matched by relative path). Used by the add-to-playlist UI to decide
-    /// whether to prompt the user before inserting duplicates.
+    /// Counts how many of the given tracks already exist in the playlist.
+    /// Prefers `trackID` matching (rename-safe) and falls back to relative-path
+    /// matching for legacy entries that pre-date trackID persistence.
     func duplicateCount(of tracks: [Track], in playlistID: UUID, relativeTo rootURL: URL?) -> Int {
         guard let playlist = playlists.first(where: { $0.id == playlistID }),
               let rootURL else { return 0 }
         let rootPath = rootURL.path
-        let existing = Set(playlist.entries.map { $0.relativePath })
+        let existingByTrackID = Set(playlist.entries.compactMap { $0.trackID })
+        let existingByPath    = Set(playlist.entries.filter { $0.trackID == nil }.map { $0.relativePath })
         var count = 0
         for track in tracks {
+            if existingByTrackID.contains(track.id) { count += 1; continue }
             let trackPath = track.url.path
             guard trackPath.hasPrefix(rootPath) else { continue }
             let relative = String(trackPath.dropFirst(rootPath.count).drop(while: { $0 == "/" }))
-            if existing.contains(relative) { count += 1 }
+            if existingByPath.contains(relative) { count += 1 }
         }
         return count
     }
@@ -162,36 +170,69 @@ final class PlaylistStore {
     // MARK: - Resolution
 
     /// Resolves playlist entries to live Track objects from the library.
+    ///
+    /// **Fast path:** entries with a `trackID` are resolved by UUID — immune to
+    /// file moves and renames.
+    ///
+    /// **Migration path:** entries without a `trackID` (written before this
+    /// feature was introduced) fall back to relative-path resolution. When a
+    /// match is found this way, the entry's `trackID` is stamped in-place so
+    /// future resolutions use the fast path.
     func resolvedTracks(for playlist: Playlist, in library: LibraryStore) -> [Track] {
-        guard let rootURL = library.rootURL else { return [] }
+        guard let rootURL = library.rootURL,
+              let pi = playlists.firstIndex(where: { $0.id == playlist.id }) else { return [] }
 
-        let tracksByPath = Dictionary(library.tracks.map { ($0.url.path, $0) },
-                                      uniquingKeysWith: { first, _ in first })
+        let byID   = Dictionary(library.tracks.map { ($0.id, $0) },
+                                uniquingKeysWith: { first, _ in first })
+        let byPath = Dictionary(library.tracks.map { ($0.url.path, $0) },
+                                uniquingKeysWith: { first, _ in first })
+        var needsSave = false
+        var result: [Track] = []
 
-        return playlist.entries.compactMap { entry in
+        for j in playlists[pi].entries.indices {
+            let entry = playlists[pi].entries[j]
+
+            // Fast path: stable trackID.
+            if let tid = entry.trackID, let track = byID[tid] {
+                result.append(track)
+                continue
+            }
+
+            // Migration fallback: resolve by absolute path and stamp trackID.
             let absolutePath = rootURL.appendingPathComponent(entry.relativePath).path
-            return tracksByPath[absolutePath]
+            if let track = byPath[absolutePath] {
+                result.append(track)
+                playlists[pi].entries[j].trackID = track.id
+                needsSave = true
+            }
+            // Dangling entries (no match by ID or path) are silently skipped;
+            // reconcile() handles their removal on the next scan.
         }
+
+        if needsSave { save() }
+        return result
     }
 
     // MARK: - Reconciliation
 
-    /// Remove entries from all playlists whose source files no longer exist in the library.
+    /// Removes entries from all playlists whose tracks no longer exist in the
+    /// library. Uses `trackID` for entries that have one (rename-safe), and
+    /// falls back to absolute-path matching for legacy entries.
     func reconcile(with library: LibraryStore) {
         guard let rootURL = library.rootURL else { return }
 
+        let libraryIDs   = Set(library.tracks.map { $0.id })
         let libraryPaths = Set(library.tracks.map { $0.url.path })
         var changed = false
 
         for i in playlists.indices {
             let before = playlists[i].entries.count
             playlists[i].entries.removeAll { entry in
+                if let tid = entry.trackID { return !libraryIDs.contains(tid) }
                 let absolutePath = rootURL.appendingPathComponent(entry.relativePath).path
                 return !libraryPaths.contains(absolutePath)
             }
-            if playlists[i].entries.count != before {
-                changed = true
-            }
+            if playlists[i].entries.count != before { changed = true }
         }
 
         if changed { save() }

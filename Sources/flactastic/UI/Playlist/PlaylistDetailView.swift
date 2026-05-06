@@ -103,11 +103,9 @@ struct PlaylistDetailView: View {
                         .buttonStyle(PillButtonStyle(isPrimary: true))
 
                         Button {
-                            player.setOriginalQueue(tracks)
-                            var shuffled = tracks
-                            shuffled.shuffle()
                             player.isShuffleEnabled = true
-                            player.startFreshQueue(shuffled, startAt: 0, source: playlist.name)
+                            let startIndex = Int.random(in: 0..<tracks.count)
+                            player.startFreshQueue(tracks, startAt: startIndex, source: playlist.name)
                             player.engine.play()
                         } label: {
                             HStack(spacing: Theme.Spacing.xs) {
@@ -137,14 +135,14 @@ struct PlaylistDetailView: View {
 
     @ViewBuilder
     private func trackList(_ playlist: Playlist) -> some View {
-        let tracksByPath = buildTrackLookup()
+        let lookup = buildTrackLookup()
 
         // SwiftUI's List `.onMove` is unreliable on macOS with `.listStyle(.plain)`,
         // so reordering is implemented with `.draggable` / `.dropDestination`
         // on a LazyVStack instead.
         LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(Array(playlist.entries.enumerated()), id: \.element.id) { index, entry in
-                if let track = resolveEntry(entry, lookup: tracksByPath) {
+                if let track = resolveEntry(entry, lookup: lookup) {
                     draggablePlaylistRow(
                         entry: entry,
                         track: track,
@@ -268,17 +266,24 @@ struct PlaylistDetailView: View {
 
     // MARK: - Helpers
 
-    private func buildTrackLookup() -> [String: Track] {
-        guard let rootURL = library.rootURL else { return [:] }
-        _ = rootURL // rootURL needed for resolution
-        return Dictionary(library.tracks.map { ($0.url.path, $0) },
-                          uniquingKeysWith: { first, _ in first })
+    private typealias TrackLookup = (byPath: [String: Track], byID: [UUID: Track])
+
+    private func buildTrackLookup() -> TrackLookup {
+        let byPath = Dictionary(library.tracks.map { ($0.url.path, $0) },
+                                uniquingKeysWith: { first, _ in first })
+        let byID   = Dictionary(library.tracks.map { ($0.id,       $0) },
+                                uniquingKeysWith: { first, _ in first })
+        return (byPath, byID)
     }
 
-    private func resolveEntry(_ entry: PlaylistEntry, lookup: [String: Track]) -> Track? {
+    /// Resolves a playlist entry to a live Track, preferring the stable
+    /// `trackID` UUID (move-proof) and falling back to `relativePath` for
+    /// legacy entries that pre-date UUID persistence.
+    private func resolveEntry(_ entry: PlaylistEntry, lookup: TrackLookup) -> Track? {
+        if let tid = entry.trackID, let track = lookup.byID[tid] { return track }
         guard let rootURL = library.rootURL else { return nil }
         let absolutePath = rootURL.appendingPathComponent(entry.relativePath).path
-        return lookup[absolutePath]
+        return lookup.byPath[absolutePath]
     }
 
     private func playFromEntry(_ entry: PlaylistEntry, in playlist: Playlist) {
@@ -288,9 +293,9 @@ struct PlaylistDetailView: View {
         // Map the entry index to the resolved track index (accounting for any
         // unresolvable entries that compactMap skipped).
         var resolvedIndex = 0
-        let tracksByPath = buildTrackLookup()
+        let lookup = buildTrackLookup()
         for i in 0..<entryIndex {
-            if resolveEntry(playlist.entries[i], lookup: tracksByPath) != nil {
+            if resolveEntry(playlist.entries[i], lookup: lookup) != nil {
                 resolvedIndex += 1
             }
         }

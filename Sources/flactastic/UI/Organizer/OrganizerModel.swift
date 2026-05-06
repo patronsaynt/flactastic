@@ -91,6 +91,28 @@ final class OrganizerModel {
                 )
             }
             library.replaceTracks(updated)
+
+            // Update TrackIDStore path keys so the sidecar reflects the new
+            // folder layout. PlaylistEntry.trackID values are unaffected —
+            // stable UUIDs survive the move without any playlist patching.
+            let rootPath = rootURL.path
+            let opByTrackID = Dictionary(
+                uniqueKeysWithValues: ops.compactMap { op -> (UUID, OrganizerOperation)? in
+                    guard case .move = op.status else { return nil }
+                    return (op.track.id, op)
+                }
+            )
+            var pathMap: [String: String] = [:]
+            for moved in result.moved {
+                guard let op = opByTrackID[moved.trackID] else { continue }
+                let oldAbs = op.sourceURL.path
+                let newAbs = moved.newURL.path
+                guard oldAbs.hasPrefix(rootPath), newAbs.hasPrefix(rootPath) else { continue }
+                let oldRel = String(oldAbs.dropFirst(rootPath.count).drop(while: { $0 == "/" }))
+                let newRel = String(newAbs.dropFirst(rootPath.count).drop(while: { $0 == "/" }))
+                pathMap[oldRel] = newRel
+            }
+            library.trackIDStore.renamePaths(pathMap)
         }
 
         let movedCount = result.moved.count

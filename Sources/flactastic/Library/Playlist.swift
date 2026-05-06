@@ -2,13 +2,38 @@ import Foundation
 
 /// A single entry in a playlist, carrying its own stable UUID so SwiftUI can
 /// track identity across reorders without relying on array offset.
-struct PlaylistEntry: Codable, Sendable, Identifiable, Hashable {
+struct PlaylistEntry: Sendable, Identifiable, Hashable {
     let id: UUID
+    /// The stable library-level identity of this track. Set when the entry is
+    /// added; `nil` only in data written before track-ID persistence was
+    /// introduced. `PlaylistStore.resolvedTracks` migrates these lazily.
+    var trackID: UUID?
     var relativePath: String
 
-    init(id: UUID = UUID(), relativePath: String) {
+    init(id: UUID = UUID(), trackID: UUID? = nil, relativePath: String) {
         self.id = id
+        self.trackID = trackID
         self.relativePath = relativePath
+    }
+}
+
+// MARK: - PlaylistEntry Codable (with backward-compat trackID)
+
+extension PlaylistEntry: Codable {
+    private enum CodingKeys: String, CodingKey { case id, trackID, relativePath }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id           = try  c.decode(UUID.self,   forKey: .id)
+        trackID      = try  c.decodeIfPresent(UUID.self, forKey: .trackID)   // nil in old data
+        relativePath = try  c.decode(String.self, forKey: .relativePath)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id,                  forKey: .id)
+        try c.encodeIfPresent(trackID,    forKey: .trackID)
+        try c.encode(relativePath,        forKey: .relativePath)
     }
 }
 

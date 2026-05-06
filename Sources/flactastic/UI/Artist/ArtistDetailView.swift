@@ -194,15 +194,9 @@ struct ArtistDetailView: View {
         let tracks = (summary.albums + summary.singles + summary.appearsOn)
             .flatMap(\.tracks)
         guard !tracks.isEmpty else { return }
-        var ordered = tracks
-        if shuffle {
-            player.setOriginalQueue(tracks)
-            ordered.shuffle()
-            player.isShuffleEnabled = true
-        } else {
-            player.isShuffleEnabled = false
-        }
-        player.startFreshQueue(ordered, startAt: 0, source: summary.displayName)
+        player.isShuffleEnabled = shuffle
+        let startIndex = shuffle ? Int.random(in: 0..<tracks.count) : 0
+        player.startFreshQueue(tracks, startAt: startIndex, source: summary.displayName)
         player.engine.play()
     }
 

@@ -291,7 +291,6 @@ struct AllTracksView: View {
     private func play(track: Track) {
         let queue = cachedVisible
         guard let index = queue.firstIndex(where: { $0.id == track.id }) else { return }
-        player.isShuffleEnabled = false
         player.startFreshQueue(queue, startAt: index, source: "Library")
         player.engine.play()
         clearSelection()
@@ -300,17 +299,9 @@ struct AllTracksView: View {
     private func playAll(shuffle: Bool) {
         let queue = cachedVisible
         guard !queue.isEmpty else { return }
-        if shuffle {
-            // Preserve the sorted order so toggling shuffle off later restores it.
-            player.setOriginalQueue(queue)
-            var shuffled = queue
-            shuffled.shuffle()
-            player.isShuffleEnabled = true
-            player.startFreshQueue(shuffled, startAt: 0, source: "Library")
-        } else {
-            player.isShuffleEnabled = false
-            player.startFreshQueue(queue, startAt: 0, source: "Library")
-        }
+        player.isShuffleEnabled = shuffle
+        let startIndex = shuffle ? Int.random(in: 0..<queue.count) : 0
+        player.startFreshQueue(queue, startAt: startIndex, source: "Library")
         player.engine.play()
         clearSelection()
     }

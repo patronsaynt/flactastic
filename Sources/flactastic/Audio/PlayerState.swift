@@ -134,21 +134,35 @@ final class PlayerState {
         }
     }
 
-    /// Store the original queue when an external caller sets up a shuffled queue
-    /// (e.g. "Shuffle" button on album/playlist detail views).
-    func setOriginalQueue(_ tracks: [Track]) {
-        originalQueue = tracks
-    }
-
     // MARK: - Queue API
 
     /// Start a fresh playback queue. Clears any user-queued markers — this is what
     /// Play All, double-click, and similar "start playing X" actions should call
     /// instead of talking to the engine directly.
+    ///
+    /// When `isShuffleEnabled` is true the queue is automatically shuffled:
+    /// the track at `index` plays first, then all other tracks (including those
+    /// before `index`) are shuffled behind it, matching Spotify-style behaviour.
+    /// The original unshuffled order is snapshot into `originalQueue` so that
+    /// toggling shuffle off later can restore it.
     func startFreshQueue(_ tracks: [Track], startAt index: Int = 0, source: String? = nil) {
         userQueuedTrackIDs.removeAll()
         playbackSource = source
-        engine.setQueue(tracks, startAt: index)
+
+        if isShuffleEnabled && tracks.count > 1 {
+            // Snapshot the ordered source for later shuffle-off restoration.
+            originalQueue = tracks
+            // Start with the chosen track; shuffle everything else (including
+            // tracks that came before `index` — they stay in the pool).
+            let selected = tracks[index]
+            var rest = tracks
+            rest.remove(at: index)
+            rest.shuffle()
+            engine.setQueue([selected] + rest, startAt: 0)
+        } else {
+            originalQueue = []
+            engine.setQueue(tracks, startAt: index)
+        }
     }
 
     /// Insert tracks immediately after the current track. If nothing is playing yet,

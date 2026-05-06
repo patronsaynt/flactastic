@@ -223,15 +223,9 @@ struct AlbumDetailView: View {
     }
 
     private func playAlbum(_ album: Album, shuffle: Bool) {
-        var tracks = album.tracks
-        if shuffle {
-            player.setOriginalQueue(album.tracks)
-            tracks.shuffle()
-            player.isShuffleEnabled = true
-        } else {
-            player.isShuffleEnabled = false
-        }
-        player.startFreshQueue(tracks, startAt: 0, source: album.name)
+        player.isShuffleEnabled = shuffle
+        let startIndex = shuffle ? Int.random(in: 0..<album.tracks.count) : 0
+        player.startFreshQueue(album.tracks, startAt: startIndex, source: album.name)
         player.engine.play()
     }
 }
