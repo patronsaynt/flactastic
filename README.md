@@ -1,5 +1,5 @@
 # Project FLACtastic
-## Version 3.0 Release
+## Version 3.1 Release
  
 **The future of lossless audio on macOS.**
  
