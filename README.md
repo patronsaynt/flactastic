@@ -7,16 +7,19 @@ FLACtastic is a local music player and organizer designed to bridge the gap betw
  
 ---
  
-## What's New in v3.0
+## What's New in v3.1
+- **Architectural shift** – Tracks are now uniquely identifiable per-library, which means playlists persist with folder changes.
+- **Misc. Bug Fixes** - Fixed tracklist display and queue management issues
+
+---
  
+## Core Features
+
 - **Metadata Display** – Audio quality indicators on every track
 - **Queue Management** – Modern queue rearrangement and management
 - **Visual Refinement** – Polished animations, refined typography, and two beautiful themes
 - **Full Playlist Support** – Create, edit, and organize custom playlists with persistent storage
 - **Folder organizer** – Automatically organize your music folder heirarchy with a few clicks
----
- 
-## Core Features
  
 ### 📚 Collection Management
  
