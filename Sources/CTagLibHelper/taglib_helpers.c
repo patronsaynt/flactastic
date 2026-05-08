@@ -61,6 +61,27 @@ void taglib_helper_set_compilation(void *file, int value) {
     }
 }
 
+void taglib_helper_set_lyrics(void *file, const char *value) {
+    if (!file) return;
+    // Empty / NULL value clears the property cross-format.
+    taglib_property_set((TagLib_File *)file, "LYRICS",
+                        (value && value[0] != '\0') ? value : "");
+}
+
+char *taglib_helper_get_lyrics(void *file) {
+    if (!file) return NULL;
+    char **values = taglib_property_get((TagLib_File *)file, "LYRICS");
+    if (!values) return NULL;
+    char *result = NULL;
+    if (values[0] && values[0][0] != '\0') {
+        size_t n = strlen(values[0]);
+        result = (char *)malloc(n + 1);
+        if (result) memcpy(result, values[0], n + 1);
+    }
+    taglib_property_free(values);
+    return result;
+}
+
 unsigned char *taglib_helper_read_picture(void *file, unsigned int *out_size) {
     if (!file || !out_size) return NULL;
     *out_size = 0;

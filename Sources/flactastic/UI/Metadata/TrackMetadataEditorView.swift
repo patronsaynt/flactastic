@@ -27,6 +27,9 @@ struct TrackMetadataEditorView: View {
     @State private var isSaving:    Bool   = false
     @State private var errorMessage: String? = nil
 
+    // Lyrics editor pop-out
+    @State private var showLyricsEditor: Bool = false
+
     init(track: Track) {
         self.track = track
         _title       = State(initialValue: track.title)
@@ -52,6 +55,9 @@ struct TrackMetadataEditorView: View {
             Button("OK", role: .cancel) { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
+        }
+        .sheet(isPresented: $showLyricsEditor) {
+            TrackLyricsEditorView(track: track)
         }
     }
 
@@ -167,6 +173,19 @@ struct TrackMetadataEditorView: View {
 
     private var footerButtons: some View {
         HStack {
+            Button {
+                showLyricsEditor = true
+            } label: {
+                HStack(spacing: Theme.Spacing.xs) {
+                    Image(systemName: "text.alignleft")
+                        .font(.system(size: 11))
+                    Text("Lyrics…")
+                }
+            }
+            .buttonStyle(PillButtonStyle())
+            .disabled(isSaving)
+            .help("Edit the embedded lyrics for this track")
+
             Spacer()
             Button("Cancel") { dismiss() }
                 .buttonStyle(PillButtonStyle())

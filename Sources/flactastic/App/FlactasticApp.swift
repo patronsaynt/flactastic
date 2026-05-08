@@ -10,6 +10,8 @@ struct FlactasticApp: App {
     @State private var artistStore: ArtistStore
     @State private var artistRemoteCache: ArtistRemoteCache
     @State private var artistImageFetcher: ArtistImageFetcher
+    @State private var lyricsRemoteCache: LyricsRemoteCache
+    @State private var lyricsFetcher: LyricsFetcher
 
     init() {
         let store = ArtistStore()
@@ -35,6 +37,13 @@ struct FlactasticApp: App {
         // Reuse the same library/writer instances above.
         _library = State(initialValue: lib)
         _metadataWriter = State(initialValue: writer)
+
+        let lyricsCache = LyricsRemoteCache()
+        _lyricsRemoteCache = State(initialValue: lyricsCache)
+        _lyricsFetcher = State(initialValue: LyricsFetcher(
+            cache: lyricsCache,
+            metadataWriter: writer
+        ))
     }
     @State private var metadataWriter = MetadataWriter()
     @State private var importCoordinator = ImportCoordinator()
@@ -62,6 +71,8 @@ struct FlactasticApp: App {
                             .environment(artistStore)
                             .environment(artistRemoteCache)
                             .environment(artistImageFetcher)
+                            .environment(lyricsRemoteCache)
+                            .environment(lyricsFetcher)
                             .environment(importCoordinator)
                             .environment(playlistAddCoordinator)
                             .environment(router)
@@ -181,6 +192,10 @@ struct FlactasticApp: App {
                responder is NSTextView {
                 return event
             }
+            // Step aside while the lyrics sync sheet is capturing beat taps.
+            if player.isLyricsSyncActive {
+                return event
+            }
             player.engine.togglePlayPause()
             return nil // consume the event
         }
@@ -197,6 +212,7 @@ struct FlactasticApp: App {
     private func bootstrap() async {
         artistStore.load()
         artistRemoteCache.load()
+        lyricsRemoteCache.load()
         player.engine.setVolume(settings.volume)
         discordPresence.attach(player: player, settings: settings)
         if let path = settings.lastRootPath {

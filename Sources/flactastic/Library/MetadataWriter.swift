@@ -172,6 +172,49 @@ actor MetadataWriter {
         return updated
     }
 
+    /// Write a `LYRICS` tag onto the file at `track.url`. TagLib normalizes
+    /// the property name to the format-specific frame (Xiph LYRICS / ID3v2
+    /// USLT / MP4 ©lyr / WMA WM/Lyrics). Pass `nil` or `""` to clear.
+    /// All other tags are left untouched.
+    func writeLyrics(to track: Track, lyrics: String?) throws {
+        let url = track.url
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw WriteError.fileNotFound(url)
+        }
+        guard let file = url.path.withCString({ taglib_file_new($0) }) else {
+            throw WriteError.fileOpenFailed(url)
+        }
+        defer {
+            taglib_file_free(file)
+            taglib_tag_free_strings()
+        }
+        guard taglib_file_is_valid(file) != 0 else {
+            throw WriteError.fileOpenFailed(url)
+        }
+        (lyrics ?? "").withCString { taglib_helper_set_lyrics(file, $0) }
+        guard taglib_file_save(file) != 0 else {
+            throw WriteError.saveFailed(url)
+        }
+    }
+
+    /// Read the `LYRICS` tag from the file at `track.url`. Returns nil when
+    /// the tag is unset. Useful for honoring user-embedded lyrics without a
+    /// network roundtrip.
+    func readLyrics(from track: Track) throws -> String? {
+        let url = track.url
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        guard let file = url.path.withCString({ taglib_file_new($0) }) else { return nil }
+        defer {
+            taglib_file_free(file)
+            taglib_tag_free_strings()
+        }
+        guard taglib_file_is_valid(file) != 0 else { return nil }
+        guard let cstr = taglib_helper_get_lyrics(file) else { return nil }
+        defer { free(cstr) }
+        let result = String(cString: cstr)
+        return result.isEmpty ? nil : result
+    }
+
     // MARK: - Helpers
 
     private func mimeType(for data: Data) -> String {

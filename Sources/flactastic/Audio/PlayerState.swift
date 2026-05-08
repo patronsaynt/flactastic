@@ -40,6 +40,10 @@ final class PlayerState {
     /// Whether the queue panel is currently visible.
     var isQueueVisible: Bool = false
 
+    /// True while the lyrics sync sheet is up. The app-level spacebar monitor
+    /// checks this and steps aside so the sheet can capture beat taps.
+    var isLyricsSyncActive: Bool = false
+
     /// Mirror of `engine.queue`. Stored (not computed) so SwiftUI observes changes
     /// even when `currentTrack`/`duration` don't change — e.g. appending to a
     /// single-track queue, where the current track stays the same but the queue grows.

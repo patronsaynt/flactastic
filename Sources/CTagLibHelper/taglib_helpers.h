@@ -56,6 +56,16 @@ int taglib_helper_get_compilation(void *file);
  *  the tag entirely. */
 void taglib_helper_set_compilation(void *file, int value);
 
+/** Write the LYRICS property (cross-format: Xiph LYRICS / ID3v2 USLT /
+ *  MP4 ©lyr / WMA WM/Lyrics). Pass NULL or "" to clear. The value is
+ *  stored verbatim — for synced lyrics, pass the LRC source so other
+ *  players that parse LRC-in-LYRICS pick it up. */
+void taglib_helper_set_lyrics(void *file, const char *value);
+
+/** Read the LYRICS property. Returns a malloc'd C string the caller must
+ *  free(), or NULL if unset. */
+char *taglib_helper_get_lyrics(void *file);
+
 #ifdef __cplusplus
 }
 #endif
