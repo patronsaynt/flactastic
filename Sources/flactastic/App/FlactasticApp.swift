@@ -78,6 +78,7 @@ struct FlactasticApp: App {
                             .environment(streamerRegistry)
                             .environment(downloadCoordinator)
                             .environment(lucidaController)
+                            .environment(\.debugMode, lucidaDebugEnabled)
                             .environment(\.metadataWriter, metadataWriter)
                             .transition(.opacity)
                     } else {

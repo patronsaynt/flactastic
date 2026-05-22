@@ -14,6 +14,11 @@ struct DownloadTabView: View {
     @State private var resolved: RemoteResolveResponse?
     @State private var isWorking: Bool = false
     @State private var error: String?
+    /// Drives the VPN advisory sheet. Set once on first appearance per
+    /// session when `settings.showVpnNotice` is true; suppressed afterwards
+    /// so navigating away and back doesn't re-pop the modal.
+    @State private var showVpnSheet: Bool = false
+    @State private var hasOfferedVpnSheet: Bool = false
     /// Per-paste download knobs (region, format, metadata, compat). Reset to
     /// defaults each time the user pastes a fresh URL. Applied to every
     /// track that gets enqueued from the resolved view below.
@@ -28,10 +33,6 @@ struct DownloadTabView: View {
                 Text("Paste a link from Spotify, Tidal, Qobuz, Amazon Music, or SoundCloud below")
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.textSecondary)
-            }
-
-            if settings.showVpnNotice {
-                VpnNotice(showNotice: Bindable(settings).showVpnNotice)
             }
 
             TextField("Paste a track, album, or playlist URL", text: $pasteURL)
@@ -62,7 +63,19 @@ struct DownloadTabView: View {
         .padding(Theme.Spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.background)
-        .task { lucidaController.warmUp() }
+        .task {
+            lucidaController.warmUp()
+            // Surface the VPN advisory on first Downloads-tab entry per
+            // session. After the user closes it, we don't re-pop on
+            // subsequent tab switches.
+            if !hasOfferedVpnSheet && settings.showVpnNotice {
+                hasOfferedVpnSheet = true
+                showVpnSheet = true
+            }
+        }
+        .sheet(isPresented: $showVpnSheet) {
+            VpnNoticeSheet(showVpnNoticeAgain: Bindable(settings).showVpnNotice)
+        }
     }
 
     // MARK: - Sections
@@ -301,55 +314,68 @@ struct DownloadTabView: View {
     }
 }
 
-// MARK: - VPN notice banner
+// MARK: - VPN advisory sheet
 
-private struct VpnNotice: View {
-    @Binding var showNotice: Bool
+/// Compact floating advisory shown on first entry into the Downloads tab
+/// each session. Styled as a standalone card — no FLSheet chrome — to match
+/// the mockup: large shield + bold headline, centred body copy, checkbox.
+private struct VpnNoticeSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    /// Inverse of "Don't show again" — bound to `Settings.showVpnNotice`.
+    @Binding var showVpnNoticeAgain: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "shield.lefthalf.filled")
-                .font(.title3)
-                .foregroundStyle(.orange)
-                .padding(.top, 1)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Use a VPN when downloading")
-                    .font(Theme.Font.bodyMedium)
+        VStack(spacing: 0) {
+            // ── Icon + headline ──────────────────────────────────────────
+            HStack(alignment: .center, spacing: Theme.Spacing.md) {
+                Image(systemName: "shield.lefthalf.filled")
+                    .font(.system(size: 28, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
-                Text("Downloading copyrighted content without a VPN may expose your IP address to rights holders. FLACtastic does not condone piracy — please only download music you own or have rights to.")
+                Text("Protect your connection!")
+                    .font(.system(.title2, weight: .bold))
+                    .foregroundStyle(Theme.textPrimary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, Theme.Spacing.xl)
+
+            // ── Body ─────────────────────────────────────────────────────
+            Text("Always use a VPN when downloading files, and only download files you already own or have a license to.")
+                .font(Theme.Font.body)
+                .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity)
+
+            Text("Happy listening!")
+                .font(Theme.Font.body)
+                .foregroundStyle(Theme.textTertiary)
+                .padding(.top, Theme.Spacing.lg)
+
+            // ── Checkbox ─────────────────────────────────────────────────
+            Toggle(isOn: Binding(
+                get: { !showVpnNoticeAgain },
+                set: { newVal in
+                    showVpnNoticeAgain = !newVal
+                    if newVal { dismiss() }
+                }
+            )) {
+                Text("Don't show this again")
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Button("Don't show again") {
-                    withAnimation(.easeOut(duration: 0.2)) { showNotice = false }
-                }
-                .font(Theme.Font.caption)
-                .foregroundStyle(.orange.opacity(0.85))
-                .buttonStyle(.plain)
-                .padding(.top, 2)
             }
+            .toggleStyle(.checkbox)
+            .padding(.top, Theme.Spacing.xl)
 
-            Spacer()
-
-            Button {
-                withAnimation(.easeOut(duration: 0.2)) { showNotice = false }
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            .buttonStyle(.plain)
+            // ── Got it ───────────────────────────────────────────────────
+            Button("Got it") { dismiss() }
+                .buttonStyle(PillButtonStyle(isPrimary: true))
+                .keyboardShortcut(.defaultAction)
+                .padding(.top, Theme.Spacing.lg)
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.orange.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(Color.orange.opacity(0.25), lineWidth: 1)
-                )
-        )
+        .padding(Theme.Spacing.xxl)
+        .frame(width: 400)
+        .background(Theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .shadow(color: .black.opacity(0.35), radius: 24, x: 0, y: 8)
     }
 }

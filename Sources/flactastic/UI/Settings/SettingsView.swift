@@ -125,6 +125,7 @@ private struct SettingsTabBar: View {
 private struct ConfigSettingsSection: View {
     @Environment(LibraryStore.self) private var library
     @Environment(Settings.self) private var settings
+    @Environment(\.debugMode) private var debugMode
     let openFolder: () -> Void
 
     var body: some View {
@@ -193,6 +194,30 @@ private struct ConfigSettingsSection: View {
                     .toggleStyle(.switch)
                     .tint(Theme.accent)
                     .labelsHidden()
+            }
+
+            if debugMode {
+                Divider().foregroundStyle(Theme.divider)
+
+                Text("Downloads")
+                    .font(Theme.Font.bodyMedium)
+                    .foregroundStyle(Theme.textPrimary)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Show VPN Advisory")
+                            .font(Theme.Font.body)
+                            .foregroundStyle(Theme.textSecondary)
+                        Text("Show a reminder to use a VPN when opening the Downloads tab.")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $settings.showVpnNotice)
+                        .toggleStyle(.switch)
+                        .tint(Theme.accent)
+                        .labelsHidden()
+                }
             }
         }
     }
