@@ -7,6 +7,8 @@ import SwiftUI
 struct DownloadTabView: View {
     @Environment(StreamerRegistry.self) private var registry
     @Environment(DownloadCoordinator.self) private var downloads
+    @Environment(LucidaWebController.self) private var lucidaController
+    @Environment(Settings.self) private var settings
 
     @State private var pasteURL: String = ""
     @State private var resolved: RemoteResolveResponse?
@@ -26,6 +28,10 @@ struct DownloadTabView: View {
                 Text("Paste a link from Spotify, Tidal, Qobuz, Amazon Music, or SoundCloud below")
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.textSecondary)
+            }
+
+            if settings.showVpnNotice {
+                VpnNotice(showNotice: Bindable(settings).showVpnNotice)
             }
 
             TextField("Paste a track, album, or playlist URL", text: $pasteURL)
@@ -56,6 +62,7 @@ struct DownloadTabView: View {
         .padding(Theme.Spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.background)
+        .task { lucidaController.warmUp() }
     }
 
     // MARK: - Sections
@@ -291,5 +298,58 @@ struct DownloadTabView: View {
             for t in tracks { lucida.setOptions(options, for: t) }
         }
         downloads.enqueue(tracks)
+    }
+}
+
+// MARK: - VPN notice banner
+
+private struct VpnNotice: View {
+    @Binding var showNotice: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "shield.lefthalf.filled")
+                .font(.title3)
+                .foregroundStyle(.orange)
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Use a VPN when downloading")
+                    .font(Theme.Font.bodyMedium)
+                    .foregroundStyle(Theme.textPrimary)
+                Text("Downloading copyrighted content without a VPN may expose your IP address to rights holders. FLACtastic does not condone piracy — please only download music you own or have rights to.")
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button("Don't show again") {
+                    withAnimation(.easeOut(duration: 0.2)) { showNotice = false }
+                }
+                .font(Theme.Font.caption)
+                .foregroundStyle(.orange.opacity(0.85))
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+            }
+
+            Spacer()
+
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) { showNotice = false }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.orange.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color.orange.opacity(0.25), lineWidth: 1)
+                )
+        )
     }
 }

@@ -92,6 +92,10 @@ final class Settings {
         didSet { UserDefaults.standard.set(saveLyricsToFiles, forKey: "flactastic.saveLyricsToFiles") }
     }
 
+    var showVpnNotice: Bool {
+        didSet { UserDefaults.standard.set(showVpnNotice, forKey: "flactastic.showVpnNotice") }
+    }
+
     init() {
         lastRootPath = UserDefaults.standard.string(forKey: "flactastic.lastRootPath")
         let stored = UserDefaults.standard.object(forKey: "flactastic.volume")
@@ -125,6 +129,8 @@ final class Settings {
         lyricsLookupEnabled = (storedLyricsLookup as? Bool) ?? true
         let storedSaveLyrics = UserDefaults.standard.object(forKey: "flactastic.saveLyricsToFiles")
         saveLyricsToFiles = (storedSaveLyrics as? Bool) ?? true
+        let storedVpn = UserDefaults.standard.object(forKey: "flactastic.showVpnNotice")
+        showVpnNotice = (storedVpn as? Bool) ?? true
     }
 }
 

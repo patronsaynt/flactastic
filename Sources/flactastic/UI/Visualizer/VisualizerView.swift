@@ -54,7 +54,12 @@ struct VisualizerView: View {
                 requestFullScreen()
             }
         }
-        .onDisappear { analyzer.detach() }
+        .onDisappear {
+            analyzer.detach()
+            // Restore the toolbar if the user leaves the visualizer while
+            // still in fullscreen.
+            applyToolbarVisibility(fullScreen: false)
+        }
         .onChange(of: settings.visualizerMode) { _, newMode in
             syncTap(for: newMode)
             if newMode == .bigPicture {
@@ -62,7 +67,24 @@ struct VisualizerView: View {
             }
         }
         .background(WindowFullScreenObserver(isFullScreen: $isFullScreen))
-        .toolbar(isFullScreen ? .hidden : .automatic, for: .windowToolbar)
+        .onChange(of: isFullScreen) { _, fs in
+            // Drive toolbar visibility imperatively rather than via SwiftUI's
+            // `.toolbar(.hidden, for: .windowToolbar)`. The parent ContentView
+            // owns the toolbar items, so a child-level visibility modifier
+            // didn't reliably hide them — and toggling it during the
+            // fullscreen animation could deadlock the window on exit.
+            applyToolbarVisibility(fullScreen: fs)
+        }
+    }
+
+    private func applyToolbarVisibility(fullScreen: Bool) {
+        DispatchQueue.main.async {
+            guard let toolbar = NSApp.keyWindow?.toolbar else { return }
+            let shouldShow = !fullScreen
+            if toolbar.isVisible != shouldShow {
+                toolbar.isVisible = shouldShow
+            }
+        }
     }
 
     @ViewBuilder

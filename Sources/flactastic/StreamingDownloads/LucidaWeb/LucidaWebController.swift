@@ -25,6 +25,13 @@ final class LucidaWebController: NSObject {
 
     private(set) var phase: Phase = .idle
 
+    /// True when the last navigation landed on a Cloudflare challenge that
+    /// requires a real user click (Turnstile checkbox). The UI observes this
+    /// and surfaces the WebView in a sheet so the user can clear it once,
+    /// in-app — no debug menu detour. Flips back to `false` automatically
+    /// once `phase` reaches `.ready`.
+    private(set) var needsUserChallenge: Bool = false
+
     /// Append-only ring of debug events (navigation, bridge calls, errors).
     /// Capped at 200 entries so the debug window stays responsive on long
     /// sessions. Surfaced via the View → "Enable Debugging" pane.
@@ -47,6 +54,13 @@ final class LucidaWebController: NSObject {
     /// Continuations awaiting `.ready`. We collect them rather than poll.
     @ObservationIgnored
     private var readyWaiters: [CheckedContinuation<Void, Error>] = []
+
+    /// True once a Cloudflare challenge sheet has been auto-surfaced during
+    /// this app session. Subsequent CF interstitials (e.g. mid-session cookie
+    /// expiry) are not re-prompted — they fall through to normal error paths.
+    /// Resets naturally on next app launch since the controller is recreated.
+    @ObservationIgnored
+    private var hasPromptedThisSession: Bool = false
 
     let webView: WKWebView
     private static let entryURL = URL(string: "https://lucida.to/")!
@@ -89,6 +103,25 @@ final class LucidaWebController: NSObject {
         addLog(.nav, "reload (phase=\(phase))")
         phase = .loading
         webView.load(URLRequest(url: Self.entryURL))
+    }
+
+    /// Wipe all WebKit storage (cookies, cache, localStorage) for lucida.to
+    /// and reset to idle so the next warmUp() triggers a fresh CF negotiation.
+    /// Intended for the debug pane — lets you reproduce the first-load
+    /// Cloudflare challenge without restarting the app.
+    func clearSiteData() {
+        addLog(.info, "clearing site data…")
+        let store = webView.configuration.websiteDataStore
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        store.removeData(ofTypes: types, modifiedSince: .distantPast) { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.phase = .idle
+                self.hasPromptedThisSession = false
+                self.needsUserChallenge = false
+                self.addLog(.ok, "site data cleared; ready to warmUp()")
+            }
+        }
     }
 
     /// Suspend until the bridge is usable. Throws if the load failed.
@@ -268,6 +301,12 @@ private struct BridgeEnvelope<U: Decodable>: Decodable {
     let error: String?
 }
 
+/// Decodable that accepts any JSON shape — used when we only care whether the
+/// envelope parsed as `ok: true`, not what `value` contains.
+private struct AnyDecodable: Decodable {
+    init(from decoder: Decoder) throws {}
+}
+
 // MARK: - Navigation delegate
 
 extension LucidaWebController: WKNavigationDelegate {
@@ -276,8 +315,42 @@ extension LucidaWebController: WKNavigationDelegate {
         Task { @MainActor in
             self.addLog(.nav, "didFinish \(url)")
             do {
+                // Install the bridge unconditionally — it only defines
+                // `window.__flac` helpers, no network. Safe on the CF
+                // interstitial; gives us a way to silently probe the API.
                 try await self.evaluateVoid(Self.bridgeScript)
+
+                let cfDetected = try await self.isCloudflareChallenge()
+
+                if cfDetected {
+                    // Functional probe: even with a CF banner present, if
+                    // `/api/load` actually returns JSON the bridge can do
+                    // its job — don't bother the user with a sheet.
+                    if await self.bridgePingSucceeds() {
+                        self.addLog(.info, "cf markers present but bridge ping ok; treating as ready")
+                        self.phase = .ready
+                        self.needsUserChallenge = false
+                        self.addLog(.ok, "bridge installed; ready")
+                        self.resolveWaiters(.success(()))
+                        return
+                    }
+
+                    if self.hasPromptedThisSession {
+                        // Already showed the sheet once this session; don't
+                        // re-prompt. Leave `phase = .loading` so callers'
+                        // `awaitReady()` surfaces as a normal failure rather
+                        // than as a popup.
+                        self.addLog(.info, "cloudflare reappeared; suppressing repeat prompt this session")
+                        return
+                    }
+                    self.addLog(.info, "cloudflare challenge detected; awaiting clearance")
+                    self.hasPromptedThisSession = true
+                    self.needsUserChallenge = true
+                    return
+                }
+
                 self.phase = .ready
+                self.needsUserChallenge = false
                 self.addLog(.ok, "bridge installed; ready")
                 self.resolveWaiters(.success(()))
             } catch {
@@ -285,6 +358,43 @@ extension LucidaWebController: WKNavigationDelegate {
                 self.phase = .failed(msg)
                 self.addLog(.error, "bridge install failed: \(msg)")
                 self.resolveWaiters(.failure(StreamerError.unavailable("Lucida bridge install failed: \(msg)")))
+            }
+        }
+    }
+
+    /// Silent functional probe: call `window.__flac.ping()` directly (bypassing
+    /// `callBridge`/`awaitReady` so we can run it before `phase = .ready`) and
+    /// return true iff the envelope parses with `ok: true`. Used to decide
+    /// whether a CF interstitial is actually blocking the API.
+    private func bridgePingSucceeds() async -> Bool {
+        do {
+            let str = try await evaluateString("window.__flac && window.__flac.ping()")
+            guard let data = str.data(using: .utf8) else { return false }
+            let env = try JSONDecoder().decode(BridgeEnvelope<AnyDecodable>.self, from: data)
+            return env.ok
+        } catch {
+            return false
+        }
+    }
+
+    /// Heuristic check for a Cloudflare "Just a moment..." / managed-challenge
+    /// interstitial. Matches the page title, the `#challenge-form` /
+    /// `#challenge-stage` markers, and the `/cdn-cgi/challenge-platform/`
+    /// script CF injects.
+    private func isCloudflareChallenge() async throws -> Bool {
+        let probe = #"""
+        (function () {
+          const t = (document.title || '').toLowerCase();
+          if (t.includes('just a moment') || t.includes('attention required')) return true;
+          if (document.querySelector('#challenge-form, #challenge-stage, #challenge-running')) return true;
+          if (document.querySelector('script[src*="/cdn-cgi/challenge-platform/"]')) return true;
+          return false;
+        })()
+        """#
+        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Bool, Error>) in
+            webView.evaluateJavaScript(probe) { value, error in
+                if let error { cont.resume(throwing: error); return }
+                cont.resume(returning: (value as? Bool) ?? false)
             }
         }
     }

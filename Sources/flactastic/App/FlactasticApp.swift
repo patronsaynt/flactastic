@@ -25,7 +25,6 @@ struct FlactasticApp: App {
         // the background so the first paste-and-resolve is fast.
         let registry = StreamerRegistry()
         let lucidaController = LucidaWebController()
-        lucidaController.warmUp()
         registry.register(LucidaWebProvider(controller: lucidaController))
         _lucidaController = State(initialValue: lucidaController)
         let lib = LibraryStore()
@@ -78,6 +77,7 @@ struct FlactasticApp: App {
                             .environment(router)
                             .environment(streamerRegistry)
                             .environment(downloadCoordinator)
+                            .environment(lucidaController)
                             .environment(\.metadataWriter, metadataWriter)
                             .transition(.opacity)
                     } else {
@@ -92,6 +92,13 @@ struct FlactasticApp: App {
                     height: max(1, geo.size.height / settings.uiScale)
                 )
                 .scaleEffect(settings.uiScale, anchor: .topLeading)
+            }
+            .sheet(isPresented: Binding(
+                get: { lucidaController.needsUserChallenge },
+                set: { _ in }
+            )) {
+                LucidaChallengeSheet()
+                    .environment(lucidaController)
             }
             .preferredColorScheme(settings.useLightMode ? .light : .dark)
             .frame(minWidth: 1000, minHeight: 650)

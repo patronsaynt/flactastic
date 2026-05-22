@@ -8,41 +8,51 @@ struct VisualizerModePicker: View {
     @State private var isHovering: Bool = false
 
     var body: some View {
-        Menu {
-            ForEach(VisualizerCategory.allCases) { category in
-                Section(category.displayName) {
-                    ForEach(category.modes) { subMode in
-                        Button {
-                            mode = subMode
-                        } label: {
-                            if subMode == mode {
-                                Label(menuLabel(for: subMode), systemImage: "checkmark")
-                            } else {
-                                Text(menuLabel(for: subMode))
+        // Wrap the Menu in the capsule rather than putting the capsule on the
+        // Menu's label — `.menuStyle(.borderlessButton)` strips backgrounds
+        // applied inside the label, which left the picker as floating white
+        // text against a light visualizer backdrop in light mode.
+        HStack(spacing: Theme.Spacing.xs) {
+            Menu {
+                ForEach(VisualizerCategory.allCases) { category in
+                    Section(category.displayName) {
+                        ForEach(category.modes) { subMode in
+                            Button {
+                                mode = subMode
+                            } label: {
+                                if subMode == mode {
+                                    Label(menuLabel(for: subMode), systemImage: "checkmark")
+                                } else {
+                                    Text(menuLabel(for: subMode))
+                                }
                             }
                         }
                     }
                 }
+            } label: {
+                HStack(spacing: Theme.Spacing.xs) {
+                    Text(currentLabel)
+                        .font(Theme.Font.bodyMedium)
+                        .foregroundStyle(Color.white)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.75))
+                }
             }
-        } label: {
-            HStack(spacing: Theme.Spacing.xs) {
-                Text(currentLabel)
-                    .font(Theme.Font.bodyMedium)
-                    .foregroundStyle(Theme.textPrimary)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            .padding(.horizontal, Theme.Spacing.md)
-            .padding(.vertical, Theme.Spacing.sm)
-            .background(
-                Capsule()
-                    .fill(Theme.surface.opacity(0.9))
-                    .shadow(color: .black.opacity(0.4), radius: 12, y: 4)
-            )
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(
+            Capsule()
+                .fill(Color.black.opacity(0.55))
+                .overlay(
+                    Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5)
+                )
+                .shadow(color: .black.opacity(0.4), radius: 12, y: 4)
+        )
         .fixedSize()
         .opacity(isHovering ? 1 : 0)
         .animation(.easeInOut(duration: 0.18), value: isHovering)
