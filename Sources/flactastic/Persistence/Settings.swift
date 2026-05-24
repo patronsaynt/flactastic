@@ -69,6 +69,33 @@ final class Settings {
         didSet { UserDefaults.standard.set(discordRichPresenceEnabled, forKey: "flactastic.discordRichPresenceEnabled") }
     }
 
+    /// Last-selected visualizer mode. Restored when the user opens the Visualizer tab.
+    var visualizerMode: VisualizerMode {
+        didSet { UserDefaults.standard.set(visualizerMode.rawValue, forKey: "flactastic.visualizerMode") }
+    }
+
+    /// When true, Big Picture mode shows a small fullscreen toggle in the top-right corner.
+    var showBigPictureFullScreenToggle: Bool {
+        didSet { UserDefaults.standard.set(showBigPictureFullScreenToggle, forKey: "flactastic.showBigPictureFullScreenToggle") }
+    }
+
+    /// When true, the Lyrics visualizer mode fetches lyrics from lrclib.net.
+    /// Disable for offline / privacy-conscious use; cached entries still display.
+    var lyricsLookupEnabled: Bool {
+        didSet { UserDefaults.standard.set(lyricsLookupEnabled, forKey: "flactastic.lyricsLookupEnabled") }
+    }
+
+    /// When true, successfully-fetched lyrics are written into the LYRICS tag
+    /// on the source audio file (cross-format: Xiph LYRICS / ID3v2 USLT /
+    /// MP4 ©lyr). Off keeps user files untouched.
+    var saveLyricsToFiles: Bool {
+        didSet { UserDefaults.standard.set(saveLyricsToFiles, forKey: "flactastic.saveLyricsToFiles") }
+    }
+
+    var showVpnNotice: Bool {
+        didSet { UserDefaults.standard.set(showVpnNotice, forKey: "flactastic.showVpnNotice") }
+    }
+
     init() {
         lastRootPath = UserDefaults.standard.string(forKey: "flactastic.lastRootPath")
         let stored = UserDefaults.standard.object(forKey: "flactastic.volume")
@@ -94,6 +121,16 @@ final class Settings {
         autoFetchArtistImages = (storedAutoFetch as? Bool) ?? true
         let storedDRP = UserDefaults.standard.object(forKey: "flactastic.discordRichPresenceEnabled")
         discordRichPresenceEnabled = (storedDRP as? Bool) ?? true
+        let storedVis = UserDefaults.standard.string(forKey: "flactastic.visualizerMode")
+        visualizerMode = storedVis.flatMap(VisualizerMode.init(rawValue:)) ?? .albumArtLargeDetails
+        let storedBPToggle = UserDefaults.standard.object(forKey: "flactastic.showBigPictureFullScreenToggle")
+        showBigPictureFullScreenToggle = (storedBPToggle as? Bool) ?? true
+        let storedLyricsLookup = UserDefaults.standard.object(forKey: "flactastic.lyricsLookupEnabled")
+        lyricsLookupEnabled = (storedLyricsLookup as? Bool) ?? true
+        let storedSaveLyrics = UserDefaults.standard.object(forKey: "flactastic.saveLyricsToFiles")
+        saveLyricsToFiles = (storedSaveLyrics as? Bool) ?? true
+        let storedVpn = UserDefaults.standard.object(forKey: "flactastic.showVpnNotice")
+        showVpnNotice = (storedVpn as? Bool) ?? true
     }
 }
 

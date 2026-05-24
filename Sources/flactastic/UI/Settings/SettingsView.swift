@@ -40,6 +40,8 @@ struct SettingsView: View {
                         ConfigSettingsSection(openFolder: openFolder)
                     case .appearance:
                         AppearanceSettingsSection()
+                    case .visualizer:
+                        VisualizerSettingsSection()
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -72,6 +74,7 @@ struct SettingsView: View {
 private enum SettingsTab: String, CaseIterable, Identifiable {
     case config = "Config"
     case appearance = "Appearance"
+    case visualizer = "Visualizer"
     var id: String { rawValue }
 }
 
@@ -122,6 +125,7 @@ private struct SettingsTabBar: View {
 private struct ConfigSettingsSection: View {
     @Environment(LibraryStore.self) private var library
     @Environment(Settings.self) private var settings
+    @Environment(\.debugMode) private var debugMode
     let openFolder: () -> Void
 
     var body: some View {
@@ -190,6 +194,91 @@ private struct ConfigSettingsSection: View {
                     .toggleStyle(.switch)
                     .tint(Theme.accent)
                     .labelsHidden()
+            }
+
+            if debugMode {
+                Divider().foregroundStyle(Theme.divider)
+
+                Text("Downloads")
+                    .font(Theme.Font.bodyMedium)
+                    .foregroundStyle(Theme.textPrimary)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Show VPN Advisory")
+                            .font(Theme.Font.body)
+                            .foregroundStyle(Theme.textSecondary)
+                        Text("Show a reminder to use a VPN when opening the Downloads tab.")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $settings.showVpnNotice)
+                        .toggleStyle(.switch)
+                        .tint(Theme.accent)
+                        .labelsHidden()
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Visualizer tab
+
+private struct VisualizerSettingsSection: View {
+    @Environment(Settings.self) private var settings
+
+    var body: some View {
+        @Bindable var settings = settings
+
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Big Picture Fullscreen Toggle")
+                        .font(Theme.Font.body)
+                        .foregroundStyle(Theme.textSecondary)
+                    Text("Show a small icon in Big Picture mode to enter or exit fullscreen.")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                }
+                Spacer()
+                Toggle("", isOn: $settings.showBigPictureFullScreenToggle)
+                    .toggleStyle(.switch)
+                    .tint(Theme.accent)
+                    .labelsHidden()
+            }
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Fetch Lyrics from lrclib.net")
+                        .font(Theme.Font.body)
+                        .foregroundStyle(Theme.textSecondary)
+                    Text("Enables the Lyrics visualizer mode. Lookups are cached on disk; disable to stay fully offline.")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                }
+                Spacer()
+                Toggle("", isOn: $settings.lyricsLookupEnabled)
+                    .toggleStyle(.switch)
+                    .tint(Theme.accent)
+                    .labelsHidden()
+            }
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Save Lyrics to Audio Files")
+                        .font(Theme.Font.body)
+                        .foregroundStyle(Theme.textSecondary)
+                    Text("Embed fetched lyrics into the LYRICS tag on each file (Vorbis, ID3v2 USLT, MP4). Other players will pick them up automatically.")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                }
+                Spacer()
+                Toggle("", isOn: $settings.saveLyricsToFiles)
+                    .toggleStyle(.switch)
+                    .tint(Theme.accent)
+                    .labelsHidden()
+                    .disabled(!settings.lyricsLookupEnabled)
             }
         }
     }

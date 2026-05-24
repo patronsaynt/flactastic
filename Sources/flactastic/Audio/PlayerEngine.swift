@@ -349,6 +349,17 @@ final class PlayerEngine {
     func volumeUp() { setVolume(volume + 0.05) }
     func volumeDown() { setVolume(volume - 0.05) }
 
+    // MARK: - Analysis tap (visualizer)
+
+    func installAnalysisTap(bufferSize: AVAudioFrameCount = 1024,
+                            _ block: @escaping @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void) {
+        graph.installAnalysisTap(bufferSize: bufferSize, block)
+    }
+
+    func removeAnalysisTap() {
+        graph.removeAnalysisTap()
+    }
+
     // MARK: - Decode pipeline
 
     /// Flush all scheduled audio and restart decoding from the current track at

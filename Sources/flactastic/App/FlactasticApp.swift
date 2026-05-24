@@ -10,6 +10,8 @@ struct FlactasticApp: App {
     @State private var artistStore: ArtistStore
     @State private var artistRemoteCache: ArtistRemoteCache
     @State private var artistImageFetcher: ArtistImageFetcher
+    @State private var lyricsRemoteCache: LyricsRemoteCache
+    @State private var lyricsFetcher: LyricsFetcher
 
     init() {
         let store = ArtistStore()
@@ -23,7 +25,6 @@ struct FlactasticApp: App {
         // the background so the first paste-and-resolve is fast.
         let registry = StreamerRegistry()
         let lucidaController = LucidaWebController()
-        lucidaController.warmUp()
         registry.register(LucidaWebProvider(controller: lucidaController))
         _lucidaController = State(initialValue: lucidaController)
         let lib = LibraryStore()
@@ -35,6 +36,13 @@ struct FlactasticApp: App {
         // Reuse the same library/writer instances above.
         _library = State(initialValue: lib)
         _metadataWriter = State(initialValue: writer)
+
+        let lyricsCache = LyricsRemoteCache()
+        _lyricsRemoteCache = State(initialValue: lyricsCache)
+        _lyricsFetcher = State(initialValue: LyricsFetcher(
+            cache: lyricsCache,
+            metadataWriter: writer
+        ))
     }
     @State private var metadataWriter = MetadataWriter()
     @State private var importCoordinator = ImportCoordinator()
@@ -62,11 +70,15 @@ struct FlactasticApp: App {
                             .environment(artistStore)
                             .environment(artistRemoteCache)
                             .environment(artistImageFetcher)
+                            .environment(lyricsRemoteCache)
+                            .environment(lyricsFetcher)
                             .environment(importCoordinator)
                             .environment(playlistAddCoordinator)
                             .environment(router)
                             .environment(streamerRegistry)
                             .environment(downloadCoordinator)
+                            .environment(lucidaController)
+                            .environment(\.debugMode, lucidaDebugEnabled)
                             .environment(\.metadataWriter, metadataWriter)
                             .transition(.opacity)
                     } else {
@@ -81,6 +93,13 @@ struct FlactasticApp: App {
                     height: max(1, geo.size.height / settings.uiScale)
                 )
                 .scaleEffect(settings.uiScale, anchor: .topLeading)
+            }
+            .sheet(isPresented: Binding(
+                get: { lucidaController.needsUserChallenge },
+                set: { _ in }
+            )) {
+                LucidaChallengeSheet()
+                    .environment(lucidaController)
             }
             .preferredColorScheme(settings.useLightMode ? .light : .dark)
             .frame(minWidth: 1000, minHeight: 650)
@@ -181,6 +200,10 @@ struct FlactasticApp: App {
                responder is NSTextView {
                 return event
             }
+            // Step aside while the lyrics sync sheet is capturing beat taps.
+            if player.isLyricsSyncActive {
+                return event
+            }
             player.engine.togglePlayPause()
             return nil // consume the event
         }
@@ -197,6 +220,7 @@ struct FlactasticApp: App {
     private func bootstrap() async {
         artistStore.load()
         artistRemoteCache.load()
+        lyricsRemoteCache.load()
         player.engine.setVolume(settings.volume)
         discordPresence.attach(player: player, settings: settings)
         if let path = settings.lastRootPath {

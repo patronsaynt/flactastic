@@ -15,6 +15,13 @@ protocol AudioGraphProtocol: AnyObject, Sendable {
     func currentPlayerSampleTime() -> AVAudioFramePosition?
     func setOutputVolume(_ volume: Float)
     func onConfigurationChange(_ handler: @escaping @Sendable () -> Void)
+
+    /// Install a tap on the main mixer for analysis (FFT / visualization).
+    /// The block is called on a background audio thread; consumers must hop
+    /// to the main actor before publishing observed state.
+    func installAnalysisTap(bufferSize: AVAudioFrameCount,
+                            _ block: @escaping @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void)
+    func removeAnalysisTap()
 }
 
 // MARK: - Apple AVAudioEngine implementation
@@ -28,6 +35,7 @@ final class AppleAudioGraph: AudioGraphProtocol, @unchecked Sendable {
     private let playerNode = AVAudioPlayerNode()
     private var configChangeObserver: Any?
     private var isAttached = false
+    private var hasAnalysisTap = false
 
     init() {
         // Placeholder; real format is set in prepare() from the device rate.
@@ -104,6 +112,25 @@ final class AppleAudioGraph: AudioGraphProtocol, @unchecked Sendable {
     }
 
     // MARK: - Private
+
+    func installAnalysisTap(bufferSize: AVAudioFrameCount,
+                            _ block: @escaping @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void) {
+        if hasAnalysisTap {
+            engine.mainMixerNode.removeTap(onBus: 0)
+            hasAnalysisTap = false
+        }
+        let format = engine.mainMixerNode.outputFormat(forBus: 0)
+        engine.mainMixerNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { buffer, when in
+            block(buffer, when)
+        }
+        hasAnalysisTap = true
+    }
+
+    func removeAnalysisTap() {
+        guard hasAnalysisTap else { return }
+        engine.mainMixerNode.removeTap(onBus: 0)
+        hasAnalysisTap = false
+    }
 
     private func makeCanonicalFormat() -> AVAudioFormat {
         let outputFormat = engine.outputNode.outputFormat(forBus: 0)

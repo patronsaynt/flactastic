@@ -83,10 +83,13 @@ struct ContentView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            FloatingPlayerBar()
-                .frame(maxWidth: 700)
-                .padding(.bottom, 16)
-                .offset(x: player.isQueueVisible ? -180 : 0)
+            if router.selectedTab != .visualizer {
+                FloatingPlayerBar()
+                    .frame(maxWidth: 700)
+                    .padding(.bottom, 16)
+                    .offset(x: player.isQueueVisible ? -180 : 0)
+                    .transition(.opacity)
+            }
         }
         .overlay {
             if let data = router.artworkZoomData {
@@ -96,6 +99,7 @@ struct ContentView: View {
         }
         .animation(.easeInOut(duration: 0.28), value: player.isQueueVisible)
         .animation(.easeInOut(duration: 0.3), value: router.artworkZoomData != nil)
+        .animation(.easeInOut(duration: 0.25), value: router.selectedTab)
         .background(Theme.background)
         .sheet(isPresented: $showSettings) {
             SettingsView()

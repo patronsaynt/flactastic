@@ -21,6 +21,7 @@ struct LucidaDebugView: View {
                     .foregroundStyle(phaseColor)
                 Spacer()
                 Button("Reload") { controller.reload() }
+                Button("Clear Site Data") { controller.clearSiteData() }
                 Button("Clear log") { controller.clearLog() }
             }
             .padding(8)
@@ -134,7 +135,7 @@ struct DebugWindowController: View {
 /// window closes (the hidden NSWindow it lived in originally is still
 /// retaining it via its content view, which keeps the WebView alive even
 /// after our SwiftUI host releases it).
-private struct LucidaWebHost: NSViewRepresentable {
+struct LucidaWebHost: NSViewRepresentable {
     let webView: WKWebView
 
     func makeNSView(context: Context) -> NSView {

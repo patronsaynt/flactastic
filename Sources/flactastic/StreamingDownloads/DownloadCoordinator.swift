@@ -155,11 +155,14 @@ final class DownloadCoordinator {
             update(jobID, .tagging)
             let artworkData = await Self.fetchArtwork(track: track, session: urlSession)
             let format = AudioFileFormat.classify(tempURL) ?? .flac
+            let joinedArtists = track.artists.map(\.name).joined(separator: "; ")
+            let artistTag = joinedArtists.isEmpty ? nil : joinedArtists
+            let primaryArtist = track.artists.first?.name
             let stagedTrack = Track(
                 url: tempURL,
                 title: track.title,
-                artist: track.artists.first?.name,
-                albumArtist: track.album?.title.isEmpty == false ? track.artists.first?.name : nil,
+                artist: artistTag,
+                albumArtist: track.album?.title.isEmpty == false ? primaryArtist : nil,
                 album: track.album?.title,
                 trackNumber: track.trackNumber,
                 duration: track.durationSeconds,
@@ -172,13 +175,13 @@ final class DownloadCoordinator {
             _ = try await writer.write(
                 to: stagedTrack,
                 title: track.title,
-                artist: track.artists.first?.name,
+                artist: artistTag,
                 album: track.album?.title,
                 year: track.album?.releaseYear,
                 genre: nil,
                 trackNumber: track.trackNumber,
                 artworkChange: artworkData.map { .updated($0) } ?? .unchanged,
-                albumArtistChange: .set(track.artists.first?.name),
+                albumArtistChange: .set(primaryArtist),
                 compilationChange: .unchanged
             )
 
