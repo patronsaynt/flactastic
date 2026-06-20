@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="Playlists" description="Browse the user's connected Spotify playlists as a cover-art grid; pick one to open the same resolved-download layout as Tracks & Albums — collapsed Lucida options, full tracklist, and a docked downloads drawer. Covers the not-connected, resolving, truncated-preview and error states." -->
+<helmet>
+<script src="./ds-base.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #000; }
+  .fl-root { --acc: #00e5cc; --acc-glow: rgba(0,229,204,0.42); --acc-soft: rgba(0,229,204,0.13); }
+  .fl-root.acc-mono { --acc: #f2f2f2; --acc-glow: rgba(242,242,242,0.20); --acc-soft: rgba(242,242,242,0.10); }
+  .fl-root.theme-light.acc-mono { --acc: #141414; --acc-glow: rgba(0,0,0,0.16); --acc-soft: rgba(0,0,0,0.07); }
+  .fl-scroll::-webkit-scrollbar { width: 10px; }
+  .fl-scroll::-webkit-scrollbar-thumb { background: var(--fl-divider); border-radius: 999px; border: 3px solid transparent; background-clip: padding-box; }
+  .fl-scroll::-webkit-scrollbar-track { background: transparent; }
+  @keyframes flSpin { to { transform: rotate(360deg); } }
+  @keyframes flShimmer { from { background-position: -360px 0; } to { background-position: 360px 0; } }
+  .fl-skel { background: linear-gradient(90deg, var(--fl-surface) 0%, var(--fl-surface-elevated) 50%, var(--fl-surface) 100%); background-size: 720px 100%; animation: flShimmer 1.3s linear infinite; border-radius: 6px; }
+  .fl-fill { height: 100%; border-radius: 999px; transition: width 0.4s cubic-bezier(0.16,1,0.3,1); }
+  .fl-fill-acc { background: var(--acc); }
+  .fl-fill-done { background: var(--fl-quality-cd); }
+  .fl-fill-cancel { background: var(--fl-text-tertiary); }
+  .fl-dot-acc { background: var(--acc); }
+  .fl-dot-done { background: var(--fl-quality-cd); }
+  .fl-dot-cancel { background: var(--fl-text-tertiary); }
+  .fl-dot-failed { background: var(--fl-destructive); }
+  /* cover-art gradient placeholders */
+  .gc0 { background: linear-gradient(135deg,#1c1c1c,#2e2e2e); }
+  .gc1 { background: linear-gradient(160deg,#111,#333); }
+  .gc2 { background: linear-gradient(110deg,#242424,#161616); }
+  .gc3 { background: linear-gradient(150deg,#1a1a1a,#3a3a3a); }
+  .gc4 { background: linear-gradient(120deg,#202020,#121212); }
+  .gc5 { background: linear-gradient(140deg,#2c2c2c,#161616); }
+  .gc6 { background: linear-gradient(125deg,#181818,#303030); }
+  .gc7 { background: linear-gradient(135deg,#222,#0e0e0e); }
+  .gc8 { background: linear-gradient(155deg,#161616,#2a2a2a); }
+  .fl-card:hover { background: var(--fl-surface-elevated) !important; transform: translateY(-4px); }
+  .fl-card:hover .fl-card-play { opacity: 1 !important; transform: none !important; }
+</style>
+</helmet>
+<div class="fl-root {{ rootClass }}" style="position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--fl-background); color: var(--fl-text-primary); font-family: var(--fl-font-sans); -webkit-font-smoothing: antialiased; overflow: hidden;">
+
+  <!-- ───────── Header ───────── -->
+  <header data-screen-label="Playlists header" style="flex: none; display: flex; align-items: center; gap: 16px; padding: 20px 28px; border-bottom: 1px solid var(--fl-divider);">
+    <button type="button" onClick="{{ goBack }}" title="Back" style="flex: none; width: 36px; height: 36px; border-radius: 999px; border: none; background: var(--fl-surface-elevated); color: var(--fl-text-secondary); display: flex; align-items: center; justify-content: center; cursor: pointer; font-family: inherit;" style-hover="background: var(--fl-surface-hover); color: var(--fl-text-primary);">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg>
+    </button>
+    <div style="flex: 1; min-width: 0;">
+      <h1 style="margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.3px;">Playlists</h1>
+      <p style="margin: 3px 0 0; font-size: 13px; color: var(--fl-text-secondary);">{{ headerSub }}</p>
+    </div>
+    <sc-if value="{{ isConnected }}" hint-placeholder-val="{{ true }}">
+      <div style="flex: none; display: flex; align-items: center; gap: 8px; padding: 7px 13px; border-radius: 999px; background: var(--fl-surface); border: 1px solid var(--fl-divider);">
+        <span style="width: 7px; height: 7px; border-radius: 999px; background: var(--fl-quality-cd);"></span>
+        <span style="font-size: 12px; color: var(--fl-text-secondary);">Spotify connected · <span style="color: var(--fl-text-primary); font-weight: 500;">you</span></span>
+      </div>
+    </sc-if>
+  </header>
+
+  <!-- Body host -->
+  <div style="flex: 1; position: relative; min-height: 0;">
+
+  <!-- ───────── NOT CONNECTED ───────── -->
+  <sc-if value="{{ isNotConnected }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; text-align: center;">
+      <div style="position: relative; width: 96px; height: 96px; display: flex; align-items: center; justify-content: center; margin-bottom: 26px;">
+        <div style="position: absolute; inset: 0; border-radius: 999px; background: var(--fl-quality-cd); opacity: 0.14; filter: blur(26px);"></div>
+        <div style="position: relative; width: 76px; height: 76px; border-radius: 999px; background: var(--fl-surface-elevated); display: flex; align-items: center; justify-content: center; color: var(--fl-quality-cd);">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h12"></path><path d="M4 13h12"></path><path d="M4 18h6"></path><circle cx="18" cy="17" r="3"></circle></svg>
+        </div>
+      </div>
+      <h2 style="margin: 0 0 10px; font-size: 26px; font-weight: 600; letter-spacing: -0.4px;">Connect your Spotify account</h2>
+      <p style="margin: 0 0 28px; max-width: 470px; font-size: 14px; line-height: 1.55; color: var(--fl-text-secondary);">Add your Spotify Client ID &amp; Secret in Settings to list your own playlists here and download any of them in full lossless quality.</p>
+      <button type="button" onClick="{{ connect }}" style="height: 46px; padding: 0 26px; border: none; border-radius: 999px; background: var(--fl-quality-cd); color: #07140b; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 9px;" style-hover="filter: brightness(1.06);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M7.5 10.5c3-1 6-0.6 8.5 1"></path><path d="M8 13.5c2.3-0.7 4.5-0.4 6.4 0.9"></path></svg>
+        Connect Spotify
+      </button>
+      <div style="display: flex; align-items: center; gap: 14px; margin: 30px 0 18px; width: 420px; max-width: 100%;">
+        <span style="flex: 1; height: 1px; background: var(--fl-divider);"></span>
+        <span style="font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--fl-text-tertiary);">or paste a public link</span>
+        <span style="flex: 1; height: 1px; background: var(--fl-divider);"></span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; width: 480px; max-width: 100%; height: 48px; padding: 0 7px 0 18px; border-radius: 12px; background: var(--fl-surface); border: 1px solid var(--fl-divider);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" style="color: var(--fl-text-tertiary); flex: none;"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"></path><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"></path></svg>
+        <span style="flex: 1; text-align: left; font-size: 14px; color: var(--fl-text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">open.spotify.com/playlist/…</span>
+        <button type="button" onClick="{{ openSample }}" style="flex: none; height: 36px; padding: 0 18px; border: none; border-radius: 9px; background: var(--fl-surface-elevated); color: var(--fl-text-primary); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;" style-hover="background: var(--fl-surface-hover);">Fetch</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ───────── LIBRARY GRID ───────── -->
+  <sc-if value="{{ isGrid }}" hint-placeholder-val="{{ true }}">
+    <div class="fl-scroll" style="position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden;">
+      <div style="max-width: 1100px; margin: 0 auto; padding: 28px 28px 56px;">
+        <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 20px;">
+          <span style="font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--fl-text-tertiary);">Your playlists</span>
+          <span style="font-size: 12px; color: var(--fl-text-tertiary);">{{ playlistCount }} from Spotify</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(184px, 1fr)); gap: 20px;">
+          <sc-for list="{{ playlists }}" as="p" hint-placeholder-count="9">
+            <button type="button" class="fl-card" onClick="{{ p.onOpen }}" style="display: flex; flex-direction: column; gap: 12px; padding: 12px; border-radius: 14px; background: var(--fl-surface); border: 1px solid var(--fl-divider); cursor: pointer; font-family: inherit; text-align: left; transition: transform 0.25s cubic-bezier(0.16,1,0.3,1), background 0.2s ease;">
+              <div style="position: relative; width: 100%; aspect-ratio: 1; border-radius: 9px; overflow: hidden; box-shadow: 0 8px 22px rgba(0,0,0,0.4);">
+                <div class="{{ p.gradClass }}" style="position: absolute; inset: 0;"></div>
+                <div style="position: absolute; inset: 0; background: radial-gradient(120% 120% at 20% 14%, rgba(255,255,255,0.10), transparent 55%);"></div>
+                <span class="fl-card-play" style="position: absolute; right: 11px; bottom: 11px; width: 40px; height: 40px; border-radius: 999px; background: var(--acc); color: var(--fl-on-accent); display: flex; align-items: center; justify-content: center; opacity: 0; transform: translateY(8px); transition: opacity 0.2s ease, transform 0.2s ease; box-shadow: 0 6px 18px var(--acc-glow);">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"></path><path d="M7 11l5 5 5-5"></path><path d="M5 20h14"></path></svg>
+                </span>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 3px; padding: 0 2px 2px;">
+                <span style="font-size: 14px; font-weight: 600; color: var(--fl-text-primary); line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">{{ p.title }}</span>
+                <span style="font-size: 12px; color: var(--fl-text-tertiary);">{{ p.meta }}</span>
+              </div>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ───────── RESOLVING ───────── -->
+  <sc-if value="{{ isLoading }}" hint-placeholder-val="{{ false }}">
+    <div class="fl-scroll" style="position: absolute; inset: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 32px 28px;">
+      <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 30px;">
+        <div style="width: 26px; height: 26px; border-radius: 999px; border: 2.5px solid var(--fl-divider); border-top-color: var(--acc); animation: flSpin 0.8s linear infinite;"></div>
+        <span style="font-size: 16px; font-weight: 500; color: var(--fl-text-primary);">Reading playlist from Spotify…</span>
+      </div>
+      <div style="display: flex; gap: 28px; margin-bottom: 34px;">
+        <div class="fl-skel" style="width: 150px; height: 150px; border-radius: 12px;"></div>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 12px; padding-top: 8px;">
+          <div class="fl-skel" style="width: 260px; height: 26px;"></div>
+          <div class="fl-skel" style="width: 180px; height: 15px;"></div>
+          <div class="fl-skel" style="width: 130px; height: 36px; border-radius: 999px; margin-top: 12px;"></div>
+        </div>
+      </div>
+      <sc-for list="{{ skeletons }}" as="s" hint-placeholder-count="6">
+        <div style="display: flex; align-items: center; gap: 14px; padding: 13px 0; border-top: 1px solid var(--fl-divider);">
+          <div class="fl-skel" style="width: 20px; height: 13px;"></div>
+          <div class="fl-skel" style="flex: 1; max-width: 320px; height: 15px;"></div>
+          <div class="fl-skel" style="width: 44px; height: 13px; margin-left: auto;"></div>
+        </div>
+      </sc-for>
+    </div>
+  </sc-if>
+
+  <!-- ───────── ERROR ───────── -->
+  <sc-if value="{{ isError }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; text-align: center;">
+      <div style="width: 72px; height: 72px; border-radius: 999px; background: rgba(242,89,89,0.12); display: flex; align-items: center; justify-content: center; color: var(--fl-destructive); margin-bottom: 22px;">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path><path d="M12 16.5v.01"></path></svg>
+      </div>
+      <h2 style="margin: 0 0 10px; font-size: 23px; font-weight: 600; letter-spacing: -0.3px;">Couldn't read that playlist</h2>
+      <p style="margin: 0 0 28px; max-width: 440px; font-size: 14px; line-height: 1.55; color: var(--fl-text-secondary);">It may be private, or the link isn't a Spotify playlist. Make sure the playlist is public and try again.</p>
+      <button type="button" onClick="{{ backToGrid }}" style="height: 44px; padding: 0 24px; border: none; border-radius: 999px; background: var(--fl-surface-elevated); color: var(--fl-text-primary); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 9px;" style-hover="background: var(--fl-surface-hover);">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg>
+        Back to playlists
+      </button>
+    </div>
+  </sc-if>
+
+  <!-- ───────── RESOLVED PLAYLIST (same download layout as Tracks & Albums) ───────── -->
+  <sc-if value="{{ isResolved }}" hint-placeholder-val="{{ false }}">
+    <div class="fl-scroll" style="position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden;">
+      <div style="max-width: 980px; margin: 0 auto; padding: 18px 28px 40px;">
+
+        <button type="button" onClick="{{ backToGrid }}" style="display: inline-flex; align-items: center; gap: 6px; margin-bottom: 18px; padding: 6px 12px 6px 8px; border: none; border-radius: 999px; background: transparent; color: var(--fl-text-tertiary); font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit;" style-hover="background: var(--fl-surface); color: var(--fl-text-primary);">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg>
+          All playlists
+        </button>
+
+        <!-- Playlist hero -->
+        <div style="display: flex; gap: 28px; align-items: flex-end;">
+          <div style="flex: none; position: relative;">
+            <div style="position: absolute; inset: 8px; border-radius: 14px; background: var(--acc-glow); filter: blur(34px); opacity: 0.8;"></div>
+            <div class="{{ playlist.gradClass }}" style="position: relative; width: 176px; height: 176px; border-radius: 14px; box-shadow: 0 18px 50px rgba(0,0,0,0.55); overflow: hidden;">
+              <div style="position: absolute; inset: 0; background: radial-gradient(120% 120% at 18% 12%, rgba(255,255,255,0.10), transparent 55%);"></div>
+            </div>
+          </div>
+          <div style="flex: 1; min-width: 0; padding-bottom: 4px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 11px;">
+              <span style="font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--fl-text-tertiary);">Playlist</span>
+            </div>
+            <h2 style="margin: 0 0 8px; font-size: 38px; font-weight: 700; letter-spacing: -1px; line-height: 1.05;">{{ playlist.title }}</h2>
+            <p style="margin: 0 0 22px; font-size: 15px; color: var(--fl-text-secondary);">{{ playlist.meta }}</p>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <button type="button" onClick="{{ enqueueAll }}" style="height: 44px; padding: 0 22px; border: none; border-radius: 999px; background: var(--acc); color: var(--fl-on-accent); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 9px;" style-hover="filter: brightness(1.08);">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"></path><path d="M7 11l5 5 5-5"></path><path d="M5 20h14"></path></svg>
+                Download playlist
+              </button>
+              <button type="button" onClick="{{ toggleOptions }}" style="height: 44px; padding: 0 16px 0 18px; border: 1px solid var(--fl-divider); border-radius: 999px; background: var(--fl-surface); color: var(--fl-text-secondary); font-size: 13px; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 11px;" style-hover="background: var(--fl-surface-elevated); color: var(--fl-text-primary);">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"></path><path d="M7 12h10"></path><path d="M10 18h4"></path></svg>
+                <span style="color: var(--fl-text-primary); font-weight: 500;">{{ summary }}</span>
+                <span style="width: 1px; height: 16px; background: var(--fl-divider);"></span>
+                <sc-if value="{{ optionsOpen }}" hint-placeholder-val="{{ false }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"></path></svg></sc-if>
+                <sc-if value="{{ notOptionsOpen }}" hint-placeholder-val="{{ true }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg></sc-if>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Options panel -->
+        <sc-if value="{{ optionsOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top: 22px; padding: 22px 24px; border-radius: 14px; background: var(--fl-surface); border: 1px solid var(--fl-divider);">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 18px;">
+              <span style="font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--fl-text-tertiary);">Download options</span>
+              <span style="flex: 1; height: 1px; background: var(--fl-divider);"></span>
+              <span style="font-size: 12px; color: var(--fl-text-tertiary);">Applies to every track you download</span>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 22px 32px;">
+              <label style="display: flex; flex-direction: column; gap: 7px; min-width: 200px;">
+                <span style="font-size: 12px; color: var(--fl-text-secondary);">Format</span>
+                <select value="{{ format }}" onChange="{{ setFormat }}" style="height: 38px; padding: 0 12px; border-radius: 8px; background: var(--fl-surface-elevated); color: var(--fl-text-primary); border: 1px solid var(--fl-divider); font-size: 13px; font-family: inherit; cursor: pointer;">
+                  <sc-for list="{{ formats }}" as="f" hint-placeholder-count="8">
+                    <option value="{{ f.value }}">{{ f.label }}</option>
+                  </sc-for>
+                </select>
+              </label>
+              <sc-if value="{{ hasQuality }}" hint-placeholder-val="{{ false }}">
+                <label style="display: flex; flex-direction: column; gap: 7px; min-width: 170px;">
+                  <span style="font-size: 12px; color: var(--fl-text-secondary);">Quality</span>
+                  <select value="{{ quality }}" onChange="{{ setQuality }}" style="height: 38px; padding: 0 12px; border-radius: 8px; background: var(--fl-surface-elevated); color: var(--fl-text-primary); border: 1px solid var(--fl-divider); font-size: 13px; font-family: inherit; cursor: pointer;">
+                    <sc-for list="{{ qualities }}" as="q" hint-placeholder-count="4">
+                      <option value="{{ q.value }}">{{ q.label }}</option>
+                    </sc-for>
+                  </select>
+                </label>
+              </sc-if>
+              <label style="display: flex; flex-direction: column; gap: 7px; width: 180px;">
+                <span style="font-size: 12px; color: var(--fl-text-secondary);">Region</span>
+                <input value="{{ region }}" onInput="{{ setRegion }}" placeholder="auto or country code" style="height: 38px; padding: 0 12px; border-radius: 8px; background: var(--fl-surface-elevated); color: var(--fl-text-primary); border: 1px solid var(--fl-divider); font-size: 13px; font-family: inherit;" />
+              </label>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px;">
+              <button type="button" onClick="{{ toggleMetadata }}" style="display: inline-flex; align-items: center; gap: 10px; padding: 10px 15px 10px 12px; border-radius: 10px; background: var(--fl-surface-elevated); border: 1px solid var(--fl-divider); cursor: pointer; font-family: inherit; text-align: left;" style-hover="background: var(--fl-surface-hover);">
+                <sc-if value="{{ addMetadata }}" hint-placeholder-val="{{ true }}">
+                  <span style="flex: none; width: 19px; height: 19px; border-radius: 6px; background: var(--acc); display: flex; align-items: center; justify-content: center; color: var(--fl-on-accent);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"></path></svg></span>
+                </sc-if>
+                <sc-if value="{{ notMetadata }}" hint-placeholder-val="{{ false }}">
+                  <span style="flex: none; width: 19px; height: 19px; border-radius: 6px; border: 1.5px solid var(--fl-text-tertiary);"></span>
+                </sc-if>
+                <span style="display: flex; flex-direction: column; gap: 1px;"><span style="font-size: 13px; color: var(--fl-text-primary); font-weight: 500;">Embed metadata + cover art</span><span style="font-size: 11px; color: var(--fl-text-tertiary);">Tags &amp; artwork written into each file</span></span>
+              </button>
+              <button type="button" onClick="{{ toggleCompat }}" style="display: inline-flex; align-items: center; gap: 10px; padding: 10px 15px 10px 12px; border-radius: 10px; background: var(--fl-surface-elevated); border: 1px solid var(--fl-divider); cursor: pointer; font-family: inherit; text-align: left;" style-hover="background: var(--fl-surface-hover);">
+                <sc-if value="{{ compatibility }}" hint-placeholder-val="{{ false }}">
+                  <span style="flex: none; width: 19px; height: 19px; border-radius: 6px; background: var(--acc); display: flex; align-items: center; justify-content: center; color: var(--fl-on-accent);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"></path></svg></span>
+                </sc-if>
+                <sc-if value="{{ notCompatibility }}" hint-placeholder-val="{{ true }}">
+                  <span style="flex: none; width: 19px; height: 19px; border-radius: 6px; border: 1.5px solid var(--fl-text-tertiary);"></span>
+                </sc-if>
+                <span style="display: flex; flex-direction: column; gap: 1px;"><span style="font-size: 13px; color: var(--fl-text-primary); font-weight: 500;">Player compatibility</span><span style="font-size: 11px; color: var(--fl-text-tertiary);">Smaller cover, ID3v2.3 for older hardware</span></span>
+              </button>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- Truncated-preview warning -->
+        <sc-if value="{{ truncated }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; gap: 11px; margin-top: 22px; padding: 13px 16px; border-radius: 12px; background: rgba(242,191,51,0.10); border: 1px solid rgba(242,191,51,0.30);">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--fl-quality-mid)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex: none; margin-top: 1px;"><path d="M12 3l9 16H3z"></path><path d="M12 10v4"></path><path d="M12 17v.01"></path></svg>
+            <div style="font-size: 12.5px; line-height: 1.5; color: var(--fl-text-secondary);"><span style="color: var(--fl-text-primary); font-weight: 600;">Showing the first 100 tracks.</span> Spotify's preview caps longer playlists — connect your account in Settings to fetch every track.</div>
+          </div>
+        </sc-if>
+
+        <!-- Track list -->
+        <div style="margin-top: 28px;">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 0 4px 10px; border-bottom: 1px solid var(--fl-divider);">
+            <span style="width: 26px; text-align: center; font-size: 11px; letter-spacing: 1px; color: var(--fl-text-tertiary);">#</span>
+            <span style="flex: 1; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--fl-text-tertiary);">Title</span>
+            <span style="font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--fl-text-tertiary); margin-right: 64px;">Length</span>
+          </div>
+          <sc-for list="{{ tracks }}" as="t" hint-placeholder-count="12">
+            <div style="display: flex; align-items: center; gap: 14px; padding: 10px 4px; border-radius: 10px;" style-hover="background: var(--fl-surface);">
+              <span style="width: 26px; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; font-family: var(--fl-font-mono); color: var(--fl-text-tertiary);">{{ t.num }}</span>
+              <div style="flex: 1; min-width: 0;">
+                <div style="font-size: 14px; color: var(--fl-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ t.title }}</div>
+                <div style="font-size: 12px; color: var(--fl-text-secondary); margin-top: 1px;">{{ t.artist }}</div>
+              </div>
+              <sc-if value="{{ t.lossless }}" hint-placeholder-val="{{ true }}">
+                <span style="font-size: 10px; font-weight: 600; letter-spacing: 0.3px; padding: 3px 7px; border-radius: 5px; background: var(--acc-soft); color: var(--acc);">FLAC</span>
+              </sc-if>
+              <sc-if value="{{ t.lossy }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size: 10px; font-weight: 500; letter-spacing: 0.3px; padding: 3px 7px; border-radius: 5px; color: var(--fl-text-tertiary);">Lossy</span>
+              </sc-if>
+              <span style="width: 44px; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; font-family: var(--fl-font-mono); color: var(--fl-text-secondary);">{{ t.dur }}</span>
+              <button type="button" onClick="{{ t.onDownload }}" title="Download track" style="flex: none; width: 30px; height: 30px; border-radius: 999px; border: none; background: transparent; color: var(--fl-text-tertiary); display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0.55;" style-hover="background: var(--fl-surface-elevated); color: var(--acc); opacity: 1;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"></path><path d="M7 11l5 5 5-5"></path><path d="M5 20h14"></path></svg>
+              </button>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  </div><!-- /body host -->
+
+  <!-- ───────── Downloads drawer ───────── -->
+  <sc-if value="{{ showDrawer }}" hint-placeholder-val="{{ false }}">
+    <div style="flex: none; background: var(--fl-surface); border-top: 1px solid var(--fl-divider); box-shadow: 0 -10px 40px rgba(0,0,0,0.45);">
+      <button type="button" onClick="{{ toggleDrawer }}" style="width: 100%; display: flex; align-items: center; gap: 14px; padding: 14px 24px; background: transparent; border: none; cursor: pointer; font-family: inherit; text-align: left;">
+        <span style="flex: none; width: 30px; height: 30px; border-radius: 999px; background: var(--acc-soft); color: var(--acc); display: flex; align-items: center; justify-content: center;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"></path><path d="M7 11l5 5 5-5"></path><path d="M5 20h14"></path></svg>
+        </span>
+        <span style="font-size: 14px; font-weight: 600; color: var(--fl-text-primary);">Downloads</span>
+        <span style="font-size: 12px; color: var(--fl-text-secondary); font-variant-numeric: tabular-nums;">{{ drawerSummary }}</span>
+        <span style="flex: 1;"></span>
+        <span onClick="{{ clearCompleted }}" style="font-size: 12px; color: var(--fl-text-tertiary); padding: 4px 8px; border-radius: 6px;" style-hover="color: var(--fl-text-primary);">Clear completed</span>
+        <sc-if value="{{ drawerOpen }}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--fl-text-tertiary);"><path d="M6 9l6 6 6-6"></path></svg></sc-if>
+        <sc-if value="{{ notDrawerOpen }}" hint-placeholder-val="{{ true }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--fl-text-tertiary);"><path d="M18 15l-6-6-6 6"></path></svg></sc-if>
+      </button>
+      <sc-if value="{{ drawerOpen }}" hint-placeholder-val="{{ false }}">
+        <div class="fl-scroll" style="max-height: 280px; overflow-y: auto; padding: 0 24px 16px;">
+          <sc-for list="{{ jobs }}" as="job" hint-placeholder-count="4">
+            <div style="display: flex; align-items: center; gap: 14px; padding: 11px 0; border-top: 1px solid var(--fl-divider);">
+              <span class="{{ job.dotClass }}" style="flex: none; width: 8px; height: 8px; border-radius: 999px;"></span>
+              <div style="flex: 1; min-width: 0;">
+                <div style="display: flex; align-items: baseline; gap: 8px;">
+                  <span style="font-size: 13px; color: var(--fl-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px;">{{ job.title }}</span>
+                  <span style="font-size: 12px; color: var(--fl-text-tertiary);">{{ job.artist }}</span>
+                </div>
+                <div style="margin-top: 7px; height: 4px; border-radius: 999px; background: var(--fl-divider); overflow: hidden;">
+                  <div class="fl-fill {{ job.fillClass }}" style="width: {{ job.pct }}%;"></div>
+                </div>
+              </div>
+              <span style="flex: none; width: 132px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--fl-text-secondary);">{{ job.label }}</span>
+              <sc-if value="{{ job.cancel }}" hint-placeholder-val="{{ true }}">
+                <button type="button" onClick="{{ job.onCancel }}" title="Cancel download" style="flex: none; width: 26px; height: 26px; border-radius: 999px; border: none; background: transparent; color: var(--fl-text-tertiary); display: flex; align-items: center; justify-content: center; cursor: pointer;" style-hover="background: var(--fl-surface-elevated); color: var(--fl-destructive);">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12"></path><path d="M18 6L6 18"></path></svg>
+                </button>
+              </sc-if>
+              <sc-if value="{{ job.done }}" hint-placeholder-val="{{ false }}">
+                <span style="flex: none; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; color: var(--fl-quality-cd);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"></path></svg></span>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:880},&quot;demoState&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Library grid&quot;,&quot;Playlist resolved&quot;,&quot;Not connected&quot;,&quot;Resolving&quot;,&quot;Error&quot;],&quot;default&quot;:&quot;Library grid&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Dark&quot;,&quot;Light&quot;],&quot;default&quot;:&quot;Dark&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;accentStyle&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Quality color&quot;,&quot;Monochrome&quot;],&quot;default&quot;:&quot;Quality color&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  state = {
+    over: null,
+    selected: 4,
+    optionsOpen: false,
+    drawerOpen: false,
+    format: 'original',
+    quality: '',
+    region: 'auto',
+    addMetadata: true,
+    compatibility: false,
+    jobs: null,
+  };
+
+  FORMATS = [
+    { value: 'original', label: 'Original (highest quality)', short: 'Original quality', qualities: [] },
+    { value: 'flac', label: 'FLAC', short: 'FLAC', qualities: [{ value: '16', label: '16-bit 44.1 kHz' }] },
+    { value: 'mp3', label: 'MP3', short: 'MP3', qualities: [{ value: '320', label: '320 kb/s' }, { value: '256', label: '256 kb/s' }, { value: '192', label: '192 kb/s' }, { value: '128', label: '128 kb/s' }] },
+    { value: 'ogg-vorbis', label: 'Ogg Vorbis', short: 'Ogg Vorbis', qualities: [{ value: '320', label: '320 kb/s' }, { value: '256', label: '256 kb/s' }, { value: '192', label: '192 kb/s' }, { value: '128', label: '128 kb/s' }] },
+    { value: 'opus', label: 'Opus', short: 'Opus', qualities: [{ value: '320', label: '320 kb/s' }, { value: '256', label: '256 kb/s' }, { value: '192', label: '192 kb/s' }, { value: '128', label: '128 kb/s' }, { value: '96', label: '96 kb/s' }, { value: '64', label: '64 kb/s' }] },
+    { value: 'm4a-aac', label: 'M4A (AAC)', short: 'M4A (AAC)', qualities: [{ value: '320', label: '320 kb/s' }, { value: '256', label: '256 kb/s' }, { value: '192', label: '192 kb/s' }, { value: '128', label: '128 kb/s' }] },
+    { value: 'wav', label: 'WAV', short: 'WAV', qualities: [] },
+    { value: 'bitcrush', label: 'Bitcrush', short: 'Bitcrush', qualities: [] },
+  ];
+
+  PLAYLISTS = [
+    { title: 'Liked Songs', owner: 'you', count: 1284, dur: '83h 41m', grad: 0, truncated: false },
+    { title: 'Late Night Drives', owner: 'you', count: 64, dur: '4h 12m', grad: 1, truncated: false },
+    { title: 'Lossless Essentials', owner: 'you', count: 92, dur: '6h 08m', grad: 2, truncated: false },
+    { title: 'Focus / Deep Work', owner: 'you', count: 138, dur: '9h 47m', grad: 3, truncated: false },
+    { title: 'On Repeat', owner: 'Spotify', count: 142, dur: '8h 55m', grad: 4, truncated: true },
+    { title: 'Throwback Heat', owner: 'you', count: 77, dur: '5h 02m', grad: 5, truncated: false },
+    { title: 'Sunday Acoustic', owner: 'you', count: 41, dur: '2h 38m', grad: 6, truncated: false },
+    { title: 'Workout Pulse', owner: 'you', count: 58, dur: '3h 26m', grad: 7, truncated: false },
+    { title: 'Discover Weekly', owner: 'Spotify', count: 30, dur: '1h 59m', grad: 8, truncated: false },
+  ];
+
+  TRACKS = [
+    { n: 1, title: 'Nights', artist: 'Frank Ocean', lossless: true, dur: '5:07' },
+    { n: 2, title: 'Redbone', artist: 'Childish Gambino', lossless: true, dur: '5:27' },
+    { n: 3, title: 'Time', artist: 'Pink Floyd', lossless: true, dur: '6:53' },
+    { n: 4, title: 'Bad Habit', artist: 'Steve Lacy', lossless: true, dur: '3:52' },
+    { n: 5, title: 'Flashing Lights', artist: 'Kanye West, Dwele', lossless: true, dur: '3:58' },
+    { n: 6, title: 'Pyramids', artist: 'Frank Ocean', lossless: true, dur: '9:53' },
+    { n: 7, title: 'Snooze', artist: 'SZA', lossless: false, dur: '3:22' },
+    { n: 8, title: 'Glory Box', artist: 'Portishead', lossless: true, dur: '5:06' },
+    { n: 9, title: 'Best Part', artist: 'Daniel Caesar, H.E.R.', lossless: true, dur: '3:29' },
+    { n: 10, title: 'Sunflower', artist: 'Post Malone, Swae Lee', lossless: false, dur: '2:38' },
+    { n: 11, title: 'Electric Relaxation', artist: 'A Tribe Called Quest', lossless: true, dur: '4:00' },
+    { n: 12, title: 'Sure Thing', artist: 'Miguel', lossless: true, dur: '3:18' },
+  ];
+
+  seedJobs() {
+    return [
+      { id: 'a', title: 'Redbone', artist: 'Childish Gambino', status: 'downloading', pct: 48 },
+      { id: 'b', title: 'Nights', artist: 'Frank Ocean', status: 'finishing', pct: 100 },
+      { id: 'c', title: 'Time', artist: 'Pink Floyd', status: 'queued', pct: 0 },
+      { id: 'd', title: 'Bad Habit', artist: 'Steve Lacy', status: 'done', pct: 100 },
+    ];
+  }
+
+  componentDidUpdate(prev) {
+    if (prev.demoState !== this.props.demoState) this.setState({ over: null });
+  }
+
+  curFormat() { return this.FORMATS.find(f => f.value === this.state.format) || this.FORMATS[0]; }
+
+  jobView(j) {
+    const map = {
+      queued: { label: 'Queued', dot: 'fl-dot-cancel', fill: 'fl-fill-cancel' },
+      downloading: { label: 'Downloading… ' + j.pct + '%', dot: 'fl-dot-acc', fill: 'fl-fill-acc' },
+      tagging: { label: 'Tagging…', dot: 'fl-dot-acc', fill: 'fl-fill-acc' },
+      finishing: { label: 'Moving into library…', dot: 'fl-dot-acc', fill: 'fl-fill-acc' },
+      done: { label: 'Done', dot: 'fl-dot-done', fill: 'fl-fill-done' },
+      cancelled: { label: 'Cancelled', dot: 'fl-dot-cancel', fill: 'fl-fill-cancel' },
+      failed: { label: 'Failed', dot: 'fl-dot-failed', fill: 'fl-fill-cancel' },
+    };
+    const m = map[j.status] || map.queued;
+    const cancellable = j.status === 'queued' || j.status === 'downloading' || j.status === 'tagging' || j.status === 'finishing';
+    return { id: j.id, title: j.title, artist: j.artist, pct: j.pct, label: m.label, dotClass: m.dot, fillClass: m.fill, cancel: cancellable, done: j.status === 'done', onCancel: () => this.cancelJob(j.id) };
+  }
+
+  cancelJob(id) {
+    this.setState(s => ({ jobs: (s.jobs || this.seedJobs()).map(j => j.id === id ? { ...j, status: 'cancelled' } : j) }));
+  }
+
+  enqueue(items) {
+    this.setState(s => {
+      const jobs = (s.jobs || this.seedJobs()).slice();
+      items.forEach((t, i) => jobs.unshift({ id: 'n' + Date.now() + '-' + i, title: t.title, artist: t.artist, status: 'queued', pct: 0 }));
+      return { jobs, drawerOpen: true };
+    });
+  }
+
+  openPlaylist(i) { this.setState({ over: 'Playlist resolved', selected: i, optionsOpen: false }); }
+
+  renderVals() {
+    const light = (this.props.theme ?? 'Dark') === 'Light';
+    const mono = (this.props.accentStyle ?? 'Quality color') === 'Monochrome';
+    const rootClass = (light ? 'theme-light ' : '') + (mono ? 'acc-mono' : '');
+    const eff = this.state.over || this.props.demoState || 'Library grid';
+
+    const fmt = this.curFormat();
+    const quals = fmt.qualities;
+    const quality = this.state.quality || (quals[0] && quals[0].value) || '';
+    const qualLabel = (quals.find(q => q.value === quality) || {}).label || '';
+    const parts = [fmt.short];
+    if (qualLabel) parts.push(qualLabel);
+    parts.push('Region ' + (this.state.region || 'auto'));
+    const summary = parts.join('   ·   ');
+
+    const sel = this.PLAYLISTS[this.state.selected] || this.PLAYLISTS[4];
+    const playlist = {
+      title: sel.title,
+      gradClass: 'gc' + sel.grad,
+      meta: 'by ' + sel.owner + '  ·  ' + sel.count + ' tracks  ·  ' + sel.dur,
+    };
+
+    const jobs = (this.state.jobs || this.seedJobs());
+    const active = jobs.filter(j => j.status === 'queued' || j.status === 'downloading' || j.status === 'tagging' || j.status === 'finishing').length;
+    const done = jobs.filter(j => j.status === 'done').length;
+    const drawerSummary = active > 0 ? (active + ' active · ' + done + ' done') : (jobs.length + ' complete');
+
+    const isResolved = eff === 'Playlist resolved';
+
+    return {
+      rootClass,
+      isGrid: eff === 'Library grid',
+      isNotConnected: eff === 'Not connected',
+      isLoading: eff === 'Resolving',
+      isError: eff === 'Error',
+      isResolved,
+      isConnected: eff === 'Library grid' || isResolved || eff === 'Resolving',
+      headerSub: isResolved ? 'Downloading a full playlist — every track at its highest available fidelity.' : 'Your Spotify library — pick a playlist to download in full.',
+      showDrawer: isResolved && jobs.length > 0,
+
+      skeletons: [0, 1, 2, 3, 4, 5],
+      playlistCount: this.PLAYLISTS.length,
+      playlists: this.PLAYLISTS.map((p, i) => ({
+        title: p.title, gradClass: 'gc' + p.grad,
+        meta: p.owner + ' · ' + p.count + ' tracks',
+        onOpen: () => this.openPlaylist(i),
+      })),
+
+      playlist,
+      truncated: sel.truncated,
+      tracks: this.TRACKS.map(t => ({
+        num: String(t.n).padStart(2, '0'),
+        title: t.title, artist: t.artist,
+        lossless: t.lossless, lossy: !t.lossless, dur: t.dur,
+        onDownload: () => this.enqueue([t]),
+      })),
+
+      optionsOpen: this.state.optionsOpen,
+      notOptionsOpen: !this.state.optionsOpen,
+      summary,
+      formats: this.FORMATS.map(f => ({ value: f.value, label: f.label })),
+      format: this.state.format,
+      hasQuality: quals.length > 0,
+      qualities: quals.map(q => ({ value: q.value, label: q.label })),
+      quality,
+      region: this.state.region,
+      addMetadata: this.state.addMetadata, notMetadata: !this.state.addMetadata,
+      compatibility: this.state.compatibility, notCompatibility: !this.state.compatibility,
+
+      jobs: jobs.map(j => this.jobView(j)),
+      drawerOpen: this.state.drawerOpen,
+      notDrawerOpen: !this.state.drawerOpen,
+      drawerSummary,
+
+      toggleOptions: () => this.setState(s => ({ optionsOpen: !s.optionsOpen })),
+      toggleDrawer: () => this.setState(s => ({ drawerOpen: !s.drawerOpen })),
+      setFormat: (e) => { const v = e.target.value; const f = this.FORMATS.find(x => x.value === v) || this.FORMATS[0]; this.setState({ format: v, quality: (f.qualities[0] && f.qualities[0].value) || '' }); },
+      setQuality: (e) => this.setState({ quality: e.target.value }),
+      setRegion: (e) => this.setState({ region: e.target.value }),
+      toggleMetadata: () => this.setState(s => ({ addMetadata: !s.addMetadata })),
+      toggleCompat: () => this.setState(s => ({ compatibility: !s.compatibility })),
+      enqueueAll: () => this.enqueue(this.TRACKS),
+      clearCompleted: () => this.setState(s => ({ jobs: (s.jobs || this.seedJobs()).filter(j => j.status !== 'done' && j.status !== 'cancelled' && j.status !== 'failed') })),
+      connect: () => this.setState({ over: 'Library grid' }),
+      openSample: () => this.openPlaylist(4),
+      backToGrid: () => this.setState({ over: 'Library grid' }),
+      goBack: () => { if (this.state.over === 'Playlist resolved') this.setState({ over: 'Library grid' }); },
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -25,17 +25,30 @@ struct FlactasticApp: App {
         // the background so the first paste-and-resolve is fast.
         let registry = StreamerRegistry()
         let lucidaController = LucidaWebController()
-        registry.register(LucidaWebProvider(controller: lucidaController))
+        let lucidaProvider = LucidaWebProvider(controller: lucidaController)
+        registry.register(lucidaProvider)
         _lucidaController = State(initialValue: lucidaController)
         let lib = LibraryStore()
         let writer = MetadataWriter()
         _streamerRegistry = State(initialValue: registry)
-        _downloadCoordinator = State(initialValue: DownloadCoordinator(
-            registry: registry, library: lib, writer: writer
-        ))
+        let downloads = DownloadCoordinator(registry: registry, library: lib, writer: writer)
+        _downloadCoordinator = State(initialValue: downloads)
         // Reuse the same library/writer instances above.
         _library = State(initialValue: lib)
         _metadataWriter = State(initialValue: writer)
+
+        // Spotify-playlist rebuild: matches each track to Amazon Music via
+        // Odesli, downloads through the shared coordinator, and assembles a
+        // local playlist. Shares the playlistStore/library/Lucida instances.
+        let plStore = PlaylistStore()
+        _playlistStore = State(initialValue: plStore)
+        _playlistRebuildCoordinator = State(initialValue: PlaylistRebuildCoordinator(
+            downloads: downloads,
+            playlistStore: plStore,
+            library: lib,
+            lucidaProvider: lucidaProvider,
+            amazonMatcher: AmazonMatchService()
+        ))
 
         let lyricsCache = LyricsRemoteCache()
         _lyricsRemoteCache = State(initialValue: lyricsCache)
@@ -48,9 +61,11 @@ struct FlactasticApp: App {
     @State private var importCoordinator = ImportCoordinator()
     @State private var playlistAddCoordinator = PlaylistAddCoordinator()
     @State private var router = NavigationRouter()
+    @State private var spotifyAuth = SpotifyAuthController()
     @State private var discordPresence = DiscordPresenceService()
     @State private var streamerRegistry = StreamerRegistry()
     @State private var downloadCoordinator: DownloadCoordinator
+    @State private var playlistRebuildCoordinator: PlaylistRebuildCoordinator
     @State private var lucidaController: LucidaWebController
     /// In-memory only — the Lucida debug window is a developer tool and
     /// always starts OFF on launch, even if the user left it enabled in
@@ -77,6 +92,8 @@ struct FlactasticApp: App {
                             .environment(router)
                             .environment(streamerRegistry)
                             .environment(downloadCoordinator)
+                            .environment(playlistRebuildCoordinator)
+                            .environment(spotifyAuth)
                             .environment(lucidaController)
                             .environment(\.debugMode, lucidaDebugEnabled)
                             .environment(\.metadataWriter, metadataWriter)
@@ -223,6 +240,7 @@ struct FlactasticApp: App {
         lyricsRemoteCache.load()
         player.engine.setVolume(settings.volume)
         discordPresence.attach(player: player, settings: settings)
+        await spotifyAuth.restore()
         if let path = settings.lastRootPath {
             let url = URL(fileURLWithPath: path)
             if FileManager.default.fileExists(atPath: url.path) {

@@ -125,6 +125,7 @@ private struct SettingsTabBar: View {
 private struct ConfigSettingsSection: View {
     @Environment(LibraryStore.self) private var library
     @Environment(Settings.self) private var settings
+    @Environment(SpotifyAuthController.self) private var spotifyAuth
     @Environment(\.debugMode) private var debugMode
     let openFolder: () -> Void
 
@@ -194,6 +195,73 @@ private struct ConfigSettingsSection: View {
                     .toggleStyle(.switch)
                     .tint(Theme.accent)
                     .labelsHidden()
+            }
+
+            Divider().foregroundStyle(Theme.divider)
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                Text("Spotify account")
+                    .font(Theme.Font.bodyMedium)
+                    .foregroundStyle(Theme.textPrimary)
+                Text("Connect your Spotify account to browse and download your own playlists, including private ones, in full.")
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: Theme.Spacing.md) {
+                    switch spotifyAuth.state {
+                    case .disconnected:
+                        Button("Connect Spotify") {
+                            Task { await spotifyAuth.connect() }
+                        }
+                        .buttonStyle(PillButtonStyle(isPrimary: true))
+                    case .connecting:
+                        ProgressView().controlSize(.small)
+                        Text("Connecting…")
+                            .font(Theme.Font.body)
+                            .foregroundStyle(Theme.textSecondary)
+                    case .connected(let name):
+                        HStack(spacing: 6) {
+                            Circle().fill(Theme.qualityCD).frame(width: 7, height: 7)
+                            Text("Connected as ")
+                                .foregroundStyle(Theme.textSecondary)
+                            + Text(name).foregroundStyle(Theme.textPrimary).fontWeight(.medium)
+                        }
+                        .font(Theme.Font.body)
+                        Spacer()
+                        Button("Disconnect") { spotifyAuth.disconnect() }
+                            .buttonStyle(PillButtonStyle())
+                    }
+                }
+            }
+
+            Divider().foregroundStyle(Theme.divider)
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                Text("Spotify API keys (legacy)")
+                    .font(Theme.Font.bodyMedium)
+                    .foregroundStyle(Theme.textPrimary)
+                Text("Optional. Used only for the public-link paste fallback when you're not connected above. Without keys, pasted public playlists use Spotify's preview, capped at 100 tracks. Add a free Spotify Developer app's Client ID and Secret (developer.spotify.com → Dashboard → Create app) to fetch pasted public playlists of any length.")
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack {
+                    Text("Client ID")
+                        .font(Theme.Font.body)
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(width: 90, alignment: .leading)
+                    TextField("Client ID", text: $settings.spotifyClientID)
+                        .textFieldStyle(.roundedBorder)
+                }
+                HStack {
+                    Text("Client Secret")
+                        .font(Theme.Font.body)
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(width: 90, alignment: .leading)
+                    SecureField("Client Secret", text: $settings.spotifyClientSecret)
+                        .textFieldStyle(.roundedBorder)
+                }
             }
 
             if debugMode {

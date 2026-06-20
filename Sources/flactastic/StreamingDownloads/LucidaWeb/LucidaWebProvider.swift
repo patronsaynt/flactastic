@@ -34,6 +34,30 @@ final class LucidaWebProvider: NSObject, StreamerProvider {
     ]
     var isConfigured: Bool { true }
 
+    // MARK: - Initiation throttle
+
+    /// Minimum spacing between Lucida job initiations (`streamV2`), enforced
+    /// globally across every in-flight download. Lucida rate-limits job *starts*
+    /// per IP, so pacing initiations — rather than just capping how many run at
+    /// once — is what actually keeps us under the limit. Jitter keeps the cadence
+    /// irregular so the limiter can't pattern-match a fixed beat.
+    private static let minInitiationInterval: TimeInterval = 1.75
+    private static let initiationJitter: TimeInterval = 0.5
+    private var nextInitiationAllowed = Date.distantPast
+
+    /// Reserve the next initiation slot and sleep until it arrives. Safe under
+    /// main-actor reentrancy: the reservation (read-now → write-next) is
+    /// synchronous and atomic, so concurrent callers each claim a distinct,
+    /// increasing slot, then sleep in parallel until theirs comes up.
+    private func awaitInitiationSlot() async {
+        let now = Date()
+        let slot = max(now, nextInitiationAllowed)
+        let interval = Self.minInitiationInterval + Double.random(in: 0...Self.initiationJitter)
+        nextInitiationAllowed = slot.addingTimeInterval(interval)
+        let wait = slot.timeIntervalSince(now)
+        if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
+    }
+
     func login() async throws {
         try await controller.awaitReady()
     }
@@ -81,18 +105,30 @@ final class LucidaWebProvider: NSObject, StreamerProvider {
         let body = LucidaStreamRequest(url: serviceURL, options: opts)
         let bodyJSON = String(data: try JSONEncoder().encode(body), encoding: .utf8)!
 
+        // Pace job initiations globally so concurrent downloads don't trip
+        // Lucida's per-IP rate limiter on job starts.
+        await awaitInitiationSlot()
+
         let initiate = try await controller.callBridge(
             "window.__flac.streamV2(\(bodyJSON), null)",
             as: LucidaStreamInitiateResponse.self
         )
 
-        try await waitForCompletion(handoff: initiate.handoff, server: initiate.name)
+        // Lucida returns `{success:false, error}` (no handoff) when it can't
+        // start a job for this URL — e.g. the source has no matching release or
+        // the server is busy. Surface that as a clean, per-track failure rather
+        // than letting a missing-key decode error bubble up.
+        guard let handoff = initiate.handoff, let server = initiate.name else {
+            throw StreamerError.unavailable(initiate.error ?? "Lucida couldn't start this download.")
+        }
+
+        try await waitForCompletion(handoff: handoff, server: server)
 
         // Build the same redirect=true URL the website hands to window.open;
         // WKDownload follows the 302 internally and writes to disk.
-        let inner = "/api/fetch/request/\(initiate.handoff)/download"
+        let inner = "/api/fetch/request/\(handoff)/download"
         let outer = "https://lucida.to/api/load?url=\(percent(inner))"
-            + "&force=\(percent(initiate.name))&redirect=true"
+            + "&force=\(percent(server))&redirect=true"
         guard let dlURL = URL(string: outer) else {
             throw StreamerError.unavailable("could not build download URL")
         }
@@ -187,6 +223,10 @@ private struct LucidaMetadata: Decodable {
     let releaseDate: String?
     let genres: [String]?
     let tracks: [TrackEntry]?
+    /// Playlist owner / curator. Lucida's field name varies by upstream
+    /// service; `creator` and `owner` are the two we've observed.
+    let creator: String?
+    let owner: String?
 
     struct Artist: Decodable { let name: String?; let url: String?; let pictures: [Artwork]? }
     struct Album: Decodable {
@@ -244,6 +284,8 @@ private struct LucidaMetadata: Decodable {
         switch type {
         case "album":
             return .album(buildAlbum(originalURL: originalURL))
+        case "playlist":
+            return .playlist(buildPlaylist(originalURL: originalURL))
         default:
             return .track(buildTrack(originalURL: originalURL))
         }
@@ -343,6 +385,57 @@ private struct LucidaMetadata: Decodable {
         )
     }
 
+    /// Build a `RemotePlaylist` from a resolved playlist payload. Unlike an
+    /// album, playlist tracks span many artists/albums, so each entry keeps its
+    /// own service-native URL (the Spotify track URL) — that's what the rebuild
+    /// flow feeds to Odesli for Amazon matching, and what Lucida falls back to.
+    /// Per-entry album metadata is absent, so each track synthesizes a single
+    /// album from its own title (same approach as `buildTrack`) rather than
+    /// being lumped into one fake "playlist album" folder on disk.
+    private func buildPlaylist(originalURL: URL) -> RemotePlaylist {
+        let playlistArts = (coverArtwork ?? []).compactMap(Self.toCover)
+        let trackList: [RemoteTrack] = (tracks ?? []).enumerated().map { idx, t in
+            let entryArtists = (t.artists ?? []).map { a in
+                RemoteArtist(id: a.name ?? "", name: a.name ?? "Unknown Artist",
+                             url: a.url.flatMap(URL.init(string:)), pictureURL: nil)
+            }
+            let entryTitle = t.title ?? "Track \(idx + 1)"
+            let entryURL = URL(string: t.url ?? originalURL.absoluteString) ?? originalURL
+            // Synthesize a single-track album so the on-disk layout is
+            // Artist/<title>/NN - Title rather than a nameless bucket.
+            let single = RemoteAlbumRef(
+                id: "single:\(entryURL.absoluteString)",
+                title: entryTitle,
+                url: nil,
+                coverArt: [],
+                releaseYear: Self.year(from: t.releaseDate),
+                trackCount: 1
+            )
+            return RemoteTrack(
+                id: "\(originalURL.absoluteString)#\(idx)",
+                title: entryTitle,
+                artists: entryArtists,
+                album: single,
+                trackNumber: t.trackNumber,
+                discNumber: t.discNumber,
+                durationSeconds: t.durationMs.map { $0 / 1000 },
+                coverArt: [],
+                url: entryURL,
+                serviceID: "lucida",
+                isLossless: true
+            )
+        }
+        return RemotePlaylist(
+            id: originalURL.absoluteString,
+            title: title ?? originalURL.lastPathComponent,
+            creator: creator ?? owner ?? artists?.first?.name,
+            coverArt: playlistArts,
+            url: originalURL,
+            tracks: trackList,
+            serviceID: "lucida"
+        )
+    }
+
     private static func toCover(_ a: Artwork) -> RemoteCoverArt? {
         guard let s = a.url, let u = URL(string: s) else { return nil }
         return RemoteCoverArt(url: u, width: a.width, height: a.height)
@@ -376,10 +469,13 @@ private struct LucidaStreamRequest: Encodable {
 
 private struct LucidaStreamInitiateResponse: Decodable {
     let success: Bool?
-    let handoff: String
+    /// Optional: absent when Lucida returns an error envelope instead of a job
+    /// (handled in `getStream`, which surfaces `error` as a clean failure).
+    let handoff: String?
     /// Server name that owns this job; passed back as `force=` to keep
     /// every subsequent call routed to the same backend node.
-    let name: String
+    let name: String?
+    let error: String?
     let skipbo: String?
     let skipboExpiration: Double?
 }

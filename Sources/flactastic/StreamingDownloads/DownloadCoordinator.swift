@@ -34,13 +34,40 @@ final class DownloadCoordinator {
         var canCancel: Bool { !isTerminal }
     }
 
+    /// Terminal result of a single job, returned by `enqueueAndAwait(_:)` so a
+    /// caller (e.g. PlaylistRebuildCoordinator) can sequence work per track.
+    enum JobOutcome: Sendable {
+        case completed(URL)
+        case skipped(URL)
+        case failed(String)
+        case cancelled
+
+        var status: JobStatus {
+            switch self {
+            case .completed(let u): return .completed(u)
+            case .skipped(let u):   return .skipped(u)
+            case .failed(let m):    return .failed(m)
+            case .cancelled:        return .cancelled
+            }
+        }
+    }
+
     struct Job: Identifiable, Sendable {
         let id: UUID
         let track: RemoteTrack
         var status: JobStatus
+        /// When true, the file Lucida hands back is left tagged exactly as
+        /// Lucida embedded it (real album/artist/cover from the source) instead
+        /// of being re-tagged from our `RemoteTrack`. Used by the Spotify
+        /// playlist rebuild, whose `RemoteTrack`s carry only title + artist.
+        var trustEmbeddedMetadata: Bool = false
     }
 
     private(set) var jobs: [Job] = []
+
+    /// Continuations for callers awaiting a job's terminal outcome via
+    /// `enqueueAndAwait(_:)`. Resolved exactly once in `finish(_:_:)`.
+    private var outcomeWaiters: [UUID: CheckedContinuation<JobOutcome, Never>] = [:]
 
     private let registry: StreamerRegistry
     private let library: LibraryStore
@@ -68,6 +95,18 @@ final class DownloadCoordinator {
     // MARK: - Public API
 
     func enqueue(_ track: RemoteTrack) {
+        // In-flight duplicate guard: if this exact track already has an active
+        // (non-terminal) job, don't enqueue it again. Keeps "Download album"
+        // plus per-track taps — or a double-click — from downloading twice.
+        // (Already-on-disk duplicates are caught separately in `run` via
+        // `findExistingMatch`.)
+        if jobs.contains(where: {
+            $0.track.id == track.id
+                && $0.track.serviceID == track.serviceID
+                && $0.status.canCancel
+        }) {
+            return
+        }
         let job = Job(id: UUID(), track: track, status: .queued)
         jobs.append(job)
         let id = job.id
@@ -87,13 +126,43 @@ final class DownloadCoordinator {
         for t in tracks { enqueue(t) }
     }
 
+    /// Enqueue a single track and suspend until it reaches a terminal state,
+    /// returning the outcome. The job still appears in `jobs` (so the UI shows
+    /// per-track progress and a Cancel button) — this just lets a caller drive
+    /// downloads serially. Cancelling via `cancel(_:)` resolves the await with
+    /// `.cancelled`.
+    func enqueueAndAwait(
+        _ track: RemoteTrack,
+        trustEmbeddedMetadata: Bool = false
+    ) async -> JobOutcome {
+        let job = Job(id: UUID(), track: track, status: .queued,
+                      trustEmbeddedMetadata: trustEmbeddedMetadata)
+        jobs.append(job)
+        let id = job.id
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                // Stored synchronously before the Task can run, so `finish`
+                // always finds the waiter.
+                outcomeWaiters[id] = continuation
+                jobTasks[id] = Task { [weak self] in
+                    await self?.run(jobID: id)
+                    self?.removeJobTask(id)
+                }
+            }
+        } onCancel: {
+            // If the awaiting task (e.g. a playlist rebuild) is cancelled, tear
+            // down the in-flight download and resolve the await with .cancelled.
+            Task { @MainActor [weak self] in self?.cancel(id) }
+        }
+    }
+
     /// Cancel an in-flight job. Cancelling a terminal job is a no-op. The
     /// Task's cancellation propagates through `AsyncThrowingStream` —
     /// WKDownload sees its byte stream terminate and stops fetching.
     func cancel(_ id: UUID) {
         guard let job = jobs.first(where: { $0.id == id }), job.status.canCancel else { return }
         jobTasks[id]?.cancel()
-        update(id, .cancelled)
+        finish(id, .cancelled)
     }
 
     func clearCompleted() {
@@ -107,16 +176,26 @@ final class DownloadCoordinator {
         jobs[i].status = status
     }
 
+    /// Set a job's terminal status and resolve any `enqueueAndAwait` waiter.
+    /// Centralizes every terminal transition so the continuation is resumed
+    /// exactly once. Safe to call when no waiter exists (plain `enqueue` jobs).
+    private func finish(_ id: UUID, _ outcome: JobOutcome) {
+        update(id, outcome.status)
+        if let waiter = outcomeWaiters.removeValue(forKey: id) {
+            waiter.resume(returning: outcome)
+        }
+    }
+
     private func run(jobID: UUID) async {
         guard let job = jobs.first(where: { $0.id == jobID }) else { return }
         let track = job.track
 
         guard let provider = registry.provider(serviceID: track.serviceID) else {
-            update(jobID, .failed("Provider \"\(track.serviceID)\" no longer registered."))
+            finish(jobID, .failed("Provider \"\(track.serviceID)\" no longer registered."))
             return
         }
         guard let rootURL = library.rootURL else {
-            update(jobID, .failed("No music folder selected. Open Settings → Config first."))
+            finish(jobID, .failed("No music folder selected. Open Settings → Config first."))
             return
         }
 
@@ -125,7 +204,7 @@ final class DownloadCoordinator {
         // insensitive and whitespace-trimmed so trivial differences (e.g.
         // trailing space, capitalisation) don't cause double-downloads.
         if let existing = Self.findExistingMatch(for: track, in: library.tracks) {
-            update(jobID, .skipped(existing.url))
+            finish(jobID, .skipped(existing.url))
             return
         }
 
@@ -152,38 +231,51 @@ final class DownloadCoordinator {
             try handle.close()
 
             // --- Tag the file using metadata we already have from the provider.
-            update(jobID, .tagging)
-            let artworkData = await Self.fetchArtwork(track: track, session: urlSession)
-            let format = AudioFileFormat.classify(tempURL) ?? .flac
-            let joinedArtists = track.artists.map(\.name).joined(separator: "; ")
-            let artistTag = joinedArtists.isEmpty ? nil : joinedArtists
-            let primaryArtist = track.artists.first?.name
-            let stagedTrack = Track(
-                url: tempURL,
-                title: track.title,
-                artist: artistTag,
-                albumArtist: track.album?.title.isEmpty == false ? primaryArtist : nil,
-                album: track.album?.title,
-                trackNumber: track.trackNumber,
-                duration: track.durationSeconds,
-                artwork: artworkData,
-                fileFormat: format,
-                year: track.album?.releaseYear,
-                isCompilation: false
-            )
+            // Playlist rebuilds skip the full re-tag: Lucida already embedded the
+            // real album/artist/cover from the source, and our RemoteTrack only
+            // has title + artist, so re-tagging would clobber good data. We do
+            // still override the title with the playlist's canonical (Spotify)
+            // name, since the source service often mangles remix/edit titles
+            // (e.g. "Miami 82 - Avicii Edit" → "Miami 82 (Avicii)").
+            if job.trustEmbeddedMetadata {
+                if !track.title.isEmpty {
+                    update(jobID, .tagging)
+                    try? await writer.overrideTitle(at: tempURL, title: track.title)
+                }
+            } else {
+                update(jobID, .tagging)
+                let artworkData = await Self.fetchArtwork(track: track, session: urlSession)
+                let format = AudioFileFormat.classify(tempURL) ?? .flac
+                let joinedArtists = track.artists.map(\.name).joined(separator: "; ")
+                let artistTag = joinedArtists.isEmpty ? nil : joinedArtists
+                let primaryArtist = track.artists.first?.name
+                let stagedTrack = Track(
+                    url: tempURL,
+                    title: track.title,
+                    artist: artistTag,
+                    albumArtist: track.album?.title.isEmpty == false ? primaryArtist : nil,
+                    album: track.album?.title,
+                    trackNumber: track.trackNumber,
+                    duration: track.durationSeconds,
+                    artwork: artworkData,
+                    fileFormat: format,
+                    year: track.album?.releaseYear,
+                    isCompilation: false
+                )
 
-            _ = try await writer.write(
-                to: stagedTrack,
-                title: track.title,
-                artist: artistTag,
-                album: track.album?.title,
-                year: track.album?.releaseYear,
-                genre: nil,
-                trackNumber: track.trackNumber,
-                artworkChange: artworkData.map { .updated($0) } ?? .unchanged,
-                albumArtistChange: .set(primaryArtist),
-                compilationChange: .unchanged
-            )
+                _ = try await writer.write(
+                    to: stagedTrack,
+                    title: track.title,
+                    artist: artistTag,
+                    album: track.album?.title,
+                    year: track.album?.releaseYear,
+                    genre: nil,
+                    trackNumber: track.trackNumber,
+                    artworkChange: artworkData.map { .updated($0) } ?? .unchanged,
+                    albumArtistChange: .set(primaryArtist),
+                    compilationChange: .unchanged
+                )
+            }
 
             // --- Move into library at Artist/Album/NN - Title.ext.
             update(jobID, .finishing)
@@ -206,7 +298,7 @@ final class DownloadCoordinator {
             }
             try FileManager.default.moveItem(at: tempURL, to: dest)
 
-            update(jobID, .completed(dest))
+            finish(jobID, .completed(dest))
             library.refreshLibrary()
         } catch is CancellationError {
             // Task was cancelled via `cancel(_:)`. The status has already
@@ -219,24 +311,124 @@ final class DownloadCoordinator {
             if (error as NSError).code == NSURLErrorCancelled {
                 return
             }
-            update(jobID, .failed((error as? LocalizedError)?.errorDescription ?? "\(error)"))
+            // Must be `finish`, not `update`: a caller awaiting via
+            // `enqueueAndAwait` (the playlist rebuild) needs its continuation
+            // resolved here, or a single failed track hangs the whole rebuild.
+            finish(jobID, .failed((error as? LocalizedError)?.errorDescription ?? "\(error)"))
         }
     }
 
-    /// Returns the first library `Track` whose normalized title + artist
-    /// matches the remote track. `nil` when nothing matches.
-    private static func findExistingMatch(for remote: RemoteTrack, in tracks: [Track]) -> Track? {
-        let needleTitle = normalize(remote.title)
-        let needleArtist = normalize(remote.artists.first?.name ?? "")
-        guard !needleTitle.isEmpty else { return nil }
-        return tracks.first { t in
-            normalize(t.title) == needleTitle &&
-            normalize(t.artist ?? "") == needleArtist
+    /// Returns the library `Track` that is the same recording as `remote`, or
+    /// `nil` if the track isn't in the library yet.
+    ///
+    /// Duplicate detection has to bridge cross-service naming: the same song is
+    /// tagged "Miami 82 - Avicii Edit" on one service and "Miami 82 (Avicii)" on
+    /// another, may or may not carry a leading "NN - " track number in the file
+    /// name, and the embedded tag title can differ from the file name. So we try
+    /// a series of progressively looser strategies and stop at the first one
+    /// that yields a confident match:
+    ///
+    ///   1. Exact file-name match (the strongest signal — FLACtastic names files
+    ///      from the source title, so a byte-for-byte file-name hit is the same
+    ///      track regardless of artist folder).
+    ///   2. Exact tag-title match.
+    ///   3. Loose file-name match (version markers / punctuation flattened).
+    ///   4. Loose tag-title match.
+    ///
+    /// For each strategy we collect every library track that matches the title
+    /// key. A lone hit is accepted as-is — a full title like "Song - X Remix" is
+    /// specific enough on its own. When several tracks share the key we
+    /// disambiguate by artist overlap, then album overlap, so we don't collapse
+    /// genuinely distinct recordings. The loose strategies additionally require
+    /// artist *or* album overlap, since a flattened title is a weaker signal.
+    ///
+    /// Exposed so the playlist rebuild can pre-check duplicates before spending
+    /// an Odesli lookup on a track it won't download.
+    static func findExistingMatch(for remote: RemoteTrack, in tracks: [Track]) -> Track? {
+        let exactKey = normalize(remote.title)
+        guard !exactKey.isEmpty else { return nil }
+        let looseKey = looseTitle(remote.title)
+
+        let remoteArtists = artistTokens(remote.artists.map(\.name).joined(separator: "; "))
+        let remoteAlbum = remote.album.map { normalize($0.title) } ?? ""
+
+        // Precompute comparable keys for every library track once.
+        let keyed: [(track: Track, fileExact: String, fileLoose: String,
+                     tagExact: String, tagLoose: String)] = tracks.map { t in
+            var stem = t.url.deletingPathExtension().lastPathComponent
+            if let r = stem.range(of: #"^\d{1,3}\s*-\s*"#, options: .regularExpression) {
+                stem = String(stem[r.upperBound...])
+            }
+            return (t, normalize(stem), looseTitle(stem), normalize(t.title), looseTitle(t.title))
         }
+
+        // Strategy tiers, tried in order. `requireOverlap` gates the looser
+        // tiers on artist/album overlap to avoid false positives.
+        let tiers: [(key: String, keyPath: (Int) -> String, requireOverlap: Bool)] = [
+            (exactKey, { keyed[$0].fileExact }, false),
+            (exactKey, { keyed[$0].tagExact },  false),
+            (looseKey, { keyed[$0].fileLoose }, true),
+            (looseKey, { keyed[$0].tagLoose },  true),
+        ]
+
+        for tier in tiers {
+            guard !tier.key.isEmpty else { continue }
+            let hits = keyed.indices.filter { tier.keyPath($0) == tier.key }.map { keyed[$0].track }
+            guard !hits.isEmpty else { continue }
+
+            if tier.requireOverlap {
+                if let m = hits.first(where: { overlaps($0, remoteArtists: remoteArtists, remoteAlbum: remoteAlbum) }) {
+                    return m
+                }
+                continue
+            }
+
+            // Confident tier: a lone hit is the match; several disambiguate by overlap.
+            if hits.count == 1 { return hits[0] }
+            if let m = hits.first(where: { overlaps($0, remoteArtists: remoteArtists, remoteAlbum: remoteAlbum) }) {
+                return m
+            }
+            return hits[0]
+        }
+        return nil
+    }
+
+    /// True when a library track shares an artist token or its album name with
+    /// the remote track (used to disambiguate same-title matches).
+    private static func overlaps(_ t: Track, remoteArtists: Set<String>, remoteAlbum: String) -> Bool {
+        let libArtists = artistTokens(t.artist).union(artistTokens(t.albumArtist))
+        if !remoteArtists.isEmpty, !remoteArtists.isDisjoint(with: libArtists) { return true }
+        if !remoteAlbum.isEmpty, normalize(t.album ?? "") == remoteAlbum { return true }
+        return false
     }
 
     private static func normalize(_ s: String) -> String {
         s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    /// A forgiving title key: lowercased, with version markers (" - " and any
+    /// parenth/bracket grouping) flattened and whitespace collapsed, so the
+    /// same track tagged "Song - Radio Edit" or "Song (Radio Edit)" compares
+    /// equal across services.
+    private static func looseTitle(_ s: String) -> String {
+        var t = s.lowercased()
+        for ch in ["(", ")", "[", "]"] { t = t.replacingOccurrences(of: ch, with: " ") }
+        t = t.replacingOccurrences(of: " - ", with: " ")
+        let collapsed = t.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+        return collapsed.joined(separator: " ")
+    }
+
+    /// Split a (possibly multi-artist) artist tag into a set of normalized
+    /// names, tolerating the separators different services use (";", ",", "&",
+    /// "/", "feat."/"ft.").
+    private static func artistTokens(_ raw: String?) -> Set<String> {
+        guard let raw, !raw.isEmpty else { return [] }
+        var working = raw.lowercased()
+        for marker in [" feat.", " feat ", " ft.", " ft ", " featuring "] {
+            working = working.replacingOccurrences(of: marker, with: ";")
+        }
+        let parts = working.components(separatedBy: CharacterSet(charactersIn: ";,&/"))
+        return Set(parts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
     }
 
     // MARK: - Helpers

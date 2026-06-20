@@ -1,0 +1,57 @@
+/* ============================================================
+   FLACtastic — Color tokens
+   Derived 1:1 from Theme.swift (UI/Theme/Theme.swift).
+   Dark mode is the default (:root). Light mode lives under
+   the .theme-light scope. Both are exact ports of the app's
+   adaptive NSColor white-ladders.
+   ============================================================ */
+
+:root {
+  /* ---- Base neutral ladder (dark — the default theme) ---- */
+  --fl-background: #000000;          /* NSColor.black */
+  --fl-surface: #141414;             /* white 0.08 */
+  --fl-surface-elevated: #1f1f1f;    /* white 0.12 */
+  --fl-surface-hover: #292929;       /* white 0.16 */
+  --fl-divider: #2e2e2e;             /* white 0.18 */
+
+  --fl-text-primary: #f2f2f2;        /* white 0.95 */
+  --fl-text-secondary: #a6a6a6;      /* white 0.65 */
+  --fl-text-tertiary: #737373;       /* white 0.45 */
+
+  --fl-accent: #ffffff;              /* dark mode accent = white */
+  --fl-on-accent: #000000;           /* text/icon sitting on the accent fill */
+
+  /* ---- Audio quality tier colors (theme-independent) ----
+     The signature palette. These never change between themes —
+     they are how the brand signals fidelity. */
+  --fl-quality-hires: #00e5cc;       /* Hi-Res  — bright turquoise */
+  --fl-quality-cd: #4dd966;          /* CD      — green (Red Book) */
+  --fl-quality-mid: #f2bf33;         /* Mid     — amber */
+  --fl-quality-low: #f24d4d;         /* Low     — red */
+
+  /* ---- Semantic accents ---- */
+  --fl-destructive: #f25959;         /* destructive menu items / errors */
+  --fl-queued: #ffd60a;              /* user-queued dot in the queue panel */
+
+  /* ---- Translucency (overlays, scrims, badge tints) ---- */
+  --fl-scrim: rgba(0, 0, 0, 0.55);            /* artwork-zoom dim layer */
+  --fl-badge-tint: 0.12;                       /* quality badge bg = color @ 12% */
+  --fl-artwork-shadow: rgba(0, 0, 0, 0.30);    /* drop shadow on small artwork */
+  --fl-artwork-shadow-lg: rgba(0, 0, 0, 0.22); /* drop shadow on large artwork */
+}
+
+/* ---- Light theme — port of the adaptive(light:) branch ---- */
+.theme-light {
+  --fl-background: #f5f5f5;          /* white 0.96 */
+  --fl-surface: #e6e6e6;             /* white 0.90 */
+  --fl-surface-elevated: #d6d6d6;    /* white 0.84 */
+  --fl-surface-hover: #c7c7c7;       /* white 0.78 */
+  --fl-divider: #cccccc;             /* white 0.80 */
+
+  --fl-text-primary: #141414;        /* white 0.08 */
+  --fl-text-secondary: #595959;      /* white 0.35 */
+  --fl-text-tertiary: #8c8c8c;       /* white 0.55 */
+
+  --fl-accent: #000000;              /* light mode accent = black */
+  --fl-on-accent: #f5f5f5;
+}

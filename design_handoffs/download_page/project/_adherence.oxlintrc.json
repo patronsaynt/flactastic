@@ -1,0 +1,165 @@
+{
+  "plugins": [
+    "react",
+    "import"
+  ],
+  "rules": {
+    "react/forbid-elements": [
+      "warn",
+      {
+        "forbid": []
+      }
+    ],
+    "no-restricted-imports": [
+      "warn",
+      {
+        "patterns": []
+      }
+    ],
+    "no-restricted-syntax": [
+      "warn",
+      {
+        "selector": "Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "Raw hex color — use a design-system color token via var()."
+      },
+      {
+        "selector": "Literal[value=/\\b\\d+px\\b/]",
+        "message": "Raw px value — use a design-system spacing token via var()."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/index.js"
+      ],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ],
+  "x-omelette": {
+    "components": {},
+    "tokens": [
+      "--fl-accent",
+      "--fl-artwork-shadow",
+      "--fl-artwork-shadow-lg",
+      "--fl-background",
+      "--fl-badge-tint",
+      "--fl-destructive",
+      "--fl-divider",
+      "--fl-dur-fade",
+      "--fl-dur-press",
+      "--fl-dur-transition",
+      "--fl-ease",
+      "--fl-ease-inout",
+      "--fl-font-mono",
+      "--fl-font-sans",
+      "--fl-leading-normal",
+      "--fl-leading-tight",
+      "--fl-on-accent",
+      "--fl-press-scale",
+      "--fl-press-scale-circle",
+      "--fl-quality-cd",
+      "--fl-quality-hires",
+      "--fl-quality-low",
+      "--fl-quality-mid",
+      "--fl-queued",
+      "--fl-radius-card",
+      "--fl-radius-lg",
+      "--fl-radius-md",
+      "--fl-radius-pill",
+      "--fl-radius-sheet",
+      "--fl-radius-sm",
+      "--fl-rise-offset",
+      "--fl-scrim",
+      "--fl-shadow-floating",
+      "--fl-shadow-menu",
+      "--fl-shadow-sheet",
+      "--fl-space-lg",
+      "--fl-space-md",
+      "--fl-space-sm",
+      "--fl-space-xl",
+      "--fl-space-xs",
+      "--fl-space-xxl",
+      "--fl-surface",
+      "--fl-surface-elevated",
+      "--fl-surface-hover",
+      "--fl-text-body",
+      "--fl-text-caption",
+      "--fl-text-headline",
+      "--fl-text-large-title",
+      "--fl-text-micro",
+      "--fl-text-primary",
+      "--fl-text-secondary",
+      "--fl-text-tertiary",
+      "--fl-text-title",
+      "--fl-tracking-label",
+      "--fl-weight-bold",
+      "--fl-weight-medium",
+      "--fl-weight-regular",
+      "--fl-weight-semibold"
+    ],
+    "tokenKinds": {
+      "--fl-background": "color",
+      "--fl-surface": "color",
+      "--fl-surface-elevated": "color",
+      "--fl-surface-hover": "color",
+      "--fl-divider": "color",
+      "--fl-text-primary": "font",
+      "--fl-text-secondary": "font",
+      "--fl-text-tertiary": "font",
+      "--fl-accent": "color",
+      "--fl-on-accent": "color",
+      "--fl-quality-hires": "color",
+      "--fl-quality-cd": "color",
+      "--fl-quality-mid": "color",
+      "--fl-quality-low": "color",
+      "--fl-destructive": "color",
+      "--fl-queued": "color",
+      "--fl-scrim": "color",
+      "--fl-badge-tint": "color",
+      "--fl-artwork-shadow": "shadow",
+      "--fl-artwork-shadow-lg": "shadow",
+      "--fl-font-sans": "font",
+      "--fl-font-mono": "font",
+      "--fl-weight-regular": "font",
+      "--fl-weight-medium": "font",
+      "--fl-weight-semibold": "font",
+      "--fl-weight-bold": "font",
+      "--fl-text-large-title": "font",
+      "--fl-text-title": "font",
+      "--fl-text-headline": "font",
+      "--fl-text-body": "font",
+      "--fl-text-caption": "font",
+      "--fl-text-micro": "font",
+      "--fl-leading-tight": "font",
+      "--fl-leading-normal": "font",
+      "--fl-tracking-label": "font",
+      "--fl-space-xs": "spacing",
+      "--fl-space-sm": "spacing",
+      "--fl-space-md": "spacing",
+      "--fl-space-lg": "spacing",
+      "--fl-space-xl": "spacing",
+      "--fl-space-xxl": "spacing",
+      "--fl-radius-sm": "radius",
+      "--fl-radius-md": "radius",
+      "--fl-radius-lg": "radius",
+      "--fl-radius-card": "radius",
+      "--fl-radius-sheet": "radius",
+      "--fl-radius-pill": "radius",
+      "--fl-shadow-menu": "shadow",
+      "--fl-shadow-floating": "shadow",
+      "--fl-shadow-sheet": "shadow",
+      "--fl-ease": "other",
+      "--fl-ease-inout": "other",
+      "--fl-dur-press": "other",
+      "--fl-dur-fade": "other",
+      "--fl-dur-transition": "other",
+      "--fl-press-scale": "other",
+      "--fl-press-scale-circle": "other",
+      "--fl-rise-offset": "spacing"
+    },
+    "fontFamilies": []
+  }
+}

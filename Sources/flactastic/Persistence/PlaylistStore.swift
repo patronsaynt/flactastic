@@ -113,6 +113,23 @@ final class PlaylistStore {
         save()
     }
 
+    /// Appends entries directly by relative path, preserving the order given.
+    /// Used by the Spotify playlist rebuild flow, which knows each downloaded
+    /// file's path but may not yet have a resolved library `Track` (the rescan
+    /// can be in flight). Pass a `trackID` when known (e.g. a duplicate that
+    /// matched an existing library track); pass `nil` for fresh downloads and
+    /// `resolvedTracks` will stamp the id lazily on first resolution.
+    ///
+    /// `relativePaths` and `trackIDs` must be the same length and aligned.
+    func appendEntries(relativePaths: [String], trackIDs: [UUID?], to playlistID: UUID) {
+        guard let index = playlists.firstIndex(where: { $0.id == playlistID }),
+              relativePaths.count == trackIDs.count else { return }
+        for (path, tid) in zip(relativePaths, trackIDs) {
+            playlists[index].entries.append(PlaylistEntry(trackID: tid, relativePath: path))
+        }
+        save()
+    }
+
     /// Counts how many of the given tracks already exist in the playlist.
     /// Prefers `trackID` matching (rename-safe) and falls back to relative-path
     /// matching for legacy entries that pre-date trackID persistence.

@@ -197,6 +197,30 @@ actor MetadataWriter {
         }
     }
 
+    /// Overwrite *only* the title tag at `url`, leaving every other tag and any
+    /// embedded artwork untouched. Used by the playlist rebuild to correct the
+    /// title (from Spotify's canonical name) while preserving the album/cover/
+    /// year that Lucida embedded from the source — those would otherwise be lost.
+    func overrideTitle(at url: URL, title: String) throws {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw WriteError.fileNotFound(url)
+        }
+        guard let file = url.path.withCString({ taglib_file_new($0) }) else {
+            throw WriteError.fileOpenFailed(url)
+        }
+        defer {
+            taglib_file_free(file)
+            taglib_tag_free_strings()
+        }
+        guard taglib_file_is_valid(file) != 0, let tag = taglib_file_tag(file) else {
+            throw WriteError.fileOpenFailed(url)
+        }
+        title.withCString { taglib_tag_set_title(tag, $0) }
+        guard taglib_file_save(file) != 0 else {
+            throw WriteError.saveFailed(url)
+        }
+    }
+
     /// Read the `LYRICS` tag from the file at `track.url`. Returns nil when
     /// the tag is unset. Useful for honoring user-embedded lyrics without a
     /// network roundtrip.

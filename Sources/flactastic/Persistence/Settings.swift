@@ -96,6 +96,18 @@ final class Settings {
         didSet { UserDefaults.standard.set(showVpnNotice, forKey: "flactastic.showVpnNotice") }
     }
 
+    /// Spotify Web API app credentials (Client Credentials flow). When both are
+    /// set, playlist rebuilds fetch the *complete* tracklist via the official
+    /// API instead of Spotify's 100-track embed preview. Optional — the embed
+    /// fallback works without them for playlists up to 100 tracks.
+    var spotifyClientID: String {
+        didSet { UserDefaults.standard.set(spotifyClientID, forKey: "flactastic.spotifyClientID") }
+    }
+
+    var spotifyClientSecret: String {
+        didSet { UserDefaults.standard.set(spotifyClientSecret, forKey: "flactastic.spotifyClientSecret") }
+    }
+
     init() {
         lastRootPath = UserDefaults.standard.string(forKey: "flactastic.lastRootPath")
         let stored = UserDefaults.standard.object(forKey: "flactastic.volume")
@@ -131,6 +143,8 @@ final class Settings {
         saveLyricsToFiles = (storedSaveLyrics as? Bool) ?? true
         let storedVpn = UserDefaults.standard.object(forKey: "flactastic.showVpnNotice")
         showVpnNotice = (storedVpn as? Bool) ?? true
+        spotifyClientID = UserDefaults.standard.string(forKey: "flactastic.spotifyClientID") ?? ""
+        spotifyClientSecret = UserDefaults.standard.string(forKey: "flactastic.spotifyClientSecret") ?? ""
     }
 }
 
