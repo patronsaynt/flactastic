@@ -116,6 +116,17 @@ actor LibraryScanner {
             }
         }
 
+        // AVFoundation reports mBitsPerChannel = 0 for compressed containers, so
+        // it never yields a bit depth for FLAC/ALAC. Fall back to TagLib only in
+        // that case — and only for lossless formats that have a meaningful bit
+        // depth — to avoid a redundant file open for tracks already covered
+        // (WAV/AIFF) or where bit depth is meaningless (MP3/AAC).
+        let losslessCompressed: Set<AudioFileFormat> = [.flac, .alac]
+        if updated.bitDepth == nil, losslessCompressed.contains(updated.fileFormat) {
+            let bits = track.url.path.withCString { taglib_helper_bits_per_sample($0) }
+            if bits > 0 { updated.bitDepth = Int(bits) }
+        }
+
         return updated
     }
 

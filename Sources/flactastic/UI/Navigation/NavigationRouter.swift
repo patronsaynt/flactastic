@@ -4,7 +4,7 @@ import Observation
 @Observable
 @MainActor
 final class NavigationRouter {
-    var selectedTab: AppTab = .collection
+    var selectedTab: AppTab = .home
     var collectionPath: [String] = []
     var artworkZoomData: Data? = nil
 

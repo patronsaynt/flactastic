@@ -1,6 +1,7 @@
 import Foundation
 
 enum AppTab: String, CaseIterable, Identifiable {
+    case home = "Home"
     case collection = "Collection"
     case playlists = "Playlists"
     case download = "Download"

@@ -108,6 +108,17 @@ final class Settings {
         didSet { UserDefaults.standard.set(spotifyClientSecret, forKey: "flactastic.spotifyClientSecret") }
     }
 
+    /// Fraction of a track (0.0–1.0) that must be genuinely played straight
+    /// through for the listen to count as a single play, mirroring streaming
+    /// services. Default 0.90 (90%). Clamped to 0…1 on write.
+    var countedPlayFraction: Double {
+        didSet {
+            let clamped = min(max(countedPlayFraction, 0), 1)
+            if clamped != countedPlayFraction { countedPlayFraction = clamped; return }
+            UserDefaults.standard.set(countedPlayFraction, forKey: "flactastic.countedPlayFraction")
+        }
+    }
+
     init() {
         lastRootPath = UserDefaults.standard.string(forKey: "flactastic.lastRootPath")
         let stored = UserDefaults.standard.object(forKey: "flactastic.volume")
@@ -145,6 +156,8 @@ final class Settings {
         showVpnNotice = (storedVpn as? Bool) ?? true
         spotifyClientID = UserDefaults.standard.string(forKey: "flactastic.spotifyClientID") ?? ""
         spotifyClientSecret = UserDefaults.standard.string(forKey: "flactastic.spotifyClientSecret") ?? ""
+        let storedCPF = UserDefaults.standard.object(forKey: "flactastic.countedPlayFraction")
+        countedPlayFraction = (storedCPF as? Double) ?? 0.90
     }
 }
 

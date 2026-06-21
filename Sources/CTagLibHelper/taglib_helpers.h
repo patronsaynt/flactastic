@@ -66,6 +66,13 @@ void taglib_helper_set_lyrics(void *file, const char *value);
  *  free(), or NULL if unset. */
 char *taglib_helper_get_lyrics(void *file);
 
+/** Read the audio bit depth (bits per sample) for the file at \a path, using
+ *  TagLib's C++ AudioProperties. Works for lossless formats whose container
+ *  reports no PCM bit depth to AVFoundation (FLAC, ALAC, WAV, AIFF, …).
+ *  Returns 0 when unavailable or for formats without a meaningful bit depth
+ *  (most lossy codecs). */
+int taglib_helper_bits_per_sample(const char *path);
+
 #ifdef __cplusplus
 }
 #endif

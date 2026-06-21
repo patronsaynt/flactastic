@@ -11,6 +11,34 @@ final class PlayerState {
     let engine: PlayerEngine
     private let nowPlaying: NowPlayingController
 
+    /// Local listening-history recorder. Optional so previews/tests can omit it.
+    /// Plays are committed to whichever library this store is currently pointed
+    /// at, so switching libraries needs no extra coordination here.
+    private let listening: ListeningStore?
+
+    /// Read live so the user's "counted play" threshold (Settings → Config)
+    /// takes effect immediately, without restarting playback tracking.
+    private let settings: Settings?
+
+    /// The track currently being timed for listening history. A single
+    /// `PlayEvent` is emitted when the track stops being current (skip, advance,
+    /// end, or repeat). `trackedListened` accumulates only *genuine* playback
+    /// time — small forward steps observed while playing — so scrubbing or
+    /// clicking through tracks cannot inflate it toward a counted play.
+    private var trackedTrack: Track?
+    private var trackedStart: Date = .now
+    private var trackedListened: TimeInterval = 0
+    private var lastObservedTime: TimeInterval = 0
+
+    /// Largest forward jump in playback position (seconds) still credited as
+    /// real listening. The engine ticks every ~50 ms, so genuine steps are tiny;
+    /// anything larger is a seek/scrub and is not credited.
+    private static let maxCreditedStep: TimeInterval = 1.5
+
+    /// Default fraction of a track that must be genuinely heard for it to count
+    /// as a play (Spotify counts at ~90%). Used when no Settings is wired.
+    private static let defaultCountedPlayFraction: Double = 0.90
+
     var currentTrack: Track?
     var isPlaying: Bool = false
     var currentTime: TimeInterval = 0
@@ -54,9 +82,13 @@ final class PlayerState {
         userQueuedTrackIDs.contains(track.id)
     }
 
-    init(graph: (any AudioGraphProtocol)? = nil) {
+    init(graph: (any AudioGraphProtocol)? = nil,
+         listening: ListeningStore? = nil,
+         settings: Settings? = nil) {
         engine = PlayerEngine(graph: graph)
         nowPlaying = NowPlayingController()
+        self.listening = listening
+        self.settings = settings
         engine.onStateUpdate = { [weak self] in
             self?.syncFromEngine()
         }
@@ -281,7 +313,87 @@ final class PlayerState {
         engine.play()
     }
 
+    /// Emit a `PlayEvent` for the track currently being timed (if any) and clear
+    /// the tracking slot. Safe to call repeatedly — a no-op when nothing is
+    /// tracked. Call before switching libraries so the in-flight play is
+    /// committed to the outgoing library.
+    func flushPending() {
+        guard let track = trackedTrack else { return }
+        let duration = track.duration ?? engine.duration
+        // A play "counts" only when the listener genuinely heard ~90% of the
+        // track (streaming-service style). `trackedListened` already excludes
+        // scrubbed/seek time, so rapid clicking or scrubbing to the end can't
+        // satisfy this. Tracks with unknown duration fall back to a flat
+        // four-minute floor.
+        let fraction = settings?.countedPlayFraction ?? Self.defaultCountedPlayFraction
+        let counted: Bool
+        if fraction <= 0 {
+            // A 0% threshold means any genuine listen counts.
+            counted = trackedListened > 0
+        } else if let duration, duration > 0 {
+            counted = trackedListened >= duration * fraction
+        } else {
+            // Unknown duration: scale the 4-minute floor by the threshold.
+            counted = trackedListened >= 240 * fraction
+        }
+        listening?.record(
+            track: track,
+            startedAt: trackedStart,
+            secondsListened: trackedListened,
+            counted: counted
+        )
+        trackedTrack = nil
+        trackedListened = 0
+        lastObservedTime = 0
+    }
+
+    /// Keep the listening-history tracker in sync with the engine: accumulate
+    /// genuine listening time for the current track, and flush + re-arm whenever
+    /// the current track changes (skip, advance, or queue cleared) — or when the
+    /// same track restarts from the top under repeat-one / repeat-all, so each
+    /// replay is recorded as its own play.
+    private func updateListeningTracker() {
+        let engineTrack = engine.currentTrack
+        let now = engine.currentTime
+
+        if engineTrack?.id != trackedTrack?.id {
+            flushPending()
+            arm(engineTrack)
+            return
+        }
+        guard trackedTrack != nil else { return }
+
+        // Detect a repeat: playback jumped from near the end back to the start.
+        // Restrict to that end→start pattern so ordinary backward scrubbing
+        // isn't miscounted as a fresh play.
+        let duration = trackedTrack?.duration ?? engine.duration
+        if let duration, duration > 0,
+           lastObservedTime >= duration - 2.0, now < 2.0 {
+            flushPending()
+            arm(engineTrack)
+            return
+        }
+
+        // Credit only small forward steps taken while actually playing. Seeks
+        // (large jumps, forward or back) and paused ticks contribute nothing.
+        let step = now - lastObservedTime
+        if engine.isPlaying, step > 0, step <= Self.maxCreditedStep {
+            trackedListened += step
+        }
+        lastObservedTime = now
+    }
+
+    /// Begin timing `track` for listening history.
+    private func arm(_ track: Track?) {
+        guard let track else { return }
+        trackedTrack = track
+        trackedStart = .now
+        trackedListened = 0
+        lastObservedTime = engine.currentTime
+    }
+
     private func syncFromEngine() {
+        updateListeningTracker()
         currentTrack = engine.currentTrack
         isPlaying = engine.isPlaying
         currentTime = engine.currentTime

@@ -5,6 +5,8 @@ struct SettingsView: View {
     @Environment(LibraryStore.self) private var library
     @Environment(Settings.self) private var settings
     @Environment(PlaylistStore.self) private var playlistStore
+    @Environment(ListeningStore.self) private var listening
+    @Environment(PlayerState.self) private var player
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedTab: SettingsTab = .config
@@ -38,6 +40,8 @@ struct SettingsView: View {
                     switch selectedTab {
                     case .config:
                         ConfigSettingsSection(openFolder: openFolder)
+                    case .connections:
+                        ConnectionsSettingsSection()
                     case .appearance:
                         AppearanceSettingsSection()
                     case .visualizer:
@@ -62,9 +66,14 @@ struct SettingsView: View {
         panel.allowsMultipleSelection = false
         panel.title = "Choose your music folder"
         if panel.runModal() == .OK, let url = panel.url {
+            // Commit the outgoing library's in-flight play and save its
+            // history before switching roots, then load the new library's.
+            player.flushPending()
+            listening.save()
             settings.lastRootPath = url.path
             library.openFolder(url)
             playlistStore.load(from: url)
+            listening.load(from: url)
         }
     }
 }
@@ -73,6 +82,7 @@ struct SettingsView: View {
 
 private enum SettingsTab: String, CaseIterable, Identifiable {
     case config = "Config"
+    case connections = "Connections"
     case appearance = "Appearance"
     case visualizer = "Visualizer"
     var id: String { rawValue }
@@ -125,7 +135,6 @@ private struct SettingsTabBar: View {
 private struct ConfigSettingsSection: View {
     @Environment(LibraryStore.self) private var library
     @Environment(Settings.self) private var settings
-    @Environment(SpotifyAuthController.self) private var spotifyAuth
     @Environment(\.debugMode) private var debugMode
     let openFolder: () -> Void
 
@@ -186,6 +195,109 @@ private struct ConfigSettingsSection: View {
                     .labelsHidden()
             }
 
+            Divider().foregroundStyle(Theme.divider)
+
+            CountedPlayThresholdRow()
+
+            if debugMode {
+                Divider().foregroundStyle(Theme.divider)
+
+                Text("Downloads")
+                    .font(Theme.Font.bodyMedium)
+                    .foregroundStyle(Theme.textPrimary)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Show VPN Advisory")
+                            .font(Theme.Font.body)
+                            .foregroundStyle(Theme.textSecondary)
+                        Text("Show a reminder to use a VPN when opening the Downloads tab.")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $settings.showVpnNotice)
+                        .toggleStyle(.switch)
+                        .tint(Theme.accent)
+                        .labelsHidden()
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Counted-play threshold control
+
+/// Lets the user choose what percentage of a track must play straight through
+/// for it to count as one play (streaming-service style). Backed by
+/// `Settings.countedPlayFraction` (0…1); the field edits whole percent (0–100).
+private struct CountedPlayThresholdRow: View {
+    @Environment(Settings.self) private var settings
+
+    /// Local editing buffer so partial input doesn't fight the clamped store.
+    @State private var text: String = ""
+
+    private var percent: Int { Int((settings.countedPlayFraction * 100).rounded()) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            Text("Counted Play Threshold")
+                .font(Theme.Font.bodyMedium)
+                .foregroundStyle(Theme.textPrimary)
+            Text("Percentage of a track that must play straight through before it counts as a single play in your listening stats. Higher values are stricter; scrubbing or skipping never counts.")
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: Theme.Spacing.md) {
+                Slider(
+                    value: Binding(
+                        get: { settings.countedPlayFraction },
+                        set: { settings.countedPlayFraction = $0 }
+                    ),
+                    in: 0...1,
+                    step: 0.01
+                )
+                .tint(Theme.accent)
+
+                HStack(spacing: 2) {
+                    TextField("90", text: $text)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 48)
+                        .multilineTextAlignment(.trailing)
+                        .monospacedDigit()
+                        .onSubmit { commit() }
+                    Text("%")
+                        .font(Theme.Font.body)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+        }
+        .onAppear { text = String(percent) }
+        // Keep the field in sync when the slider moves it.
+        .onChange(of: settings.countedPlayFraction) { _, _ in text = String(percent) }
+    }
+
+    /// Parse the field, clamp to 0–100, and write back as a fraction.
+    private func commit() {
+        let digits = text.filter(\.isNumber)
+        let value = Int(digits) ?? percent
+        let clamped = min(max(value, 0), 100)
+        settings.countedPlayFraction = Double(clamped) / 100.0
+        text = String(clamped)
+    }
+}
+
+// MARK: - Connections tab
+
+private struct ConnectionsSettingsSection: View {
+    @Environment(Settings.self) private var settings
+    @Environment(SpotifyAuthController.self) private var spotifyAuth
+
+    var body: some View {
+        @Bindable var settings = settings
+
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             HStack {
                 Text("Discord Rich Presence")
                     .font(Theme.Font.body)
@@ -261,30 +373,6 @@ private struct ConfigSettingsSection: View {
                         .frame(width: 90, alignment: .leading)
                     SecureField("Client Secret", text: $settings.spotifyClientSecret)
                         .textFieldStyle(.roundedBorder)
-                }
-            }
-
-            if debugMode {
-                Divider().foregroundStyle(Theme.divider)
-
-                Text("Downloads")
-                    .font(Theme.Font.bodyMedium)
-                    .foregroundStyle(Theme.textPrimary)
-
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Show VPN Advisory")
-                            .font(Theme.Font.body)
-                            .foregroundStyle(Theme.textSecondary)
-                        Text("Show a reminder to use a VPN when opening the Downloads tab.")
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.textTertiary)
-                    }
-                    Spacer()
-                    Toggle("", isOn: $settings.showVpnNotice)
-                        .toggleStyle(.switch)
-                        .tint(Theme.accent)
-                        .labelsHidden()
                 }
             }
         }

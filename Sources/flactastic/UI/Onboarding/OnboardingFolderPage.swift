@@ -5,6 +5,7 @@ struct OnboardingFolderPage: View {
     @Environment(Settings.self) private var settings
     @Environment(LibraryStore.self) private var library
     @Environment(PlaylistStore.self) private var playlistStore
+    @Environment(ListeningStore.self) private var listening
 
     let onAdvance: () -> Void
 
@@ -57,6 +58,7 @@ struct OnboardingFolderPage: View {
             settings.lastRootPath = dir.path
             library.openFolder(dir)
             playlistStore.load(from: dir)
+            listening.load(from: dir)
             onAdvance()
         } catch {
             print("[Onboarding] Failed to create music folder: \(error)")
@@ -73,6 +75,7 @@ struct OnboardingFolderPage: View {
             settings.lastRootPath = url.path
             library.openFolder(url)
             playlistStore.load(from: url)
+            listening.load(from: url)
             onAdvance()
         }
     }

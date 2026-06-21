@@ -1,5 +1,11 @@
 #include "taglib_helpers.h"
 #include <taglib/tag_c.h>
+#include <taglib/fileref.h>
+#include <taglib/audioproperties.h>
+#include <taglib/flacproperties.h>
+#include <taglib/mp4properties.h>
+#include <taglib/wavproperties.h>
+#include <taglib/aiffproperties.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -109,4 +115,20 @@ unsigned char *taglib_helper_read_picture(void *file, unsigned int *out_size) {
     }
     taglib_complex_property_free(props);
     return NULL;
+}
+
+int taglib_helper_bits_per_sample(const char *path) {
+    if (!path) return 0;
+    TagLib::FileRef f(path, true, TagLib::AudioProperties::Average);
+    if (f.isNull()) return 0;
+    const TagLib::AudioProperties *props = f.audioProperties();
+    if (!props) return 0;
+
+    // bitsPerSample() lives on format-specific subclasses, not the base
+    // AudioProperties — try the lossless containers AVFoundation can't read.
+    if (auto p = dynamic_cast<const TagLib::FLAC::Properties *>(props)) return p->bitsPerSample();
+    if (auto p = dynamic_cast<const TagLib::MP4::Properties *>(props)) return p->bitsPerSample();
+    if (auto p = dynamic_cast<const TagLib::RIFF::WAV::Properties *>(props)) return p->bitsPerSample();
+    if (auto p = dynamic_cast<const TagLib::RIFF::AIFF::Properties *>(props)) return p->bitsPerSample();
+    return 0;
 }

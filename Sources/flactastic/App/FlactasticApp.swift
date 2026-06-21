@@ -4,8 +4,9 @@ import AppKit
 @main
 struct FlactasticApp: App {
     @State private var library = LibraryStore()
-    @State private var player = PlayerState()
-    @State private var settings = Settings()
+    @State private var player: PlayerState
+    @State private var listening: ListeningStore
+    @State private var settings: Settings
     @State private var playlistStore = PlaylistStore()
     @State private var artistStore: ArtistStore
     @State private var artistRemoteCache: ArtistRemoteCache
@@ -14,6 +15,15 @@ struct FlactasticApp: App {
     @State private var lyricsFetcher: LyricsFetcher
 
     init() {
+        // Listening history recorder, injected into the player so plays are
+        // tracked into whichever library is currently loaded. Settings is built
+        // here too so the player can read the user's counted-play threshold.
+        let settingsStore = Settings()
+        _settings = State(initialValue: settingsStore)
+        let listeningStore = ListeningStore()
+        _listening = State(initialValue: listeningStore)
+        _player = State(initialValue: PlayerState(listening: listeningStore, settings: settingsStore))
+
         let store = ArtistStore()
         let cache = ArtistRemoteCache()
         _artistStore = State(initialValue: store)
@@ -80,6 +90,7 @@ struct FlactasticApp: App {
                         ContentView()
                             .environment(library)
                             .environment(player)
+                            .environment(listening)
                             .environment(settings)
                             .environment(playlistStore)
                             .environment(artistStore)
@@ -102,6 +113,8 @@ struct FlactasticApp: App {
                         OnboardingView()
                             .environment(library)
                             .environment(settings)
+                            .environment(playlistStore)
+                            .environment(listening)
                             .transition(.opacity)
                     }
                 }
@@ -246,6 +259,7 @@ struct FlactasticApp: App {
             if FileManager.default.fileExists(atPath: url.path) {
                 library.openFolder(url)
                 playlistStore.load(from: url)
+                listening.load(from: url)
                 return
             }
         }

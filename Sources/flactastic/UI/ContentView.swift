@@ -19,6 +19,8 @@ struct ContentView: View {
         ZStack {
             Group {
                 switch router.selectedTab {
+                case .home:
+                    HomeView()
                 case .collection:
                     CollectionView()
                 case .playlists:
@@ -83,7 +85,7 @@ struct ContentView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if router.selectedTab != .visualizer {
+            if router.selectedTab != .visualizer && router.selectedTab != .download {
                 FloatingPlayerBar()
                     .frame(maxWidth: 700)
                     .padding(.bottom, 16)
