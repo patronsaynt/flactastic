@@ -13,6 +13,7 @@ struct PlaylistsTabView: View {
     @Environment(LibraryStore.self) private var library
     @Environment(PlayerState.self) private var player
     @Environment(Settings.self) private var settings
+    @Environment(NavigationRouter.self) private var router
 
     @State private var searchText = ""
     @State private var sortOption: PlaylistSortOption = .nameAsc
@@ -42,7 +43,8 @@ struct PlaylistsTabView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        @Bindable var router = router
+        NavigationStack(path: $router.playlistsPath) {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     header

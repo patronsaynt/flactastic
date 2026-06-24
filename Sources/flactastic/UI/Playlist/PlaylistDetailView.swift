@@ -7,6 +7,7 @@ struct PlaylistDetailView: View {
     @Environment(LibraryStore.self) private var library
     @Environment(PlayerState.self) private var player
     @Environment(NavigationRouter.self) private var router
+    @Environment(ListeningStore.self) private var listening
 
     @State private var isEditingName = false
     @State private var editedName = ""
@@ -94,6 +95,7 @@ struct PlaylistDetailView: View {
                             player.isShuffleEnabled = false
                             player.startFreshQueue(tracks, startAt: 0, source: playlist.name)
                             player.engine.play()
+                            listening.recordPlaylistPlay(playlist)
                         } label: {
                             HStack(spacing: Theme.Spacing.xs) {
                                 Image(systemName: "play.fill")
@@ -107,6 +109,7 @@ struct PlaylistDetailView: View {
                             let startIndex = Int.random(in: 0..<tracks.count)
                             player.startFreshQueue(tracks, startAt: startIndex, source: playlist.name)
                             player.engine.play()
+                            listening.recordPlaylistPlay(playlist)
                         } label: {
                             HStack(spacing: Theme.Spacing.xs) {
                                 Image(systemName: "shuffle")
@@ -171,7 +174,7 @@ struct PlaylistDetailView: View {
                  showDragHandle: true,
                  showAlbumArt: true)
             .padding(.vertical, 2)
-            .background(rowBackground)
+            .background(RoundedRectangle(cornerRadius: Theme.Radius.sm).fill(rowBackground))
             .opacity(draggingEntryID == entryID ? 0.4 : 1.0)
             .overlay(alignment: .top) {
                 if isDropTarget {
@@ -303,6 +306,7 @@ struct PlaylistDetailView: View {
         guard resolvedIndex < tracks.count else { return }
         player.startFreshQueue(tracks, startAt: resolvedIndex, source: playlist.name)
         player.engine.play()
+        listening.recordPlaylistPlay(playlist)
     }
 
     private func commitRename() {

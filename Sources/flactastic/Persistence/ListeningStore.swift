@@ -58,7 +58,23 @@ struct PlayEvent: Codable, Sendable, Identifiable {
 final class ListeningStore {
     private(set) var events: [PlayEvent] = []
 
+    /// Intentionally-played albums/playlists, newest last. Distinct from
+    /// `events` (which power stats): this only records when the user explicitly
+    /// started a collection, so the Recently Played rail mirrors Spotify rather
+    /// than surfacing an album for every single track that happened to play.
+    private(set) var recentContexts: [RecentContext] = []
+
     private var currentRootURL: URL?
+
+    /// On-disk container so events and recent contexts persist together while
+    /// staying backward-compatible with files that held a bare `[PlayEvent]`.
+    private struct PersistedData: Codable {
+        var events: [PlayEvent]
+        var contexts: [RecentContext]
+    }
+
+    /// Cap on stored recent contexts — far more than the rail shows.
+    private static let maxRecentContexts = 50
 
     /// Gap (seconds) between consecutive events that starts a new session.
     private static let sessionGap: TimeInterval = 30 * 60
@@ -78,11 +94,19 @@ final class ListeningStore {
     func load(from libraryRootURL: URL) {
         currentRootURL = libraryRootURL
         events = []
+        recentContexts = []
 
         guard let url = fileURL, FileManager.default.fileExists(atPath: url.path) else { return }
         do {
             let data = try Data(contentsOf: url)
-            events = try JSONDecoder().decode([PlayEvent].self, from: data)
+            let decoder = JSONDecoder()
+            if let container = try? decoder.decode(PersistedData.self, from: data) {
+                events = container.events
+                recentContexts = container.contexts
+            } else {
+                // Legacy format: a bare array of events with no recent contexts.
+                events = try decoder.decode([PlayEvent].self, from: data)
+            }
         } catch {
             print("[ListeningStore] Failed to load listening history: \(error)")
         }
@@ -91,7 +115,7 @@ final class ListeningStore {
     func save() {
         guard let url = fileURL else { return }
         do {
-            let data = try JSONEncoder().encode(events)
+            let data = try JSONEncoder().encode(PersistedData(events: events, contexts: recentContexts))
             try data.write(to: url, options: .atomic)
         } catch {
             print("[ListeningStore] Failed to save listening history: \(error)")
@@ -121,6 +145,38 @@ final class ListeningStore {
         )
         events.append(event)
         save()
+    }
+
+    /// Record that the user intentionally started playing a collection (an album
+    /// or a playlist). Collapses any prior entry for the same item so it jumps to
+    /// the front, and caps the stored history.
+    func recordContextPlay(kind: RecentKind, targetID: String, title: String, subtitle: String) {
+        recentContexts.removeAll { $0.kind == kind && $0.targetID == targetID }
+        recentContexts.append(RecentContext(
+            kind: kind, targetID: targetID, title: title, subtitle: subtitle, date: .now
+        ))
+        if recentContexts.count > Self.maxRecentContexts {
+            recentContexts.removeFirst(recentContexts.count - Self.maxRecentContexts)
+        }
+        save()
+    }
+
+    /// Convenience: record an intentional album play for the Recently Played rail.
+    func recordAlbumPlay(_ album: Album) {
+        let subtitle = album.isCompilation
+            ? "Compilation"
+            : (ArtistResolver.displayString(album.artist) ?? "Unknown Artist")
+        recordContextPlay(kind: .album, targetID: album.id, title: album.name, subtitle: subtitle)
+    }
+
+    /// Convenience: record an intentional playlist play for the Recently Played rail.
+    func recordPlaylistPlay(_ playlist: Playlist) {
+        recordContextPlay(
+            kind: .playlist,
+            targetID: playlist.id.uuidString,
+            title: playlist.name,
+            subtitle: "Playlist"
+        )
     }
 
     /// Album grouping key matching `LibraryStore.albums` so recently-played and
@@ -153,24 +209,13 @@ final class ListeningStore {
         events.filter(\.counted).count
     }
 
-    /// Newest-first album summaries for the Recently Played rail, deduped so the
-    /// same album doesn't appear twice in a row of recent listens.
+    /// Newest-first collections (albums/playlists) the user intentionally
+    /// played, for the Recently Played rail.
     func recentlyPlayed(limit: Int) -> [RecentItem] {
-        var seen = Set<String>()
-        var result: [RecentItem] = []
-        for event in events.sorted(by: { $0.date > $1.date }) {
-            let key = event.albumID ?? event.trackID.uuidString
-            guard !seen.contains(key) else { continue }
-            seen.insert(key)
-            result.append(RecentItem(
-                key: key,
-                albumID: event.albumID,
-                title: event.album ?? event.title,
-                subtitle: event.artist ?? ""
-            ))
-            if result.count >= limit { break }
-        }
-        return result
+        recentContexts
+            .sorted { $0.date > $1.date }
+            .prefix(limit)
+            .map { RecentItem(kind: $0.kind, targetID: $0.targetID, title: $0.title, subtitle: $0.subtitle) }
     }
 
     /// Number of listening sessions — runs of events separated by gaps larger
@@ -259,8 +304,14 @@ final class ListeningStore {
             byAlbum[albumID] = rank
         }
         return byAlbum.values
-            .filter { $0.plays > 0 }
-            .sorted { $0.plays != $1.plays ? $0.plays > $1.plays : $0.minutes > $1.minutes }
+            .filter { $0.minutes > 0 }
+            .sorted {
+                // Rank purely by minutes listened; plays then title break ties
+                // so the order stays stable across recomputes.
+                if $0.minutes != $1.minutes { return $0.minutes > $1.minutes }
+                if $0.plays != $1.plays { return $0.plays > $1.plays }
+                return $0.album.localizedCaseInsensitiveCompare($1.album) == .orderedAscending
+            }
             .prefix(limit)
             .map { $0 }
     }
@@ -277,36 +328,61 @@ final class ListeningStore {
         return (top.key, Double(top.value) / Double(counted.count))
     }
 
-    /// Generic count aggregation over a string key (e.g. artist), ranked by the
-    /// number of counted plays.
+    /// Generic aggregation over a string key (e.g. artist), ranked purely by the
+    /// genuine minutes spent listening. `plays` is carried alongside for display.
     private func aggregate(key: (PlayEvent) -> String?, since: Date?) -> [RankedItem] {
-        var counts: [String: Int] = [:]
+        var minutes: [String: Double] = [:]
+        var plays: [String: Int] = [:]
         for event in events {
             if let since, event.date < since { continue }
-            guard event.counted else { continue }
             guard let name = key(event), !name.isEmpty else { continue }
-            counts[name, default: 0] += 1
+            minutes[name, default: 0] += event.secondsListened / 60.0
+            if event.counted { plays[name, default: 0] += 1 }
         }
-        return counts
-            .map { RankedItem(name: $0.key, plays: $0.value) }
-            .sorted { $0.plays > $1.plays }
+        return minutes
+            .map { RankedItem(name: $0.key, plays: plays[$0.key] ?? 0, minutes: $0.value) }
+            // Rank by minutes; break ties alphabetically so equal entries keep a
+            // stable order across recomputes rather than reshuffling.
+            .sorted {
+                $0.minutes != $1.minutes
+                    ? $0.minutes > $1.minutes
+                    : $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
     }
 }
 
 // MARK: - Metric value types
 
+/// What kind of collection a Recently Played entry points at.
+enum RecentKind: String, Codable, Sendable {
+    case album
+    case playlist
+}
+
+/// A persisted "you played this" entry for the Recently Played rail.
+struct RecentContext: Codable, Sendable, Hashable {
+    var kind: RecentKind
+    /// `Album.id` for albums, or the playlist's UUID string for playlists.
+    var targetID: String
+    var title: String
+    var subtitle: String
+    var date: Date
+}
+
 struct RecentItem: Identifiable, Hashable {
-    var id: String { key }
-    let key: String
-    let albumID: String?
+    let kind: RecentKind
+    let targetID: String
     let title: String
     let subtitle: String
+    var id: String { "\(kind.rawValue):\(targetID)" }
 }
 
 struct RankedItem: Identifiable, Hashable {
     var id: String { name }
     let name: String
     let plays: Int
+    /// Total genuine minutes spent listening — the basis for ranking.
+    let minutes: Double
 }
 
 struct AlbumRank: Identifiable, Hashable {

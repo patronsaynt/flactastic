@@ -8,6 +8,7 @@ struct AlbumDetailView: View {
     @Environment(PlaylistStore.self) private var playlistStore
     @Environment(PlaylistAddCoordinator.self) private var playlistAddCoordinator
     @Environment(NavigationRouter.self) private var router
+    @Environment(ListeningStore.self) private var listening
 
     /// Track IDs we've observed belonging to this album. Used as a fallback
     /// for resolving the album after a metadata edit renames the album/artist
@@ -150,6 +151,7 @@ struct AlbumDetailView: View {
                     .onTapGesture(count: 2) {
                         player.startFreshQueue(tracks, startAt: index, source: album?.name)
                         player.engine.play()
+                        if let album { listening.recordAlbumPlay(album) }
                     }
                     .flContextMenu {
                         playbackContextMenuItems(for: [track], player: player)
@@ -169,9 +171,10 @@ struct AlbumDetailView: View {
                     }
                     .padding(.vertical, Theme.Spacing.xs)
                     .background(
-                        player.currentTrack?.id == track.id
-                            ? Theme.surfaceElevated
-                            : Color.clear
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            .fill(player.currentTrack?.id == track.id
+                                  ? Theme.surfaceElevated
+                                  : Color.clear)
                     )
                     .riseFadeIn(index: index)
 
@@ -227,5 +230,6 @@ struct AlbumDetailView: View {
         let startIndex = shuffle ? Int.random(in: 0..<album.tracks.count) : 0
         player.startFreshQueue(album.tracks, startAt: startIndex, source: album.name)
         player.engine.play()
+        listening.recordAlbumPlay(album)
     }
 }

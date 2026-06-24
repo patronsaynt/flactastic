@@ -6,6 +6,9 @@ import Observation
 final class NavigationRouter {
     var selectedTab: AppTab = .home
     var collectionPath: [String] = []
+    /// Navigation stack for the Playlists tab, driven so the Home page can deep-
+    /// link straight to a playlist's detail view.
+    var playlistsPath: [UUID] = []
     var artworkZoomData: Data? = nil
 
     func navigateToAlbum(id: String) {
@@ -17,6 +20,15 @@ final class NavigationRouter {
         selectedTab = .collection
         DispatchQueue.main.async {
             self.collectionPath = [id]
+        }
+    }
+
+    /// Switch to the Playlists tab and open the given playlist's detail view.
+    func navigateToPlaylist(id: UUID) {
+        playlistsPath = []
+        selectedTab = .playlists
+        DispatchQueue.main.async {
+            self.playlistsPath = [id]
         }
     }
 

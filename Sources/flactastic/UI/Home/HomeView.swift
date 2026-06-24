@@ -17,6 +17,12 @@ struct HomeView: View {
         Dictionary(library.albums.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     }
 
+    /// Playlist lookup by UUID, so recent playlist entries resolve to artwork,
+    /// tracks, and navigation targets.
+    private var playlistsByID: [UUID: Playlist] {
+        Dictionary(playlistStore.playlists.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 34) {
@@ -83,21 +89,32 @@ struct HomeView: View {
         }
     }
 
+    @ViewBuilder
     private func recentTile(_ item: RecentItem) -> some View {
-        let album = item.albumID.flatMap { albumsByID[$0] }
-        let artist = ArtistResolver.displayString(album?.artist)
-            ?? ArtistResolver.displayString(item.subtitle)
-            ?? item.subtitle
-        return Button {
-            if let album { router.navigateToAlbum(id: album.id) }
-        } label: {
+        switch item.kind {
+        case .album:   recentAlbumTile(item)
+        case .playlist: recentPlaylistTile(item)
+        }
+    }
+
+    /// Shared tile layout. `onOpen` is the default click action; `menu` supplies
+    /// the right-click items.
+    private func tile(
+        artwork: Data?,
+        title: String,
+        subtitle: String,
+        enabled: Bool,
+        onOpen: @escaping () -> Void,
+        menu: @escaping () -> [FLContextMenuItem]
+    ) -> some View {
+        Button(action: onOpen) {
             VStack(alignment: .leading, spacing: 10) {
-                ArtworkView(data: album?.artwork, size: 148)
-                Text(item.title)
+                ArtworkView(data: artwork, size: 148)
+                Text(title)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
-                Text(artist)
+                Text(subtitle)
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.textTertiary)
                     .lineLimit(1)
@@ -105,8 +122,37 @@ struct HomeView: View {
             .frame(width: 148, alignment: .leading)
         }
         .buttonStyle(.plain)
-        .disabled(album == nil)
-        .flContextMenu { album.map(albumContextMenu) ?? [] }
+        .disabled(!enabled)
+        .flContextMenu { menu() }
+    }
+
+    private func recentAlbumTile(_ item: RecentItem) -> some View {
+        let album = albumsByID[item.targetID]
+        let artist = ArtistResolver.displayString(album?.artist)
+            ?? ArtistResolver.displayString(item.subtitle)
+            ?? item.subtitle
+        return tile(
+            artwork: album?.artwork,
+            title: item.title,
+            subtitle: artist,
+            enabled: album != nil,
+            onOpen: { if let album { router.navigateToAlbum(id: album.id) } },
+            menu: { album.map(albumContextMenu) ?? [] }
+        )
+    }
+
+    private func recentPlaylistTile(_ item: RecentItem) -> some View {
+        let playlist = UUID(uuidString: item.targetID).flatMap { playlistsByID[$0] }
+        let tracks = playlist.map { playlistStore.resolvedTracks(for: $0, in: library) } ?? []
+        let artwork = playlist?.customArtwork ?? tracks.first?.artwork
+        return tile(
+            artwork: artwork,
+            title: item.title,
+            subtitle: item.subtitle,
+            enabled: playlist != nil,
+            onOpen: { if let playlist { router.navigateToPlaylist(id: playlist.id) } },
+            menu: { playlist.map { playlistContextMenu($0, tracks: tracks) } ?? [] }
+        )
     }
 
     /// Custom context menu for an album tile/row on the home page — mirrors the
@@ -117,6 +163,7 @@ struct HomeView: View {
             .button("Play Album", systemImage: "play.fill") {
                 player.startFreshQueue(album.tracks, source: album.name)
                 player.engine.play()
+                listening.recordAlbumPlay(album)
             }
         ]
         items.append(contentsOf: playbackContextMenuItems(for: album.tracks, player: player))
@@ -136,6 +183,25 @@ struct HomeView: View {
                 items.append(contentsOf: artistItems)
             }
         }
+        return items
+    }
+
+    /// Context menu for a playlist tile — "Play" first, then queue actions and
+    /// View Playlist.
+    private func playlistContextMenu(_ playlist: Playlist, tracks: [Track]) -> [FLContextMenuItem] {
+        var items: [FLContextMenuItem] = [
+            .button("Play", systemImage: "play.fill") {
+                player.isShuffleEnabled = false
+                player.startFreshQueue(tracks, source: playlist.name)
+                player.engine.play()
+                listening.recordPlaylistPlay(playlist)
+            }
+        ]
+        items.append(contentsOf: playbackContextMenuItems(for: tracks, player: player))
+        items.append(.divider)
+        items.append(.button("View Playlist", systemImage: "music.note.list") {
+            router.navigateToPlaylist(id: playlist.id)
+        })
         return items
     }
 
@@ -207,11 +273,9 @@ struct HomeView: View {
                                       detail: "\(Int((genre.share * 100).rounded()))% of plays"))
         }
         let streak = listening.currentStreakDays
-        if streak > 0 {
-            cards.append(HomeStatCard(icon: "chart.line.uptrend.xyaxis",
-                                      value: "\(streak) day\(streak == 1 ? "" : "s")",
-                                      label: "Current Streak", accent: true))
-        }
+        cards.append(HomeStatCard(icon: "chart.line.uptrend.xyaxis",
+                                  value: "\(streak) day\(streak == 1 ? "" : "s")",
+                                  label: "Current Streak", accent: streak > 0))
         return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 6), spacing: 12) {
             ForEach(cards) { $0 }
         }
@@ -219,7 +283,7 @@ struct HomeView: View {
 
     private var topArtistsCard: some View {
         let artists = listening.topArtists(limit: 5)
-        let maxPlays = artists.first?.plays ?? 1
+        let maxMinutes = max(artists.first?.minutes ?? 1, 0.0001)
         return VStack(alignment: .leading, spacing: 16) {
             Text("Top Artists").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.textPrimary)
             if artists.isEmpty {
@@ -238,11 +302,11 @@ struct HomeView: View {
                                         .foregroundStyle(idx == 0 ? Theme.textPrimary : Theme.textSecondary)
                                         .lineLimit(1)
                                     Spacer()
-                                    Text(artist.plays.formatted())
+                                    Text(minutesLabel(artist.minutes))
                                         .font(.system(size: 10)).foregroundStyle(Theme.textTertiary).monospacedDigit()
                                 }
                                 ProgressBar(
-                                    fraction: Double(artist.plays) / Double(maxPlays),
+                                    fraction: artist.minutes / maxMinutes,
                                     tint: idx == 0 ? Theme.qualityLossless : Theme.textPrimary.opacity(0.45)
                                 )
                             }
@@ -254,6 +318,7 @@ struct HomeView: View {
         }
         .padding(18)
         .frame(width: 240, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.divider))
     }
@@ -264,22 +329,19 @@ struct HomeView: View {
     private var topAlbumsSection: some View {
         let albums = listening.topAlbumsThisWeek(limit: 6)
         if !albums.isEmpty {
-            let maxPlays = albums.first?.plays ?? 1
+            let maxMinutes = max(albums.first?.minutes ?? 1, 0.0001)
             VStack(alignment: .leading, spacing: 16) {
                 sectionHeader("Top Albums This Week")
-                VStack(spacing: 1) {
+                VStack(spacing: 10) {
                     ForEach(Array(albums.enumerated()), id: \.element.id) { idx, rank in
-                        topAlbumRow(idx: idx, rank: rank, maxPlays: maxPlays)
+                        topAlbumRow(idx: idx, rank: rank, maxMinutes: maxMinutes)
                     }
                 }
-                .background(Theme.divider, in: RoundedRectangle(cornerRadius: 14))
-                .clipShape(RoundedRectangle(cornerRadius: 14))
-                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.divider))
             }
         }
     }
 
-    private func topAlbumRow(idx: Int, rank: AlbumRank, maxPlays: Int) -> some View {
+    private func topAlbumRow(idx: Int, rank: AlbumRank, maxMinutes: Double) -> some View {
         let album = albumsByID[rank.albumID]
         let artist = ArtistResolver.displayString(album?.artist)
             ?? ArtistResolver.displayString(rank.artist)
@@ -288,6 +350,7 @@ struct HomeView: View {
             if let album {
                 player.startFreshQueue(album.tracks, source: album.name)
                 player.engine.play()
+                listening.recordAlbumPlay(album)
             }
         } label: {
             HStack(spacing: 14) {
@@ -303,7 +366,7 @@ struct HomeView: View {
                 }
                 Spacer()
                 ProgressBar(
-                    fraction: Double(rank.plays) / Double(maxPlays),
+                    fraction: rank.minutes / maxMinutes,
                     tint: idx == 0 ? Theme.qualityLossless : Theme.textPrimary.opacity(0.35)
                 )
                 .frame(width: 150)
@@ -313,8 +376,9 @@ struct HomeView: View {
                 }
                 .frame(width: 70, alignment: .trailing)
             }
-            .padding(.horizontal, 14).padding(.vertical, 11)
-            .background(Theme.surface)
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.divider))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -377,8 +441,14 @@ struct WeeklyListeningChart: View {
     let minutes: [Double]
     let labels: [String]
 
+    /// Fixed width reserved for the left-hand minutes axis so the day labels can
+    /// be inset to line up with the plot.
+    private let axisWidth: CGFloat = 32
+    private let axisGap: CGFloat = 8
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let maxV = max(minutes.max() ?? 1, 1)
+        return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Weekly Listening").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.textPrimary)
@@ -387,25 +457,56 @@ struct WeeklyListeningChart: View {
                 Spacer()
                 Text("This week").font(.system(size: 10)).foregroundStyle(Theme.textTertiary)
             }
-            chart.frame(height: 132)
-            HStack {
-                ForEach(Array(labels.enumerated()), id: \.offset) { _, label in
-                    Text(label).font(.system(size: 10)).foregroundStyle(Theme.textTertiary)
-                        .frame(maxWidth: .infinity)
+            HStack(alignment: .top, spacing: axisGap) {
+                yAxis(maxV).frame(width: axisWidth, height: 132)
+                chart(maxV: maxV).frame(height: 132)
+            }
+            HStack(spacing: 0) {
+                Color.clear.frame(width: axisWidth + axisGap)
+                HStack {
+                    ForEach(Array(labels.enumerated()), id: \.offset) { _, label in
+                        Text(label).font(.system(size: 10)).foregroundStyle(Theme.textTertiary)
+                            .frame(maxWidth: .infinity)
+                    }
                 }
             }
         }
         .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.divider))
     }
 
-    private var chart: some View {
+    /// Minutes scale: peak at the top, midpoint, and zero at the baseline.
+    private func yAxis(_ maxV: Double) -> some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            axisLabel(maxV)
+            Spacer()
+            axisLabel(maxV / 2)
+            Spacer()
+            axisLabel(0)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    private func axisLabel(_ value: Double) -> some View {
+        Text(minutesLabel(value))
+            .font(.system(size: 9))
+            .foregroundStyle(Theme.textTertiary)
+            .monospacedDigit()
+    }
+
+    private func chart(maxV: Double) -> some View {
         GeometryReader { geo in
-            let maxV = max(minutes.max() ?? 1, 1)
             let pts = points(in: geo.size, maxValue: maxV)
             ZStack {
+                // Horizontal gridlines aligned with the axis ticks.
+                ForEach([0.0, 0.5, 1.0], id: \.self) { frac in
+                    Rectangle()
+                        .fill(Theme.divider.opacity(0.6))
+                        .frame(height: 1)
+                        .offset(y: geo.size.height * CGFloat(1 - frac) - geo.size.height / 2)
+                }
                 if pts.count > 1 {
                     // Filled area
                     areaPath(pts, height: geo.size.height)
@@ -447,6 +548,15 @@ struct WeeklyListeningChart: View {
 }
 
 // MARK: - Number formatting
+
+/// Compact minutes label: "0m", "47m", or "1.5h" for an hour or more.
+func minutesLabel(_ minutes: Double) -> String {
+    if minutes >= 60 {
+        return String(format: "%.1fh", minutes / 60)
+    }
+    let m = Int(minutes.rounded())
+    return "\(m)m"
+}
 
 private extension Int {
     /// Compact form for large counts ("12.4k"), plain otherwise.
