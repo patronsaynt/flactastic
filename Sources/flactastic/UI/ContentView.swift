@@ -59,17 +59,7 @@ struct ContentView: View {
             }
 
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showSettings = true
-                } label: {
-                    HStack(spacing: Theme.Spacing.xs) {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 13))
-                        Text("Settings")
-                            .font(Theme.Font.caption)
-                    }
-                    .foregroundStyle(Theme.textSecondary)
-                }
+                SettingsBarButton { showSettings = true }
             }
         }
         .toolbarBackground(Theme.background, for: .windowToolbar)

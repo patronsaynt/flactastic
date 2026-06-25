@@ -68,6 +68,7 @@ struct FlactasticApp: App {
         ))
     }
     @State private var metadataWriter = MetadataWriter()
+    @State private var homeHighlight = HomeHighlight()
     @State private var importCoordinator = ImportCoordinator()
     @State private var playlistAddCoordinator = PlaylistAddCoordinator()
     @State private var router = NavigationRouter()
@@ -81,6 +82,8 @@ struct FlactasticApp: App {
     /// always starts OFF on launch, even if the user left it enabled in
     /// the previous session.
     @State private var lucidaDebugEnabled = false
+
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         WindowGroup {
@@ -108,6 +111,7 @@ struct FlactasticApp: App {
                             .environment(lucidaController)
                             .environment(\.debugMode, lucidaDebugEnabled)
                             .environment(\.metadataWriter, metadataWriter)
+                            .environment(homeHighlight)
                             .transition(.opacity)
                     } else {
                         OnboardingView()
@@ -149,6 +153,9 @@ struct FlactasticApp: App {
         }
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About FLACtastic") { openWindow(id: "about") }
+            }
             CommandGroup(replacing: .newItem) { }
             CommandMenu("Collection") {
                 Button("Refresh Collection") { library.refreshLibrary() }
@@ -180,6 +187,13 @@ struct FlactasticApp: App {
                     .keyboardShortcut("d", modifiers: [.command, .option])
             }
         }
+
+        // About FLACtastic — opened from the application menu.
+        Window("About FLACtastic", id: "about") {
+            AboutView()
+                .preferredColorScheme(settings.useLightMode ? .light : .dark)
+        }
+        .windowResizability(.contentSize)
 
         // Auxiliary debug window for the Lucida WebKit bridge. Hidden by
         // default; toggled from View → "Enable Debugging".

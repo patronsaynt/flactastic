@@ -14,10 +14,15 @@ struct SettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             // Header
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
+                Wordmark(height: 16)
+                    .opacity(0.85)
+                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] }
+
                 Text("Settings")
                     .font(Theme.Font.title)
                     .foregroundStyle(Theme.textPrimary)
+                    .padding(.leading, Theme.Spacing.md)
 
                 Spacer()
 

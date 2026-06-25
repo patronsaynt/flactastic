@@ -10,6 +10,11 @@ struct HomeView: View {
     @Environment(NavigationRouter.self) private var router
     @Environment(PlaylistStore.self) private var playlistStore
     @Environment(PlaylistAddCoordinator.self) private var playlistAddCoordinator
+    @Environment(HomeHighlight.self) private var highlight
+    @Environment(ArtistStore.self) private var artistStore
+    @Environment(ArtistRemoteCache.self) private var artistRemoteCache
+    @Environment(LyricsRemoteCache.self) private var lyricsRemoteCache
+    @Environment(\.metadataWriter) private var metadataWriter
 
     /// Album lookup by `Album.id`, so history items (which store only the album
     /// key) can resolve back to real albums for artwork and playback.
@@ -31,6 +36,7 @@ struct HomeView: View {
                 listeningStatsSection
                 topAlbumsSection
                 FidelidexView()
+                homeFooter
             }
             .padding(.horizontal, 36)
             .padding(.top, 44)
@@ -38,36 +44,142 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.background)
+        .task(id: library.hasCompletedInitialLoad) {
+            guard library.hasCompletedInitialLoad else { return }
+            await highlight.pickIfNeeded(
+                library: library,
+                lyricsCache: lyricsRemoteCache,
+                artistStore: artistStore,
+                artistRemoteCache: artistRemoteCache,
+                metadataWriter: metadataWriter
+            )
+        }
     }
 
     // MARK: - Hero
 
     private var hero: some View {
         VStack(alignment: .leading, spacing: 0) {
+            Wordmark(height: 56)
+                .padding(.bottom, 28)
             Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()).uppercased())
                 .font(.system(size: 11, weight: .semibold))
                 .tracking(2)
                 .foregroundStyle(Theme.textTertiary)
-            Text("Welcome to your library.")
-                .font(.system(size: 42, weight: .bold))
-                .foregroundStyle(Theme.textPrimary)
-                .padding(.top, 14)
-            heroSubtitle.padding(.top, 16)
+
+            if let pick = highlight.pick {
+                Text("“\(pick.lyric)”")
+                    .font(.system(size: 42, weight: .bold).italic())
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.55)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 14)
+                heroAttribution(pick).padding(.top, 16)
+            } else {
+                Text("Welcome to your library.")
+                    .font(.system(size: 42, weight: .bold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .padding(.top, 14)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // Banner lives behind the content so its height tracks the content
+        // (which grows when the lyric wraps to two lines). The GeometryReader
+        // pins the (otherwise greedy) blurred image to the content's size —
+        // the negative padding bleeds it to the top/side edges.
+        .background {
+            GeometryReader { geo in
+                heroBanner(size: geo.size)
+            }
+            .padding(.horizontal, -36)
+            .padding(.top, -44)
+            .padding(.bottom, -18)   // fall neatly into the gap below the attribution
+            .allowsHitTesting(false)
         }
     }
 
-    private var heroSubtitle: some View {
+    /// Song credit shown under the lyric: `♪ Title — Artist`.
+    private func heroAttribution(_ pick: HomeHighlight.Pick) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "music.note")
+            Text(pick.songTitle)
+            if let artist = pick.artistDisplay {
+                Text("—")
+                Text(artist)
+            }
+        }
+        .font(.system(size: 13))
+        .foregroundStyle(Theme.textTertiary)
+        .lineLimit(1)
+    }
+
+    /// Blurred artist image (or a generic gray blob) pushed to the right, with
+    /// gradients fading it out toward the left so the headline stays readable.
+    /// Bleeds past the page padding to the top/right edges. Only shown when a
+    /// lyric has been picked.
+    @ViewBuilder
+    private func heroBanner(size: CGSize) -> some View {
+        if let pick = highlight.pick {
+            Group {
+                if let data = pick.imageData, let nsImage = NSImage(data: data) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .blur(radius: 28)
+                } else {
+                    // Generic gray blob when no artist image is available.
+                    RadialGradient(
+                        colors: [Theme.surfaceElevated, .clear],
+                        center: .init(x: 0.85, y: 0.4),
+                        startRadius: 0,
+                        endRadius: 320
+                    )
+                }
+            }
+            // Pin to the content-derived size so the (greedy) fill image can't
+            // balloon the banner down the page.
+            .frame(width: size.width, height: size.height, alignment: .trailing)
+            .clipped()
+            // Reveal the right side, with the image fading in further to the
+            // left for a wider, smoother banner.
+            .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: .black.opacity(0.10), location: 0.22),
+                        .init(color: .black.opacity(0.5), location: 0.55),
+                        .init(color: .black, location: 1.0),
+                    ],
+                    startPoint: .leading, endPoint: .trailing
+                )
+            )
+            // Keep the left edge (wordmark/headline) firmly on the background.
+            .overlay(
+                LinearGradient(
+                    stops: [
+                        .init(color: Theme.background, location: 0.0),
+                        .init(color: Theme.background.opacity(0.4), location: 0.35),
+                        .init(color: Theme.background.opacity(0.0), location: 0.7),
+                    ],
+                    startPoint: .leading, endPoint: .trailing
+                )
+            )
+        }
+    }
+
+    private var homeFooter: some View {
         let albumCount = library.albums.count
         let hours = Int((library.tracks.compactMap(\.duration).reduce(0, +) / 3600).rounded())
         return HStack(spacing: 6) {
             Text("\(albumCount.formatted()) albums")
             Text("·")
             Text("\(hours.formatted()) hours of music")
-            Text("·")
-            Text("Hi-Fi quality").foregroundStyle(Theme.qualityLossless)
         }
-        .font(.system(size: 13))
+        .font(.system(size: 11))
         .foregroundStyle(Theme.textTertiary)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.top, 8)
     }
 
     // MARK: - Recently Played

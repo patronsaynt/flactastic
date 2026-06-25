@@ -353,18 +353,24 @@ final class LibraryStore {
                 // Re-sort after metadata is loaded so albums group properly.
                 if !Task.isCancelled {
                     self.tracks = self.tracks.sortedForLibrary()
+
+                    // Reveal the UI as soon as the grid is stable-sorted —
+                    // i.e. the moment the Collection is genuinely populated.
+                    // The two refinements below (tag normalisation + artwork
+                    // cache seeding) are non-essential to first paint and each
+                    // walks the whole library, so they used to add a visible
+                    // tail to the loading cover even though the data was ready.
+                    // We now run them *after* the flip so the home page appears
+                    // in lockstep with the Collection being done. The
+                    // withAnimation drives LoadingCoverView's .transition.
+                    if !self.hasCompletedInitialLoad {
+                        withAnimation(.easeOut(duration: 0.35)) {
+                            self.hasCompletedInitialLoad = true
+                        }
+                    }
+
                     self.normaliseArtistTags()
                     self.seedAlbumArtworkCache()
-                }
-                // Reveal the UI only once metadata has streamed in, so the
-                // grid doesn't visibly reshuffle as album tags arrive. The
-                // withAnimation wraps the flag flip so LoadingCoverView's
-                // .transition(.opacity) is driven by an explicit animation
-                // rather than any ambient modifier on ContentView.
-                if !self.hasCompletedInitialLoad {
-                    withAnimation(.easeOut(duration: 0.35)) {
-                        self.hasCompletedInitialLoad = true
-                    }
                 }
             }
         }

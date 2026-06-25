@@ -24,7 +24,10 @@ let package = Package(
         .executableTarget(
             name: "flactastic",
             dependencies: ["CTagLibHelper"],
-            resources: [.process("Assets.xcassets")]
+            resources: [
+                .process("Assets.xcassets"),
+                .copy("Resources/Wordmark.png"),
+            ]
         ),
         .testTarget(
             name: "flactasticTests",
