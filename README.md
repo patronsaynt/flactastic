@@ -89,15 +89,6 @@ See your music during playback with multiple visualization options, including re
 
 ---
 
-## Tips & Tricks
-
-- **Keyboard Shortcuts** — Use Space to play/pause, arrow keys to skip, and ⌘ + N to create a new playlist
-- **Metadata Editing** — Right-click on any track to edit artist, album, and other details
-- **Drag & Drop** — Drag tracks directly into playlists to add them
-- **Search** — Use the search bar in the toolbar to find songs by title, artist, or album name
-
----
-
 ## License
 
 FLACtastic is released under the **MIT License**. See [LICENSE](./LICENSE) for details.
