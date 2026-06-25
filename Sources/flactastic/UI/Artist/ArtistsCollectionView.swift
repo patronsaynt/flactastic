@@ -10,6 +10,7 @@ struct ArtistsCollectionView: View {
     @Environment(ArtistRemoteCache.self)   private var artistRemoteCache
     @Environment(ArtistImageFetcher.self)  private var artistImageFetcher
     @Environment(Settings.self)            private var settings
+    @Environment(NavigationRouter.self)    private var router
 
     private var summaries: [ArtistSummary] {
         let resolver = library.makeArtistResolver()
@@ -26,7 +27,9 @@ struct ArtistsCollectionView: View {
                 spacing: Theme.Spacing.xl
             ) {
                 ForEach(Array(summaries.enumerated()), id: \.element.id) { index, summary in
-                    NavigationLink(value: NavigationRoute.artist(key: summary.id)) {
+                    Button {
+                        router.collectionPath.append(NavigationRoute.artist(key: summary.id))
+                    } label: {
                         ArtistGridCell(
                             summary: summary,
                             preferredImage: preferredImage(for: summary)

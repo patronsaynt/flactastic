@@ -43,26 +43,17 @@ struct PlaylistsTabView: View {
     }
 
     var body: some View {
-        @Bindable var router = router
-        NavigationStack(path: $router.playlistsPath) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                    header
-                    if settings.useListLayout {
-                        playlistList
-                    } else {
-                        playlistGrid
-                    }
-                }
-                .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.top, Theme.Spacing.lg)
-                .padding(.bottom, 100)
-            }
-            .background(Theme.background)
-            .navigationDestination(for: UUID.self) { playlistID in
+        // Manual navigation (no NavigationStack) — see CollectionView for why.
+        Group {
+            if let playlistID = router.playlistsPath.last {
                 PlaylistDetailView(playlistID: playlistID)
+                    .transition(.opacity)
+            } else {
+                rootContent
+                    .transition(.opacity)
             }
         }
+        .animation(.easeInOut(duration: 0.22), value: router.playlistsPath)
         .sheet(isPresented: $showNewPlaylistPrompt) {
             newPlaylistSheet
         }
@@ -72,6 +63,23 @@ struct PlaylistsTabView: View {
         .sheet(item: $editingPlaylistID) { playlistID in
             PlaylistEditorView(playlistID: playlistID)
         }
+    }
+
+    private var rootContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                header
+                if settings.useListLayout {
+                    playlistList
+                } else {
+                    playlistGrid
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.top, Theme.Spacing.lg)
+            .padding(.bottom, 100)
+        }
+        .background(Theme.background)
     }
 
     // MARK: - Header
@@ -134,7 +142,7 @@ struct PlaylistsTabView: View {
         ) {
             ForEach(Array(filteredPlaylists.enumerated()), id: \.element.id) { index, playlist in
                 let resolved = playlistStore.resolvedTracks(for: playlist, in: library)
-                NavigationLink(value: playlist.id) {
+                Button { router.playlistsPath.append(playlist.id) } label: {
                     PlaylistCardView(
                         playlist: playlist,
                         artwork: playlist.customArtwork ?? resolved.first?.artwork,
@@ -154,7 +162,7 @@ struct PlaylistsTabView: View {
         LazyVStack(spacing: 0) {
             ForEach(Array(filteredPlaylists.enumerated()), id: \.element.id) { index, playlist in
                 let resolved = playlistStore.resolvedTracks(for: playlist, in: library)
-                NavigationLink(value: playlist.id) {
+                Button { router.playlistsPath.append(playlist.id) } label: {
                     PlaylistRowView(
                         playlist: playlist,
                         artwork: playlist.customArtwork ?? resolved.first?.artwork,

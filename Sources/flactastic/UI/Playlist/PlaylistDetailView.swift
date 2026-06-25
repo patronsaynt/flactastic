@@ -26,6 +26,9 @@ struct PlaylistDetailView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+                    DetailBackButton {
+                        if !router.playlistsPath.isEmpty { router.playlistsPath.removeLast() }
+                    }
                     playlistHeader(playlist, tracks: tracks)
 
                     if tracks.isEmpty {
@@ -39,7 +42,6 @@ struct PlaylistDetailView: View {
                 .padding(.bottom, 100)
             }
             .background(Theme.background)
-            .navigationTitle(playlist.name)
             .sheet(isPresented: $showEditor) {
                 PlaylistEditorView(playlistID: playlistID)
             }

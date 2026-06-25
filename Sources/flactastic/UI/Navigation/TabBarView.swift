@@ -25,9 +25,9 @@ struct TabBarView: View {
                 tabButton(tab)
             }
         }
-        .padding(2)
+        .padding(4)
         .background {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .fill(Theme.surface)
         }
     }
@@ -46,7 +46,7 @@ struct TabBarView: View {
             HStack(spacing: 5) {
                 Image(systemName: tab.icon)
                     .font(.system(
-                        size: 10,
+                        size: 11,
                         weight: isSelected ? .semibold : .regular
                     ))
                     .symbolRenderingMode(.monochrome)
@@ -54,18 +54,18 @@ struct TabBarView: View {
 
                 Text(tab.rawValue)
                     .font(.system(
-                        size: 11,
+                        size: 12,
                         weight: isSelected ? .semibold : .medium
                     ))
             }
             .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textTertiary)
-            .padding(.horizontal, 11)
-            .padding(.vertical, 3)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
             .background {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .fill(Theme.surfaceElevated)
-                        .shadow(color: .black.opacity(0.10), radius: 1.5, x: 0, y: 0.5)
+                        .shadow(color: .black.opacity(0.18), radius: 3, x: 0, y: 1)
                         .matchedGeometryEffect(id: "activeTab", in: tabAnimation)
                 }
             }

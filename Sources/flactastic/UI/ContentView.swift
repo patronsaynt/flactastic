@@ -16,82 +16,18 @@ struct ContentView: View {
 
     var body: some View {
         @Bindable var router = router
-        ZStack {
-            Group {
-                switch router.selectedTab {
-                case .home:
-                    HomeView()
-                case .collection:
-                    CollectionView()
-                case .playlists:
-                    PlaylistsTabView()
-                case .download:
-                    DownloadTabView()
-                case .organizer:
-                    OrganizerView()
-                case .visualizer:
-                    VisualizerView()
-                }
-            }
-            .id(router.selectedTab)
-            .transition(.opacity)
-
-            // Opaque cover that hides the populating grid/list during the
-            // initial library scan. Fades out once the first load resolves.
-            if !library.hasCompletedInitialLoad {
-                LoadingCoverView()
-                    .transition(.opacity)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onChange(of: library.hasCompletedInitialLoad) { _, done in
-            if done { prefetchArtistImages() }
-        }
-        .task {
-            if library.hasCompletedInitialLoad { prefetchArtistImages() }
-        }
-        .onTapGesture {
-            NSApp.keyWindow?.makeFirstResponder(nil)
-        }
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                TabBarView(selectedTab: $router.selectedTab)
+        VStack(spacing: 0) {
+            TopBarView(selectedTab: $router.selectedTab) {
+                showSettings = true
             }
 
-            ToolbarItem(placement: .primaryAction) {
-                SettingsBarButton { showSettings = true }
-            }
+            mainContent(router: router)
         }
-        .toolbarBackground(Theme.background, for: .windowToolbar)
-        .overlay(alignment: .bottomTrailing) {
-            if player.isQueueVisible {
-                QueuePanelView()
-                    .frame(width: 340)
-                    .padding(.top, Theme.Spacing.lg)
-                    .padding(.trailing, Theme.Spacing.lg)
-                    .padding(.bottom, 16)
-                    .frame(maxHeight: .infinity)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-            }
-        }
-        .overlay(alignment: .bottom) {
-            if router.selectedTab != .visualizer && router.selectedTab != .download {
-                FloatingPlayerBar()
-                    .frame(maxWidth: 700)
-                    .padding(.bottom, 16)
-                    .offset(x: player.isQueueVisible ? -180 : 0)
-                    .transition(.opacity)
-            }
-        }
-        .overlay {
-            if let data = router.artworkZoomData {
-                artworkZoomOverlay(data: data)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
-            }
-        }
-        .animation(.easeInOut(duration: 0.28), value: player.isQueueVisible)
-        .animation(.easeInOut(duration: 0.3), value: router.artworkZoomData != nil)
-        .animation(.easeInOut(duration: 0.25), value: router.selectedTab)
+        // Extend into the title-bar region so the top bar shares the row with
+        // the traffic lights (the NSWindow is configured for a full-size,
+        // transparent title bar — see TitleBarConfigurator).
+        .ignoresSafeArea(.container, edges: .top)
+        .background(TitleBarConfigurator())
         .background(Theme.background)
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -149,6 +85,77 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func mainContent(router: NavigationRouter) -> some View {
+        ZStack {
+            Group {
+                switch router.selectedTab {
+                case .home:
+                    HomeView()
+                case .collection:
+                    CollectionView()
+                case .playlists:
+                    PlaylistsTabView()
+                case .download:
+                    DownloadTabView()
+                case .organizer:
+                    OrganizerView()
+                case .visualizer:
+                    VisualizerView()
+                }
+            }
+            .id(router.selectedTab)
+            .transition(.opacity)
+
+            // Opaque cover that hides the populating grid/list during the
+            // initial library scan. Fades out once the first load resolves.
+            if !library.hasCompletedInitialLoad {
+                LoadingCoverView()
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: library.hasCompletedInitialLoad) { _, done in
+            if done { prefetchArtistImages() }
+        }
+        .task {
+            if library.hasCompletedInitialLoad { prefetchArtistImages() }
+        }
+        .onTapGesture {
+            NSApp.keyWindow?.makeFirstResponder(nil)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if player.isQueueVisible {
+                QueuePanelView()
+                    .frame(width: 340)
+                    .padding(.top, Theme.Spacing.lg)
+                    .padding(.trailing, Theme.Spacing.lg)
+                    .padding(.bottom, 16)
+                    .frame(maxHeight: .infinity)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if router.selectedTab != .visualizer && router.selectedTab != .download {
+                FloatingPlayerBar()
+                    .frame(maxWidth: 700)
+                    .padding(.bottom, 16)
+                    .offset(x: player.isQueueVisible ? -180 : 0)
+                    .transition(.opacity)
+            }
+        }
+        .overlay {
+            if let data = router.artworkZoomData {
+                artworkZoomOverlay(data: data)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
+        }
+        .animation(.easeInOut(duration: 0.28), value: player.isQueueVisible)
+        .animation(.easeInOut(duration: 0.3), value: router.artworkZoomData != nil)
+        .animation(.easeInOut(duration: 0.25), value: router.selectedTab)
+        .background(Theme.background)
     }
 
     @ViewBuilder

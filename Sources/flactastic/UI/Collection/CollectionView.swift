@@ -71,52 +71,68 @@ struct CollectionView: View {
     }
 
     var body: some View {
-        @Bindable var router = router
-        NavigationStack(path: $router.collectionPath) {
-            VStack(spacing: 0) {
-                // Header is always pinned above the content area.
-                header
-                    .padding(.horizontal, Theme.Spacing.xl)
-                    .padding(.top, Theme.Spacing.lg)
-                    .padding(.bottom, Theme.Spacing.md)
+        // Manual navigation (no NavigationStack): a NavigationStack on macOS
+        // routes its back button through the window toolbar, which can't
+        // coexist with the custom top bar. The detail for the top of
+        // `router.collectionPath` is shown in place; `DetailBackButton` pops it.
+        Group {
+            if let top = router.collectionPath.last {
+                detailView(for: top)
+                    .transition(.opacity)
+            } else {
+                rootContent
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: router.collectionPath)
+        .sheet(item: $editingAlbum) { album in
+            AlbumMetadataEditorView(album: album)
+                .environment(library)
+        }
+    }
 
-                switch contentMode {
-                case .albums:
-                    // Albums use a ScrollView so the grid/list can grow freely.
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                            if shouldGroup {
-                                groupedContent
-                            } else if settings.useListLayout {
-                                albumList(filteredAlbums)
-                            } else {
-                                albumGrid(filteredAlbums)
-                            }
+    private var rootContent: some View {
+        VStack(spacing: 0) {
+            // Header is always pinned above the content area.
+            header
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.top, Theme.Spacing.lg)
+                .padding(.bottom, Theme.Spacing.md)
+
+            switch contentMode {
+            case .albums:
+                // Albums use a ScrollView so the grid/list can grow freely.
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                        if shouldGroup {
+                            groupedContent
+                        } else if settings.useListLayout {
+                            albumList(filteredAlbums)
+                        } else {
+                            albumGrid(filteredAlbums)
                         }
-                        .padding(.horizontal, Theme.Spacing.xl)
-                        .padding(.bottom, 100)
                     }
-                case .tracks:
-                    // Tracks uses List internally — omit the outer ScrollView so
-                    // List can take full height and scroll on its own.
-                    AllTracksView(tracks: library.tracks, searchText: searchText)
-                        .padding(.horizontal, Theme.Spacing.xl)
-                case .artists:
-                    ArtistsCollectionView(searchText: searchText)
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.bottom, 100)
                 }
+            case .tracks:
+                // Tracks uses List internally — omit the outer ScrollView so
+                // List can take full height and scroll on its own.
+                AllTracksView(tracks: library.tracks, searchText: searchText)
+                    .padding(.horizontal, Theme.Spacing.xl)
+            case .artists:
+                ArtistsCollectionView(searchText: searchText)
             }
-            .background(Theme.background)
-            .navigationDestination(for: String.self) { value in
-                if let artistKey = NavigationRoute.artistKey(from: value) {
-                    ArtistDetailView(artistKey: artistKey)
-                } else {
-                    AlbumDetailView(albumID: value)
-                }
-            }
-            .sheet(item: $editingAlbum) { album in
-                AlbumMetadataEditorView(album: album)
-                    .environment(library)
-            }
+        }
+        .background(Theme.background)
+    }
+
+    @ViewBuilder
+    private func detailView(for value: String) -> some View {
+        if let artistKey = NavigationRoute.artistKey(from: value) {
+            ArtistDetailView(artistKey: artistKey)
+        } else {
+            AlbumDetailView(albumID: value)
         }
     }
 
@@ -227,7 +243,7 @@ struct CollectionView: View {
             spacing: Theme.Spacing.xl
         ) {
             ForEach(Array(albums.enumerated()), id: \.element.id) { index, album in
-                NavigationLink(value: album.id) {
+                Button { router.collectionPath.append(album.id) } label: {
                     AlbumCardView(album: album)
                 }
                 .buttonStyle(.plain)
@@ -242,7 +258,7 @@ struct CollectionView: View {
     private func albumList(_ albums: [Album]) -> some View {
         LazyVStack(spacing: 0) {
             ForEach(Array(albums.enumerated()), id: \.element.id) { index, album in
-                NavigationLink(value: album.id) {
+                Button { router.collectionPath.append(album.id) } label: {
                     AlbumRowView(album: album)
                 }
                 .buttonStyle(.plain)

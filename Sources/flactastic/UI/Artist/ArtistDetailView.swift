@@ -10,8 +10,13 @@ struct ArtistDetailView: View {
     @Environment(ArtistImageFetcher.self)  private var artistImageFetcher
     @Environment(PlayerState.self)         private var player
     @Environment(Settings.self)            private var settings
+    @Environment(NavigationRouter.self)    private var router
 
     @State private var isEditing = false
+
+    private func popDetail() {
+        if !router.collectionPath.isEmpty { router.collectionPath.removeLast() }
+    }
 
     private var summary: ArtistSummary? {
         let resolver = library.makeArtistResolver()
@@ -34,7 +39,11 @@ struct ArtistDetailView: View {
                 .padding(.bottom, 100)
             }
             .background(Theme.background)
-            .navigationTitle(summary.displayName)
+            .overlay(alignment: .topLeading) {
+                DetailBackButton { popDetail() }
+                    .padding(.leading, Theme.Spacing.xl)
+                    .padding(.top, Theme.Spacing.lg)
+            }
             .task(id: summary.id) {
                 if settings.autoFetchArtistImages {
                     artistImageFetcher.ensureImage(
@@ -176,7 +185,7 @@ struct ArtistDetailView: View {
                     spacing: Theme.Spacing.xl
                 ) {
                     ForEach(Array(albums.enumerated()), id: \.element.id) { index, album in
-                        NavigationLink(value: album.id) {
+                        Button { router.collectionPath.append(album.id) } label: {
                             AlbumCardView(album: album)
                         }
                         .buttonStyle(.plain)

@@ -33,6 +33,9 @@ struct AlbumDetailView: View {
             ZStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+                        DetailBackButton {
+                            if !router.collectionPath.isEmpty { router.collectionPath.removeLast() }
+                        }
                         albumHeader(album)
                         trackList(album.tracks)
                     }
@@ -42,7 +45,6 @@ struct AlbumDetailView: View {
                 }
             }
             .background(Theme.background)
-            .navigationTitle(album.name)
             .sheet(isPresented: $isEditingAlbum) {
                 AlbumMetadataEditorView(album: album)
                     .environment(library)

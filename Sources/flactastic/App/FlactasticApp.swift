@@ -151,7 +151,7 @@ struct FlactasticApp: App {
             }
             .background(DebugWindowController(enabled: $lucidaDebugEnabled))
         }
-        .windowToolbarStyle(.unified(showsTitle: false))
+        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About FLACtastic") { openWindow(id: "about") }

@@ -1,89 +1,111 @@
-# Project FLACtastic
-## Version 3.1 Release
- 
-**The future of lossless audio on macOS.**
- 
-FLACtastic is a local music player and organizer designed to bridge the gap between audiophile quality and the modern streaming service. Manage your hi-fi library in a beautiful interface like never before.
- 
----
- 
-## What's New in v3.1
-- **Architectural shift** – Tracks are now uniquely identifiable per-library, which means playlists persist with folder changes.
-- **Misc. Bug Fixes** - Fixed tracklist display and queue management issues
+# FLACtastic
 
----
- 
-## Core Features
+![FLACtastic Logo](./Resources/logo-placeholder.png)
 
-- **Metadata Display** – Audio quality indicators on every track
-- **Queue Management** – Modern queue rearrangement and management
-- **Visual Refinement** – Polished animations, refined typography, and two beautiful themes
-- **Full Playlist Support** – Create, edit, and organize custom playlists with persistent storage
-- **Folder organizer** – Automatically organize your music folder heirarchy with a few clicks
- 
-### 📚 Collection Management
- 
-Browse your music library by **Albums**, **Tracks**, or **Artists**.
- 
-<img width="1624" height="1061" alt="collection - albums view" src="https://github.com/user-attachments/assets/8b8b9705-cc29-4d6a-9ce8-7a95a4c9e2d0" />
- 
-Each album view shows complete track metadata including bitrate, sample rate, and duration. The cyan highlight on the now-playing track keeps your place front and center.
- 
-<img width="1624" height="1061" alt="collection - album view" src="https://github.com/user-attachments/assets/190cc040-79a9-42a9-8c2e-2e4871708c3f" />
- 
-The full tracks view presents every song in your library with sortable columns for artist, duration, quality indicators, and more.
- 
-<img width="1624" height="1061" alt="collection - all tracks view" src="https://github.com/user-attachments/assets/d9b349ea-fe2e-4c96-ae28-d4c86faa2f50" />
- 
-Organize by artist to see your favorite performers and their complete discography at a glance. Artist profile pictures are pulled in realtime using the Deezer API, but can also be customized to your liking.
+**The beautiful way to organize and play your lossless music collection on macOS.**
 
-<img width="1624" height="1061" alt="collection - artists view" src="https://github.com/user-attachments/assets/1087dc5e-ccf5-4fc4-8493-a43925dd4213" />
+FLACtastic is a modern music player designed for audiophiles who want to manage their FLAC libraries with an elegant, intuitive interface. Enjoy studio-quality audio with features that make discovering and organizing your music a pleasure.
 
 ---
 
-### 📋 Playlists
- 
-Create and customize playlists tailored to your mood or theme.
- 
-<img width="1624" height="1061" alt="image" src="https://github.com/user-attachments/assets/d6aa18aa-90ac-4595-b8e8-bfdad80ff3f1" />
- 
-Playlists are _persistent to your library_, so you don't have to worry about losing them when changing collections.
- 
+## ✨ Key Features
+
+- **Beautiful Library Browser** — Explore your music by Albums, Artists, or Tracks with stunning cover art and metadata at a glance
+- **Persistent Playlists** — Create custom playlists that stay organized even when you reorganize your music folder
+- **High-Fidelity Metadata** — See detailed audio quality information (bitrate, sample rate, duration) on every track
+- **Smart Queue Management** — Easily rearrange, skip, and manage your playback queue
+- **Two Beautiful Themes** — Choose between light and dark themes that look great with any music collection
+- **Artist Profiles** — View artist information and artwork automatically pulled from your music metadata
+- **Integrated Lyrics** — Browse lyrics while you listen (where available)
+- **Listening History** — Track your most-played tracks and artists over time
+
 ---
- 
-## System Requirements
- 
-- **macOS 11.0** or later
+
+## 🏠 Homepage
+
+Your personalized music hub. The homepage gives you a quick overview of your listening activity, now-playing information, and curated content all in one beautiful view.
+
+![Homepage](./Resources/screenshot-homepage.png)
+*Your music at a glance — now-playing info, listening stats, and more*
+
+---
+
+## 🎵 Collection Management
+
+### View Your Music Your Way
+
+Organize your library by **Albums**, **Artists**, or **All Tracks**. Each view is optimized for different browsing experiences.
+
+![Albums View](./Resources/screenshot-albums.png)
+*Browse your album collection with beautiful cover art and track counts*
+
+![Artist View](./Resources/screenshot-artists.png)
+*Explore artists and their complete discography*
+
+![Tracks View](./Resources/screenshot-tracks.png)
+*Search through every track in your library with sortable columns*
+
+### Smart Playlist Features
+
+Create and customize playlists for any mood or occasion. Your playlists persist with your library, so you'll never lose them.
+
+![Playlists](./Resources/screenshot-playlists.png)
+
+---
+
+## 🚀 Getting Started
+
+### System Requirements
+
+- **macOS 14** or later
 - **Intel or Apple Silicon** processor
 - **100 MB** free disk space
-- **Network connection** (for API-based metadata features)
+- **Internet connection** (for optional metadata and lyrics features)
+
+### Installation
+
+1. **Download** the latest version from [Releases](https://github.com/patronsaynt/flactastic/releases)
+2. **Open** the DMG file in Finder
+3. **Drag** FLACtastic into your **Applications** folder
+4. **Eject** the DMG when done
+5. **Open** FLACtastic from Applications or Spotlight (⌘ Space, then type "FLACtastic")
+
+### First Time Setup
+
+1. **Select Your Music Folder** — Point FLACtastic to your FLAC library location
+2. **Let It Scan** — FLACtastic will index your music and build your library
+3. **Start Playing** — Click any album or song to start listening
+4. **Customize Playlists** — Create playlists from the dedicated Playlists tab
 
 ---
- 
-## Installation
- 
-### Method 1: DMG Installer (Recommended)
- 
-1. **Download** <https://github.com/patronsaynt/flactastic/releases/tag/v3.0>
-2. **Mount the DMG** by double-clicking it in Finder
-3. **Drag FLACtastic** into the **Applications** folder
-4. **Eject the DMG** by right-clicking and selecting "Eject"
-5. **Launch** FLACtastic from **Applications** or Spotlight (⌘ Space, type "FLACtastic")
- 
-## License
- 
-FLACtastic is released under the **MIT License**. See `LICENSE` for details.
- 
+
+## 💡 Tips & Tricks
+
+- **Keyboard Shortcuts** — Use Space to play/pause, arrow keys to skip, and ⌘ + N to create a new playlist
+- **Metadata Editing** — Right-click on any track to edit artist, album, or other details
+- **Drag & Drop** — Drag tracks directly into playlists to add them
+- **Search** — Use the search bar in the toolbar to find songs by title, artist, or album name
+
 ---
- 
-## Credits
- 
-Designed and developed by @patronsaynt using Claude Code
- 
+
+## ❓ Questions & Support
+
+For help, feature requests, or to report issues, visit our [GitHub Issues](https://github.com/patronsaynt/flactastic/issues) page.
+
 ---
- 
-**FLACtastic v3.0**
- 
-**Release Date:** May 2026
-**Status:** Beta  
-**Repository:** [github.com/patronsaynt/flactastic](https://github.com/patronsaynt/flactastic)
+
+## 📜 License
+
+FLACtastic is released under the **MIT License**. See [LICENSE](./LICENSE) for details.
+
+---
+
+## 🔒 Privacy
+
+Your music library stays on your computer. FLACtastic respects your privacy — read our [Privacy Policy](./PRIVACY_POLICY.md) and [Terms of Service](./TERMS_OF_SERVICE.md) for more information.
+
+---
+
+**Made with ❤️ for music lovers**
+
+Version 3.1 • macOS • [Download Now](https://github.com/patronsaynt/flactastic/releases)
