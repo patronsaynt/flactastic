@@ -171,7 +171,7 @@ struct AlbumDetailView: View {
                     }
                     .padding(.vertical, Theme.Spacing.xs)
                     .background(
-                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        RoundedRectangle(cornerRadius: Theme.Radius.lg)
                             .fill(player.currentTrack?.id == track.id
                                   ? Theme.surfaceElevated
                                   : Color.clear)

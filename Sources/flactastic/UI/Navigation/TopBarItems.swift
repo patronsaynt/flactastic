@@ -9,16 +9,16 @@ struct SettingsBarButton: View {
         Button(action: action) {
             HStack(spacing: 5) {
                 Image(systemName: "gearshape")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(size: 10, weight: .regular))
                 Text("Settings")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
             }
             .foregroundStyle(Theme.textTertiary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .padding(4)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 3)
+            .padding(2)
             .background {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .fill(Theme.surface)
             }
         }

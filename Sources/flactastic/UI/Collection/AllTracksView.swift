@@ -236,10 +236,10 @@ struct AllTracksView: View {
         let isPlaying = player.currentTrack?.id == track.id
         let isSelected = selection.contains(track.id)
         if isPlaying {
-            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+            RoundedRectangle(cornerRadius: Theme.Radius.lg)
                 .fill(Theme.surfaceElevated)
         } else if isSelected {
-            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+            RoundedRectangle(cornerRadius: Theme.Radius.lg)
                 .fill(Theme.surfaceElevated.opacity(0.55))
         } else {
             Color.clear

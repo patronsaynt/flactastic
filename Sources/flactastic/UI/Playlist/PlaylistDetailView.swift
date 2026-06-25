@@ -174,7 +174,7 @@ struct PlaylistDetailView: View {
                  showDragHandle: true,
                  showAlbumArt: true)
             .padding(.vertical, 2)
-            .background(RoundedRectangle(cornerRadius: Theme.Radius.sm).fill(rowBackground))
+            .background(RoundedRectangle(cornerRadius: Theme.Radius.lg).fill(rowBackground))
             .opacity(draggingEntryID == entryID ? 0.4 : 1.0)
             .overlay(alignment: .top) {
                 if isDropTarget {

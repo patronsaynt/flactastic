@@ -12,8 +12,8 @@ FLACtastic respects your privacy. We are designed to minimize data collection an
 ## 2. What Information We Collect
 
 ### 2.1 Local Music Files
-- **Your music collection:** FLACtastic reads and displays audio files (FLAC, MP3, and other formats) from directories you specify. These files remain stored on your computer and are not transmitted to our servers.
-- **Audio metadata:** We extract and display technical information from your files, including:
+- **Your music collection:** FLACtastic reads and displays audio files (FLAC, MP3, and other formats) from directories you specify. These files remain stored on your computer and are not transmitted to any servers.
+- **Audio metadata:** We locally extract and locally display technical information from your files, including:
   - File format, bitrate, sample rate, and duration
   - Title, artist, album, and year information
   - Album artwork embedded in or associated with files
