@@ -24,6 +24,15 @@ VERSION_FILE="$PROJECT_ROOT/version.txt"
 ENTITLEMENTS_FILE="$PROJECT_ROOT/Resources/FLACtastic.entitlements"
 APPICON_SOURCE="$PROJECT_ROOT/Sources/flactastic/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
 
+# Must track Package.swift's `platforms: [.macOS(.v14)]` and the
+# LSMinimumSystemVersion generated below. Embedded third-party dylibs (see
+# the vtool step after dependency embedding) get their declared minimum OS
+# forced down to this, since a Homebrew bottle built on a newer host OS
+# otherwise ships a dylib whose minos exceeds what this app claims to
+# support — dyld then refuses to load it on any Mac older than the bottle's
+# build machine, crashing the app at launch before any of our code runs.
+DEPLOYMENT_TARGET="14.0"
+
 SKIP_BUILD=0
 for arg in "$@"; do
     case "$arg" in
@@ -174,6 +183,31 @@ done
 
 rm -f "$BUNDLED_LIST"
 trap - EXIT
+
+# ── Pin embedded dylibs' declared minimum OS ────────────────────────────────
+# Homebrew bottles are built against whatever OS the Homebrew CI runner (or
+# your own machine, for local taps) happened to be on, and stamp that as the
+# dylib's LC_BUILD_VERSION minos — independent of, and often newer than,
+# this app's own deployment target. A dylib is a direct (non-weak) load
+# dependency of the main binary, so dyld resolves it at process startup, not
+# on first use: if its minos exceeds the OS actually running, the app can
+# fail before a single line of our code executes, surfacing to the user as
+# an instant, silent crash on launch. `vtool` rewrites that declared
+# minimum after the fact — safe here because TagLib's actual API surface
+# (file I/O, no OS-version-gated frameworks) doesn't change across these
+# macOS versions, so the dylib still runs correctly; it was just
+# over-declaring what it required.
+echo
+echo "▶ Pinning embedded dylibs to deployment target $DEPLOYMENT_TARGET..."
+for dylib in "$FRAMEWORKS_DIR"/*.dylib; do
+    [[ -f "$dylib" ]] || continue
+    minos="$(otool -l "$dylib" | awk '/LC_BUILD_VERSION/{f=1} f && /minos/{print $2; exit}')"
+    if [[ -n "$minos" && "$minos" != "$DEPLOYMENT_TARGET" ]]; then
+        chmod u+w "$dylib"
+        vtool -set-build-version macos "$DEPLOYMENT_TARGET" "$DEPLOYMENT_TARGET" -replace -output "$dylib" "$dylib"
+        echo "  $(basename "$dylib"): minos $minos → $DEPLOYMENT_TARGET"
+    fi
+done
 
 # ── Code sign (ad-hoc) ──────────────────────────────────────────────────────
 echo

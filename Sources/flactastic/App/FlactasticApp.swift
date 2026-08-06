@@ -87,14 +87,13 @@ struct FlactasticApp: App {
     @State private var downloadCoordinator: DownloadCoordinator
     @State private var playlistRebuildCoordinator: PlaylistRebuildCoordinator
     @State private var lucidaController: LucidaWebController
-    /// In-memory only — the Lucida debug window is a developer tool and
-    /// always starts OFF on launch, even if the user left it enabled in
-    /// the previous session.
-    @State private var lucidaDebugEnabled = false
+    /// Backs the Debug tab in Settings (Debug Lucida / Debug Onboarding).
+    @State private var debugState = DebugState()
 
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
+        @Bindable var debugState = debugState
         WindowGroup {
             GeometryReader { geo in
                 Group {
@@ -118,9 +117,10 @@ struct FlactasticApp: App {
                             .environment(playlistRebuildCoordinator)
                             .environment(spotifyAuth)
                             .environment(lucidaController)
-                            .environment(\.debugMode, lucidaDebugEnabled)
+                            .environment(\.debugMode, debugState.lucidaDebugEnabled)
                             .environment(\.metadataWriter, metadataWriter)
                             .environment(homeHighlight)
+                            .environment(debugState)
                             .transition(.opacity)
                     } else {
                         OnboardingView()
@@ -128,6 +128,7 @@ struct FlactasticApp: App {
                             .environment(settings)
                             .environment(playlistStore)
                             .environment(listening)
+                            .environment(spotifyAuth)
                             .transition(.opacity)
                     }
                 }
@@ -145,7 +146,17 @@ struct FlactasticApp: App {
                     .environment(lucidaController)
             }
             .preferredColorScheme(settings.useLightMode ? .light : .dark)
-            .frame(minWidth: 1000, minHeight: 650)
+            // Onboarding gets a small window matching its card (see
+            // OnboardingView/OnboardingDebugPreviewView's 640×720 viewport);
+            // this only affects the window's *initial* size on a fresh
+            // launch with no saved frame — real users only ever see
+            // onboarding on that first run. Once `hasCompletedOnboarding`
+            // flips, the floor jumps to the normal app minimum and the same
+            // window grows to fit — no second window, no jump cut.
+            .frame(
+                minWidth: settings.hasCompletedOnboarding ? 1000 : 640,
+                minHeight: settings.hasCompletedOnboarding ? 650 : 720
+            )
             .background(Theme.background)
             .task { await bootstrap() }
             .onAppear {
@@ -158,7 +169,7 @@ struct FlactasticApp: App {
             .onChange(of: settings.useLightMode) { _, useLight in
                 applyAppearance(useLight: useLight)
             }
-            .background(DebugWindowController(enabled: $lucidaDebugEnabled))
+            .background(DebugWindowController(enabled: $debugState.lucidaDebugEnabled))
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
@@ -187,14 +198,6 @@ struct FlactasticApp: App {
                 Button("Volume Down") { player.engine.volumeDown() }
                     .keyboardShortcut(.downArrow, modifiers: .command)
             }
-            // Add to the standard View menu (appears under "Show/Hide
-            // Sidebar"). Using CommandGroup avoids creating a duplicate
-            // top-level "View" menu next to the system one.
-            CommandGroup(after: .sidebar) {
-                Divider()
-                Toggle("Enable Debugging", isOn: $lucidaDebugEnabled)
-                    .keyboardShortcut("d", modifiers: [.command, .option])
-            }
         }
 
         // About FLACtastic — opened from the application menu.
@@ -205,12 +208,27 @@ struct FlactasticApp: App {
         .windowResizability(.contentSize)
 
         // Auxiliary debug window for the Lucida WebKit bridge. Hidden by
-        // default; toggled from View → "Enable Debugging".
+        // default; toggled from Settings → Debug → "Debug Lucida".
         Window("Lucida Debug", id: "lucida-debug") {
             LucidaDebugView()
                 .environment(lucidaController)
                 .frame(minWidth: 900, minHeight: 600)
         }
+        .windowResizability(.contentSize)
+
+        // Standalone onboarding preview for developer testing. Reuses the
+        // app's live stores via the environment (same precedent as the
+        // Lucida debug window above), so it exercises the exact first-run
+        // flow. Opened from Settings → Debug → "Debug Onboarding".
+        Window("Onboarding Preview", id: "onboarding-debug") {
+            OnboardingDebugPreviewView()
+                .environment(library)
+                .environment(settings)
+                .environment(playlistStore)
+                .environment(listening)
+                .environment(spotifyAuth)
+        }
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
 
         // Menu bar mini-player. The `isInserted` binding reflects the Settings

@@ -1,0 +1,17 @@
+import SwiftUI
+
+/// Hosts the real onboarding sequence in its own window for developer
+/// testing — reuses the app's live `Settings`/`LibraryStore`/etc. via the
+/// environment (injected by the `"onboarding-debug"` window scene in
+/// `FlactasticApp`), so it exercises the exact flow a fresh user sees.
+/// Opened from Settings → Debug → "Debug Onboarding".
+struct OnboardingDebugPreviewView: View {
+    @Environment(Settings.self) private var settings
+    @Environment(\.dismissWindow) private var dismissWindow
+
+    var body: some View {
+        OnboardingView(onFinish: { dismissWindow(id: "onboarding-debug") })
+            .preferredColorScheme(settings.useLightMode ? .light : .dark)
+            .frame(width: 640, height: 720)
+    }
+}

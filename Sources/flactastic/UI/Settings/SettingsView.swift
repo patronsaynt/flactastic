@@ -54,6 +54,8 @@ struct SettingsView: View {
                         AppearanceSettingsPane()
                     case .visualizer:
                         VisualizerSettingsPane()
+                    case .debug:
+                        DebugSettingsPane()
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -95,6 +97,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     case connections = "Connections"
     case appearance  = "Appearance"
     case visualizer  = "Visualizer"
+    case debug       = "Debug"
     var id: String { rawValue }
 }
 
@@ -579,6 +582,44 @@ private struct VisualizerSettingsPane: View {
                     isOn: $settings.saveLyricsToFiles,
                     isEnabled: settings.lyricsLookupEnabled
                 )
+            }
+        }
+    }
+}
+
+// MARK: - Debug pane
+
+private struct DebugSettingsPane: View {
+    @Environment(DebugState.self) private var debugState
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        @Bindable var debugState = debugState
+
+        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+            SettingsGroup(title: "Developer Tools") {
+                ToggleRow(
+                    label: "Debug Lucida",
+                    subtitle: "Open the Lucida WebKit bridge inspector — live phase, web view, and navigation/bridge log.",
+                    isOn: $debugState.lucidaDebugEnabled
+                )
+                GroupDivider()
+                HStack(alignment: .top, spacing: Theme.Spacing.lg) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Debug Onboarding")
+                            .font(Theme.Font.body)
+                            .foregroundStyle(Theme.textPrimary)
+                        Text("Replay the first-run onboarding sequence in its own window, against the app's live settings and library.")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Button("Preview") { openWindow(id: "onboarding-debug") }
+                        .buttonStyle(PillButtonStyle())
+                }
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.md)
             }
         }
     }

@@ -8,8 +8,13 @@ OUTPUT_PATH="${1:?Output path required}"
 VERSION="${2:?Version required}"
 BUILD_NUMBER="${3:-1}"
 
-# Strip pre-release suffix for CFBundleShortVersionString (Apple expects MAJOR.MINOR.PATCH)
+# Strip the pre-release suffix only when doing so still leaves a version behind:
+# "1.2.0-beta" → "1.2.0", but "beta-5" must stay "beta-5" rather than collapsing
+# to a bare "beta" that tells a user nothing about which build they are running.
 SHORT_VERSION="${VERSION%%-*}"
+if [[ ! "$SHORT_VERSION" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+    SHORT_VERSION="$VERSION"
+fi
 
 cat > "$OUTPUT_PATH" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

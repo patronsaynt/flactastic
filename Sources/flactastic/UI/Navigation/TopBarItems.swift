@@ -44,8 +44,12 @@ struct TitleBarConfigurator: NSViewRepresentable {
         private let dx: CGFloat = 8
         private let dy: CGFloat = -11
 
-        /// Default origins captured once, so reapplying never compounds.
-        private var defaults: [NSWindow.ButtonType: CGPoint] = [:]
+        private let buttonTypes: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+
+        /// Last origin AppKit itself assigned to each button. Offsets are always
+        /// measured from this, never from a value we wrote, so repeated passes
+        /// can't compound.
+        private var systemOrigins: [NSWindow.ButtonType: CGPoint] = [:]
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -60,6 +64,18 @@ struct TitleBarConfigurator: NSViewRepresentable {
                 self, selector: #selector(didExitFullScreen),
                 name: NSWindow.didExitFullScreenNotification, object: window
             )
+
+            // AppKit re-lays out the standard window buttons on its own schedule
+            // — window-frame restoration at launch, live resize, fullscreen
+            // transitions — and every one of those passes snaps them back to
+            // their stock origins. A one-shot nudge therefore survives only if
+            // nothing else lays out afterwards, which is exactly why the offsets
+            // held when running unbundled but were lost in the packaged app
+            // (a bundled launch restores the saved window frame after the
+            // content view is installed). Observing each button's frame instead
+            // means every reset is corrected, whoever caused it.
+            observeButtonFrames(in: window)
+            repositionTrafficLights()
             DispatchQueue.main.async { [weak self] in self?.repositionTrafficLights() }
         }
 
@@ -77,15 +93,45 @@ struct TitleBarConfigurator: NSViewRepresentable {
             DispatchQueue.main.async { [weak self] in self?.repositionTrafficLights() }
         }
 
+        private func observeButtonFrames(in window: NSWindow) {
+            for type in buttonTypes {
+                guard let button = window.standardWindowButton(type) else { continue }
+                button.postsFrameChangedNotifications = true
+                NotificationCenter.default.addObserver(
+                    self, selector: #selector(buttonFrameChanged(_:)),
+                    name: NSView.frameDidChangeNotification, object: button
+                )
+            }
+        }
+
+        @objc private func buttonFrameChanged(_ note: Notification) {
+            guard let button = note.object as? NSView,
+                  let type = buttonTypes.first(where: { window?.standardWindowButton($0) === button })
+            else { return }
+            reposition(type, button: button)
+        }
+
         @objc private func repositionTrafficLights() {
+            guard let window else { return }
+            for type in buttonTypes {
+                guard let button = window.standardWindowButton(type) else { continue }
+                reposition(type, button: button)
+            }
+        }
+
+        private func reposition(_ type: NSWindow.ButtonType, button: NSView) {
             // In native fullscreen the system owns the buttons — leave them be.
             guard let window, !window.styleMask.contains(.fullScreen) else { return }
-            for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-                guard let button = window.standardWindowButton(type) else { continue }
-                if defaults[type] == nil { defaults[type] = button.frame.origin }
-                guard let base = defaults[type] else { continue }
-                button.setFrameOrigin(CGPoint(x: base.x + dx, y: base.y + dy))
-            }
+            let current = button.frame.origin
+            // Already sitting where we last put it — nothing to do. This is also
+            // what stops the notification we trigger below from recursing.
+            if let system = systemOrigins[type], current == offset(system) { return }
+            systemOrigins[type] = current
+            button.setFrameOrigin(offset(current))
+        }
+
+        private func offset(_ origin: CGPoint) -> CGPoint {
+            CGPoint(x: origin.x + dx, y: origin.y + dy)
         }
     }
 }
