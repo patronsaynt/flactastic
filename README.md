@@ -101,6 +101,12 @@ Your music library stays on your computer. FLACtastic respects your privacy — 
 
 ---
 
+## Credits
+
+FLACtastic's music discovery and downloading is powered by [Lucida](https://lucida.to). FLACtastic is a frontend for Lucida.to and does not host, store, or distribute any music itself — all downloads are fetched through Lucida.to, and use of that functionality is subject to Lucida's own terms of service. Huge thanks to the Lucida team for building and maintaining the service that makes this possible.
+
+---
+
 **Made for the modern audiophile with Claude Code**
 
 Beta Version 5 • macOS only • [Download Now](https://github.com/patronsaynt/flactastic/releases)
