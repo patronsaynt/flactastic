@@ -12,8 +12,35 @@ struct Wordmark: View {
     var height: CGFloat = 15
     var color: Color = Theme.textPrimary
 
+    /// Locates the SwiftPM resource bundle without going through
+    /// `Bundle.module`.
+    ///
+    /// SPM's generated accessor only probes `Bundle.main.bundleURL` and the
+    /// absolute `.build` path from the machine that compiled the binary — and
+    /// it `fatalError`s when both miss. In a packaged `.app` the bundle lives
+    /// in `Contents/Resources` (it can't sit at the bundle root without
+    /// invalidating the code signature), so the first probe never hits and the
+    /// app survives only on the build machine, where the `.build` path still
+    /// exists. Probe the real locations ourselves, and degrade to no artwork
+    /// rather than trapping.
+    private static let resourceBundle: Bundle? = {
+        let name = "flactastic_flactastic.bundle"
+        let candidates = [
+            Bundle.main.resourceURL?.appendingPathComponent(name),
+            Bundle.main.bundleURL.appendingPathComponent(name),
+            Bundle.main.resourceURL,
+        ]
+        for case let url? in candidates {
+            if let bundle = Bundle(url: url),
+               bundle.url(forResource: "Wordmark", withExtension: "png") != nil {
+                return bundle
+            }
+        }
+        return nil
+    }()
+
     private static let image: NSImage? = {
-        guard let url = Bundle.module.url(forResource: "Wordmark", withExtension: "png"),
+        guard let url = resourceBundle?.url(forResource: "Wordmark", withExtension: "png"),
               let image = NSImage(contentsOf: url)
         else { return nil }
         image.isTemplate = true
