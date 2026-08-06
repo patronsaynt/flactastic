@@ -1,6 +1,6 @@
 # FLACtastic
 
-<img width="1624" height="1061" alt="image" src="https://github.com/user-attachments/assets/e17fd960-a1e8-4705-bed9-08b2d6ffc60b" />
+<img width="3162" height="407" alt="logo_v2_white_lighting" src="https://github.com/user-attachments/assets/59ebd618-5374-4765-bbb3-cde80d0c2cce" />
 
 **The beautiful way to organize and play your lossless music collection on macOS.**
 
@@ -25,7 +25,7 @@ FLACtastic is a modern music player designed for audiophiles who want to manage 
 
 Your personalized music hub. The homepage gives you a quick overview of your listening activity, now-playing information, and curated content all in one beautiful view.
 
-<img width="1624" height="1061" alt="homepage" src="https://github.com/user-attachments/assets/a999f692-bdad-443a-adf8-6b0227562f27" />
+<img width="1624" height="1061" alt="image" src="https://github.com/user-attachments/assets/e17fd960-a1e8-4705-bed9-08b2d6ffc60b" />
 *Your music at a glance — now-playing info, listening stats, and more*
 
 ---
