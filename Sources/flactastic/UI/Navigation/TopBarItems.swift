@@ -25,30 +25,69 @@ struct TopBarView: View {
         .padding(.horizontal, 16)
         .background(WindowDragArea())     // empty areas drag the window
         .background(Theme.background)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Theme.divider)
-                .frame(height: 1)
-        }
     }
 }
 
 /// Reaches into the hosting `NSWindow` and configures it for a full-size,
 /// transparent title bar so app content (the custom top bar) draws edge-to-edge
 /// up into the title-bar region and shares the row with the traffic lights.
+/// Also nudges the traffic lights inward and down so they line up vertically
+/// with the pills in the custom top bar.
 struct TitleBarConfigurator: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            guard let window = view.window else { return }
+    func makeNSView(context: Context) -> NSView { ConfiguratorView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class ConfiguratorView: NSView {
+        /// Offsets applied to the standard window buttons. Tweak to taste:
+        /// `dx` moves the group inward (right); `dy` moves it down (AppKit's
+        /// y-axis points up, so a negative value moves the lights downward).
+        private let dx: CGFloat = 8
+        private let dy: CGFloat = -11
+
+        /// Default origins captured once, so reapplying never compounds.
+        private var defaults: [NSWindow.ButtonType: CGPoint] = [:]
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            configure(window)
+
+            // Re-assert the custom title bar after exiting native fullscreen
+            // (Big Picture mode). Fullscreen resets the style mask, which would
+            // otherwise restore a real title bar and leave the content offset
+            // so clicks miss their targets.
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(didExitFullScreen),
+                name: NSWindow.didExitFullScreenNotification, object: window
+            )
+            DispatchQueue.main.async { [weak self] in self?.repositionTrafficLights() }
+        }
+
+        deinit { NotificationCenter.default.removeObserver(self) }
+
+        private func configure(_ window: NSWindow) {
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
             window.styleMask.insert(.fullSizeContentView)
         }
-        return view
-    }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+        @objc private func didExitFullScreen() {
+            guard let window else { return }
+            configure(window)
+            DispatchQueue.main.async { [weak self] in self?.repositionTrafficLights() }
+        }
+
+        @objc private func repositionTrafficLights() {
+            // In native fullscreen the system owns the buttons — leave them be.
+            guard let window, !window.styleMask.contains(.fullScreen) else { return }
+            for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                guard let button = window.standardWindowButton(type) else { continue }
+                if defaults[type] == nil { defaults[type] = button.frame.origin }
+                guard let base = defaults[type] else { continue }
+                button.setFrameOrigin(CGPoint(x: base.x + dx, y: base.y + dy))
+            }
+        }
+    }
 }
 
 /// Transparent NSView that lets click-drags in empty top-bar space move the

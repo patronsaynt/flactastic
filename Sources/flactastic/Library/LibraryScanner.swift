@@ -54,7 +54,34 @@ actor LibraryScanner {
     /// read via TagLib — the same library used for writes — so edits always round-trip
     /// correctly without relying on AVFoundation's metadata cache. Audio format
     /// properties (duration, sample rate, bit depth) still come from AVFoundation.
-    func loadMetadata(for track: Track) async -> Track {
+    ///
+    /// When `cached` is passed and still matches the file on disk (size +
+    /// mtime), the parse is skipped entirely: fields hydrate from the cache
+    /// and only the embedded picture is re-read (a single TagLib open — or
+    /// none at all when the cache says the file has no artwork). A mismatch
+    /// falls through to the full parse below.
+    func loadMetadata(for track: Track, cached: TrackMetadataCacheEntry? = nil) async -> Track {
+        if let cached, cached.isValid(forFileAt: track.url.path) {
+            var updated = track
+            cached.apply(to: &updated)
+            if cached.hasArtwork {
+                track.url.path.withCString { pathPtr in
+                    guard let file = taglib_file_new(pathPtr) else { return }
+                    defer {
+                        taglib_file_free(file)
+                        taglib_tag_free_strings()
+                    }
+                    guard taglib_file_is_valid(file) != 0 else { return }
+                    var picSize: UInt32 = 0
+                    if let picBytes = taglib_helper_read_picture(file, &picSize), picSize > 0 {
+                        updated.artwork = Data(bytes: picBytes, count: Int(picSize))
+                        free(picBytes)
+                    }
+                }
+            }
+            return updated
+        }
+
         var updated = track
 
         // --- Tag fields via TagLib (bypasses AVFoundation metadata cache) ---
@@ -77,7 +104,9 @@ actor LibraryScanner {
                 updated.album = String(cString: ptr)
             }
             if let ptr = taglib_tag_genre(tag), ptr.pointee != 0 {
-                updated.genre = String(cString: ptr)
+                let (primary, secondary) = GenreResolver.split(String(cString: ptr))
+                updated.genre = primary
+                updated.secondaryGenres = secondary
             }
             let year = taglib_tag_year(tag)
             if year > 0 { updated.year = Int(year) }

@@ -7,6 +7,7 @@ struct Album: Identifiable, Hashable {
     let albumArtist: String?
     let year: Int?
     let genre: String?
+    let secondaryGenres: [String]
     let artwork: Data?
     let tracks: [Track]
 

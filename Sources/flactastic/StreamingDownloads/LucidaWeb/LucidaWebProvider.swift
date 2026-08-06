@@ -95,33 +95,15 @@ final class LucidaWebProvider: NSObject, StreamerProvider {
     func getStream(for track: RemoteTrack) async throws -> DownloadStream {
         try await controller.awaitReady()
 
-        guard let serviceURL = track.url?.absoluteString else {
+        guard let trackURL = track.url else {
             throw StreamerError.unsupportedURL(URL(string: "lucida://missing")!)
         }
 
         // Use the per-track options the UI stashed before enqueueing, or
         // fall back to defaults (Original / metadata / no compat).
         let opts = optionsByTrackID[track.id] ?? .default
-        let body = LucidaStreamRequest(url: serviceURL, options: opts)
-        let bodyJSON = String(data: try JSONEncoder().encode(body), encoding: .utf8)!
 
-        // Pace job initiations globally so concurrent downloads don't trip
-        // Lucida's per-IP rate limiter on job starts.
-        await awaitInitiationSlot()
-
-        let initiate = try await controller.callBridge(
-            "window.__flac.streamV2(\(bodyJSON), null)",
-            as: LucidaStreamInitiateResponse.self
-        )
-
-        // Lucida returns `{success:false, error}` (no handoff) when it can't
-        // start a job for this URL — e.g. the source has no matching release or
-        // the server is busy. Surface that as a clean, per-track failure rather
-        // than letting a missing-key decode error bubble up.
-        guard let handoff = initiate.handoff, let server = initiate.name else {
-            throw StreamerError.unavailable(initiate.error ?? "Lucida couldn't start this download.")
-        }
-
+        let (handoff, server) = try await initiateJob(sourceURL: trackURL, options: opts)
         try await waitForCompletion(handoff: handoff, server: server)
 
         // Build the same redirect=true URL the website hands to window.open;
@@ -162,10 +144,60 @@ final class LucidaWebProvider: NSObject, StreamerProvider {
     // MARK: - Internals
 
     private let controller: LucidaWebController
+    private let amazonMatcher: AmazonMatchService
 
-    init(controller: LucidaWebController) {
+    init(controller: LucidaWebController, amazonMatcher: AmazonMatchService = AmazonMatchService()) {
         self.controller = controller
+        self.amazonMatcher = amazonMatcher
         super.init()
+    }
+
+    /// Start a Lucida job for `sourceURL`. Spotify links are Lucida's least
+    /// reliable source — its own Spotify downloader routinely 404s server-side
+    /// even when the site is otherwise healthy (Amazon Music, Tidal, etc. work
+    /// fine). When the primary attempt fails on a `spotify.com` URL, resolve
+    /// the same track's Amazon Music equivalent via Odesli and retry once
+    /// before giving up — mirrors the Amazon-first fallback the playlist
+    /// rebuild pipeline already uses.
+    private func initiateJob(
+        sourceURL: URL, options: LucidaOptions
+    ) async throws -> (handoff: String, server: String) {
+        do {
+            return try await requestJob(url: sourceURL, options: options)
+        } catch let error as StreamerError {
+            guard case .unavailable = error,
+                  let host = sourceURL.host?.lowercased(),
+                  host == "open.spotify.com" || host == "spotify.com",
+                  let amazonURL = await amazonMatcher.amazonURL(forTrack: sourceURL) else {
+                throw error
+            }
+            return try await requestJob(url: amazonURL, options: options)
+        }
+    }
+
+    private func requestJob(
+        url: URL, options: LucidaOptions
+    ) async throws -> (handoff: String, server: String) {
+        let body = LucidaStreamRequest(url: url.absoluteString, options: options)
+        let bodyJSON = String(data: try JSONEncoder().encode(body), encoding: .utf8)!
+
+        // Pace job initiations globally so concurrent downloads don't trip
+        // Lucida's per-IP rate limiter on job starts.
+        await awaitInitiationSlot()
+
+        let initiate = try await controller.callBridge(
+            "window.__flac.streamV2(\(bodyJSON), null)",
+            as: LucidaStreamInitiateResponse.self
+        )
+
+        // Lucida returns `{success:false, error}` (no handoff) when it can't
+        // start a job for this URL — e.g. the source has no matching release or
+        // the server is busy. Surface that as a clean, per-track failure rather
+        // than letting a missing-key decode error bubble up.
+        guard let handoff = initiate.handoff, let server = initiate.name else {
+            throw StreamerError.unavailable(initiate.error ?? "Lucida couldn't start this download.")
+        }
+        return (handoff, server)
     }
 
     /// Repeatedly call `__flac.pollRequest(handoff, server)` until the job

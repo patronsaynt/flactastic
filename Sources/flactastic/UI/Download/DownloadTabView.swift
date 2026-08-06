@@ -866,6 +866,12 @@ struct DownloadTabView: View {
                     .font(.system(size: 12).monospacedDigit())
                     .foregroundStyle(Theme.textSecondary)
                 Spacer()
+                if active > 0 {
+                    Button("Cancel all") { downloads.cancelAll() }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.textTertiary)
+                }
                 Button("Clear completed") { downloads.clearCompleted() }
                     .buttonStyle(.plain)
                     .font(.system(size: 12))
@@ -1187,6 +1193,9 @@ struct DownloadTabView: View {
                     columns: [GridItem(.adaptive(minimum: 184), spacing: 20)],
                     spacing: 20
                 ) {
+                    if settings.showSpotifyLikedSongs {
+                        playlistCard(SpotifyAuthController.likedSongsSummary)
+                    }
                     ForEach(spotifyAuth.playlists) { playlistCard($0) }
                 }
             }
@@ -1211,12 +1220,15 @@ struct DownloadTabView: View {
                                            startPoint: .topLeading, endPoint: .bottomTrailing)
                         }
                     } else {
-                        LinearGradient(colors: [Color(white: 0.16), Color(white: 0.07)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+                        LinearGradient(
+                            colors: p.id == SpotifyAuthController.likedSongsID
+                                ? [Color(red: 0.35, green: 0.16, blue: 0.5), Color(red: 0.1, green: 0.08, blue: 0.22)]
+                                : [Color(white: 0.16), Color(white: 0.07)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing)
                         .overlay(
-                            Image(systemName: "music.note.list")
+                            Image(systemName: p.id == SpotifyAuthController.likedSongsID ? "heart.fill" : "music.note.list")
                                 .font(.system(size: 28, weight: .thin))
-                                .foregroundStyle(Color.white.opacity(0.22)))
+                                .foregroundStyle(Color.white.opacity(p.id == SpotifyAuthController.likedSongsID ? 0.85 : 0.22)))
                     }
                 }
                 .aspectRatio(1, contentMode: .fill)
@@ -1233,7 +1245,7 @@ struct DownloadTabView: View {
                         .lineLimit(2, reservesSpace: true)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Text("\(p.owner ?? "you") · \(p.trackCount) tracks")
+                    Text(p.trackCount < 0 ? "your saved tracks" : "\(p.owner ?? "you") · \(p.trackCount) tracks")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.textTertiary)
                         .lineLimit(1)
@@ -1363,7 +1375,9 @@ struct DownloadTabView: View {
         Task {
             do {
                 let token = try await spotifyAuth.validAccessToken()
-                let result = try await rebuilder.resolve(p.externalURL, userToken: token)
+                let result = p.id == SpotifyAuthController.likedSongsID
+                    ? try await rebuilder.resolveLikedSongs(userToken: token)
+                    : try await rebuilder.resolve(p.externalURL, userToken: token)
                 resolvedPlaylist = result.playlist
                 playlistTruncated = result.wasTruncated
             } catch {

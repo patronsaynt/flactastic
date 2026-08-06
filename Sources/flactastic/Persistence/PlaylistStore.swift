@@ -4,7 +4,22 @@ import Observation
 @Observable
 @MainActor
 final class PlaylistStore {
-    var playlists: [Playlist] = []
+    var playlists: [Playlist] = [] {
+        didSet { playlistsByIDCache = nil }
+    }
+
+    /// Memoized id → playlist lookup, for views that resolve playlists per
+    /// render (Home recents). Same discipline as `LibraryStore.albumsByID`.
+    @ObservationIgnored private var playlistsByIDCache: [UUID: Playlist]?
+
+    var playlistsByID: [UUID: Playlist] {
+        // Read `playlists` unconditionally so @Observable registers the dependency.
+        let current = playlists
+        if let playlistsByIDCache { return playlistsByIDCache }
+        let computed = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        playlistsByIDCache = computed
+        return computed
+    }
 
     private var currentRootURL: URL?
 

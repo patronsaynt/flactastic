@@ -15,17 +15,64 @@ struct HomeView: View {
     @Environment(ArtistRemoteCache.self) private var artistRemoteCache
     @Environment(LyricsRemoteCache.self) private var lyricsRemoteCache
     @Environment(\.metadataWriter) private var metadataWriter
+    @Environment(\.displayScale) private var displayScale
+
+    /// Time window for the listening-stats section. Persisted so the choice
+    /// survives navigating away and back.
+    @AppStorage("flactastic.home.statsRange") private var statsRange: StatsRange = .allTime
 
     /// Album lookup by `Album.id`, so history items (which store only the album
     /// key) can resolve back to real albums for artwork and playback.
+    /// Memoized on `LibraryStore` — building it here ran once per body eval.
     private var albumsByID: [String: Album] {
-        Dictionary(library.albums.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        library.albumsByID
     }
 
     /// Playlist lookup by UUID, so recent playlist entries resolve to artwork,
-    /// tracks, and navigation targets.
+    /// tracks, and navigation targets. Memoized on `PlaylistStore`.
     private var playlistsByID: [UUID: Playlist] {
-        Dictionary(playlistStore.playlists.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        playlistStore.playlistsByID
+    }
+
+    /// Everything on this page derived from listening history or whole-library
+    /// scans, computed in one pass per *data* change. Each accessor does a
+    /// full scan of `listening.events` (or all track durations), and this view
+    /// re-renders whenever any observed store ticks — so computing them inline
+    /// in section bodies made every Home render O(history).
+    private struct HomeMetrics {
+        var recentlyPlayed: [RecentItem] = []
+        var weeklyMinutes: [Double] = []
+        var weeklyDayLabels: [String] = []
+        var hoursListened: Int = 0
+        var tracksPlayed: Int = 0
+        var albumsPlayed: Int = 0
+        var sessions: Int = 0
+        var topGenre: (name: String, share: Double)? = nil
+        var streakDays: Int = 0
+        var topArtists: [RankedItem] = []
+        var topAlbums: [AlbumRank] = []
+        var footerAlbumCount: Int = 0
+        var footerHours: Int = 0
+    }
+    @State private var metrics = HomeMetrics()
+
+    private func recomputeMetrics() {
+        var m = HomeMetrics()
+        m.recentlyPlayed = listening.recentlyPlayed(limit: 12)
+        m.weeklyMinutes = listening.weeklyMinutes()
+        m.weeklyDayLabels = listening.weeklyDayLabels()
+        let since = statsRange.since()
+        m.hoursListened = Int((listening.totalSecondsListened(since: since) / 3600).rounded())
+        m.tracksPlayed = listening.tracksPlayedCount(since: since)
+        m.albumsPlayed = listening.albumsPlayedCount(since: since)
+        m.sessions = listening.sessionCount(since: since)
+        m.topGenre = listening.topGenre(since: since)
+        m.streakDays = listening.currentStreakDays
+        m.topArtists = listening.topArtists(limit: 5, since: since)
+        m.topAlbums = listening.topAlbumsThisWeek(limit: 6)
+        m.footerAlbumCount = library.albums.count
+        m.footerHours = Int((library.tracks.compactMap(\.duration).reduce(0, +) / 3600).rounded())
+        metrics = m
     }
 
     var body: some View {
@@ -44,6 +91,11 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.background)
+        .onAppear { recomputeMetrics() }
+        .onChange(of: listening.events.count) { _, _ in recomputeMetrics() }
+        .onChange(of: listening.recentContexts) { _, _ in recomputeMetrics() }
+        .onChange(of: statsRange) { _, _ in recomputeMetrics() }
+        .onChange(of: library.tracks) { _, _ in recomputeMetrics() }
         .task(id: library.hasCompletedInitialLoad) {
             guard library.hasCompletedInitialLoad else { return }
             await highlight.pickIfNeeded(
@@ -122,7 +174,16 @@ struct HomeView: View {
     private func heroBanner(size: CGSize) -> some View {
         if let pick = highlight.pick {
             Group {
-                if let data = pick.imageData, let nsImage = NSImage(data: data) {
+                // Decode through the downsampling cache instead of full-res
+                // `NSImage(data:)`: under a 28pt blur + gradient mask a 640pt
+                // source is visually indistinguishable, and vastly cheaper to
+                // blur and composite while the page scrolls.
+                if let data = pick.imageData, let nsImage = ArtworkImageCache.shared.thumbnail(
+                    for: data,
+                    id: ArtworkImageCache.contentID(for: data),
+                    pointSize: 640,
+                    scale: displayScale
+                ) {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -169,12 +230,10 @@ struct HomeView: View {
     }
 
     private var homeFooter: some View {
-        let albumCount = library.albums.count
-        let hours = Int((library.tracks.compactMap(\.duration).reduce(0, +) / 3600).rounded())
-        return HStack(spacing: 6) {
-            Text("\(albumCount.formatted()) albums")
+        HStack(spacing: 6) {
+            Text("\(metrics.footerAlbumCount.formatted()) albums")
             Text("·")
-            Text("\(hours.formatted()) hours of music")
+            Text("\(metrics.footerHours.formatted()) hours of music")
         }
         .font(.system(size: 11))
         .foregroundStyle(Theme.textTertiary)
@@ -186,7 +245,7 @@ struct HomeView: View {
 
     @ViewBuilder
     private var recentlyPlayedSection: some View {
-        let items = listening.recentlyPlayed(limit: 12)
+        let items = metrics.recentlyPlayed
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 16) {
                 sectionHeader("Recently Played")
@@ -358,13 +417,13 @@ struct HomeView: View {
                 HStack {
                     sectionHeader("Your Listening Stats")
                     Spacer()
-                    Text("All time").font(.system(size: 11)).foregroundStyle(Theme.textTertiary)
+                    statsRangePicker
                 }
                 statCards
                 HStack(alignment: .top, spacing: 12) {
                     WeeklyListeningChart(
-                        minutes: listening.weeklyMinutes(),
-                        labels: listening.weeklyDayLabels()
+                        minutes: metrics.weeklyMinutes,
+                        labels: metrics.weeklyDayLabels
                     )
                     topArtistsCard
                 }
@@ -372,19 +431,47 @@ struct HomeView: View {
         }
     }
 
+    /// Dropdown that switches the stats time window.
+    private var statsRangePicker: some View {
+        Menu {
+            ForEach(StatsRange.allCases) { range in
+                Button {
+                    statsRange = range
+                } label: {
+                    if range == statsRange {
+                        Label(range.label, systemImage: "checkmark")
+                    } else {
+                        Text(range.label)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(statsRange.label)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textTertiary)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+        }
+        .menuIndicator(.hidden)
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
     private var statCards: some View {
-        let hours = Int((listening.totalSecondsListened / 3600).rounded())
         var cards: [HomeStatCard] = [
-            HomeStatCard(icon: "clock", value: "\(hours)h", label: "Hours Listened", accent: true),
-            HomeStatCard(icon: "music.note", value: listening.tracksPlayedCount.abbreviated(), label: "Tracks Played"),
-            HomeStatCard(icon: "rectangle.stack", value: listening.albumsPlayedCount.formatted(), label: "Albums"),
-            HomeStatCard(icon: "headphones", value: listening.sessionCount.formatted(), label: "Sessions"),
+            HomeStatCard(icon: "clock", value: "\(metrics.hoursListened)h", label: "Hours Listened", accent: true),
+            HomeStatCard(icon: "music.note", value: metrics.tracksPlayed.abbreviated(), label: "Tracks Played"),
+            HomeStatCard(icon: "rectangle.stack", value: metrics.albumsPlayed.formatted(), label: "Albums"),
+            HomeStatCard(icon: "headphones", value: metrics.sessions.formatted(), label: "Sessions"),
         ]
-        if let genre = listening.topGenre {
+        if let genre = metrics.topGenre {
             cards.append(HomeStatCard(icon: "star", value: genre.name, label: "Top Genre",
                                       detail: "\(Int((genre.share * 100).rounded()))% of plays"))
         }
-        let streak = listening.currentStreakDays
+        let streak = metrics.streakDays
         cards.append(HomeStatCard(icon: "chart.line.uptrend.xyaxis",
                                   value: "\(streak) day\(streak == 1 ? "" : "s")",
                                   label: "Current Streak", accent: streak > 0))
@@ -394,7 +481,7 @@ struct HomeView: View {
     }
 
     private var topArtistsCard: some View {
-        let artists = listening.topArtists(limit: 5)
+        let artists = metrics.topArtists
         let maxMinutes = max(artists.first?.minutes ?? 1, 0.0001)
         return VStack(alignment: .leading, spacing: 16) {
             Text("Top Artists").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.textPrimary)
@@ -439,7 +526,7 @@ struct HomeView: View {
 
     @ViewBuilder
     private var topAlbumsSection: some View {
-        let albums = listening.topAlbumsThisWeek(limit: 6)
+        let albums = metrics.topAlbums
         if !albums.isEmpty {
             let maxMinutes = max(albums.first?.minutes ?? 1, 0.0001)
             VStack(alignment: .leading, spacing: 16) {
@@ -656,6 +743,35 @@ struct WeeklyListeningChart: View {
         p.addLine(to: CGPoint(x: pts.first!.x, y: height))
         p.closeSubpath()
         return p
+    }
+}
+
+// MARK: - Stats time range
+
+/// Time window for the home listening stats. Raw values persist via @AppStorage.
+enum StatsRange: String, CaseIterable, Identifiable {
+    case allTime, year, month, week
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .allTime: return "All time"
+        case .year:    return "Past year"
+        case .month:   return "Past month"
+        case .week:    return "Past week"
+        }
+    }
+
+    /// Lower-bound date for the window, or nil for all-time.
+    func since(now: Date = .now) -> Date? {
+        let cal = Calendar.current
+        switch self {
+        case .allTime: return nil
+        case .year:    return cal.date(byAdding: .year, value: -1, to: now)
+        case .month:   return cal.date(byAdding: .month, value: -1, to: now)
+        case .week:    return cal.date(byAdding: .day, value: -7, to: now)
+        }
     }
 }
 

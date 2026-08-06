@@ -62,21 +62,20 @@ final class LucidaWebController: NSObject {
     @ObservationIgnored
     private var hasPromptedThisSession: Bool = false
 
-    let webView: WKWebView
-    private static let entryURL = URL(string: "https://lucida.to/")!
-    /// User-Agent we mirror for any out-of-WebView requests (so cookies +
-    /// fingerprint stay consistent with the cleared session).
-    static let userAgent =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 " +
-        "(KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-
-    override init() {
+    /// Created on first access, not at controller construction: the WKWebView
+    /// spawns a WebKit content process (and a hidden host window), which is
+    /// pure launch-time overhead for users who never open the Downloads tab.
+    /// Every code path that needs the web view goes through this accessor —
+    /// `warmUp()` (Downloads tab appear), the bridge calls, and the debug /
+    /// challenge sheets — so behavior past that first touch is unchanged.
+    @ObservationIgnored private var _webView: WKWebView?
+    var webView: WKWebView {
+        if let _webView { return _webView }
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()  // persistent cookies across launches
         // Hidden frame; we never display it.
-        self.webView = WKWebView(frame: .init(x: 0, y: 0, width: 1024, height: 768),
-                                 configuration: config)
-        super.init()
+        let webView = WKWebView(frame: .init(x: 0, y: 0, width: 1024, height: 768),
+                                configuration: config)
         webView.customUserAgent = Self.userAgent
         webView.navigationDelegate = self
         // Web Inspector access from the debug window (Right-click → Inspect
@@ -85,6 +84,19 @@ final class LucidaWebController: NSObject {
         // Off-screen attach. WKWebView doesn't tick layout / JS reliably until
         // it's in a window; the simplest cure is a 1×1 hidden NSWindow.
         Self.host(webView)
+        _webView = webView
+        return webView
+    }
+
+    private static let entryURL = URL(string: "https://lucida.to/")!
+    /// User-Agent we mirror for any out-of-WebView requests (so cookies +
+    /// fingerprint stay consistent with the cleared session).
+    static let userAgent =
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 " +
+        "(KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+
+    override init() {
+        super.init()
     }
 
     // MARK: - Lifecycle

@@ -33,7 +33,7 @@ enum OrganizerPlanner {
             var folder = rootURL
             for level in profile.levels {
                 let raw = OrganizerTemplate.render(level.nameTemplate, for: track,
-                                                   fallback: level.groupBy.displayName,
+                                                   fallback: level.displayLabel,
                                                    primaryArtistOnly: profile.usePrimaryArtistOnly)
                 folder.appendPathComponent(raw, isDirectory: true)
             }

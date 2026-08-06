@@ -41,17 +41,42 @@ enum GroupingField: String, Codable, CaseIterable, Identifiable, Hashable {
     }
 }
 
-/// One level in the folder hierarchy. Tracks are bucketed by `groupBy`, and each
-/// bucket's folder name is rendered from `nameTemplate`.
+/// One level in the folder hierarchy. `nameTemplate` renders the folder name —
+/// tracks that render to the same name share a folder. `name` is the user's own
+/// label for the level (shown in the builder, and used as the fallback folder
+/// name when a template renders to nothing). `groupBy` seeds the defaults for a
+/// newly-added level and is retained so profiles saved by older builds decode.
 struct HierarchyLevel: Codable, Identifiable, Hashable {
     var id: UUID
     var groupBy: GroupingField
+    var name: String
     var nameTemplate: String
 
-    init(id: UUID = UUID(), groupBy: GroupingField, nameTemplate: String? = nil) {
+    init(id: UUID = UUID(), groupBy: GroupingField, name: String? = nil, nameTemplate: String? = nil) {
         self.id = id
         self.groupBy = groupBy
+        self.name = name ?? groupBy.displayName
         self.nameTemplate = nameTemplate ?? groupBy.defaultTemplate
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, groupBy, name, nameTemplate
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let field = try c.decode(GroupingField.self, forKey: .groupBy)
+        self.id = try c.decode(UUID.self, forKey: .id)
+        self.groupBy = field
+        self.name = try c.decodeIfPresent(String.self, forKey: .name) ?? field.displayName
+        self.nameTemplate = try c.decode(String.self, forKey: .nameTemplate)
+    }
+
+    /// Non-empty label to show in the UI and to fall back to when a template
+    /// renders to an empty string.
+    var displayLabel: String {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? groupBy.displayName : trimmed
     }
 }
 
@@ -101,11 +126,16 @@ struct OrganizerProfile: Codable, Identifiable, Hashable {
         self.deleteEmptyOriginals = try c.decodeIfPresent(Bool.self, forKey: .deleteEmptyOriginals) ?? true
     }
 
+    /// Level appended when the user taps "Add level" in the builder.
+    static func newLevel() -> HierarchyLevel {
+        HierarchyLevel(groupBy: .genre, name: "New level", nameTemplate: "{genre}")
+    }
+
     static let `default` = OrganizerProfile(
         name: "Artist / Album",
         levels: [
-            HierarchyLevel(groupBy: .albumArtist),
-            HierarchyLevel(groupBy: .album, nameTemplate: "{album} ({year})")
+            HierarchyLevel(groupBy: .albumArtist, name: "Album Artist"),
+            HierarchyLevel(groupBy: .album, name: "Album", nameTemplate: "{album} ({year})")
         ],
         fileTemplate: "{track} - {title}"
     )
@@ -115,16 +145,16 @@ struct OrganizerProfile: Codable, Identifiable, Hashable {
         OrganizerProfile(
             name: "Genre / Artist / Album",
             levels: [
-                HierarchyLevel(groupBy: .genre),
-                HierarchyLevel(groupBy: .albumArtist),
-                HierarchyLevel(groupBy: .album)
+                HierarchyLevel(groupBy: .genre, name: "Genre"),
+                HierarchyLevel(groupBy: .albumArtist, name: "Album Artist"),
+                HierarchyLevel(groupBy: .album, name: "Album")
             ]
         ),
         OrganizerProfile(
             name: "Year / Album",
             levels: [
-                HierarchyLevel(groupBy: .year),
-                HierarchyLevel(groupBy: .album, nameTemplate: "{albumArtist} - {album}")
+                HierarchyLevel(groupBy: .year, name: "Year"),
+                HierarchyLevel(groupBy: .album, name: "Album", nameTemplate: "{albumArtist} - {album}")
             ]
         )
     ]

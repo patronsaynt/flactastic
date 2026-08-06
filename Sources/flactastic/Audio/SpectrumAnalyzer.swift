@@ -36,6 +36,13 @@ final class SpectrumAnalyzer {
     private var displayTimer: Timer?
     private var spectrogramAccumulator: Int = 0
 
+    /// Consecutive near-silent frames appended to the spectrogram. Once the
+    /// bars have decayed AND the whole visible history has scrolled to
+    /// silence, the display tick stops writing observable state — so a paused
+    /// visualizer costs no Canvas redraws. Any non-silent buffer resumes it.
+    private var idleFrameStreak: Int = 0
+    nonisolated private static let idleEpsilon: Float = 0.001
+
     /// Latest FFT result, written by the audio thread and read by the
     /// display timer. The lock is uncontended in practice — the audio
     /// thread holds it for nanoseconds and the main thread reads at 60 Hz.
@@ -50,16 +57,16 @@ final class SpectrumAnalyzer {
         self.engine = engine
         isAttached = true
 
+        // FFT setup, window, and scratch buffers are allocated once here and
+        // owned by the tap closure — allocating them per buffer (let alone
+        // creating/destroying the FFT setup) on the audio thread is the kind
+        // of work real-time callbacks must avoid. Released when the tap is.
+        guard let fft = FFTResources(fftSize: Self.fftSize, log2N: Self.log2N) else { return }
         engine.installAnalysisTap(bufferSize: AVAudioFrameCount(Self.fftSize)) { [target] buffer, _ in
             // FFT runs on the audio thread (cheap; ~µs for a 1024-pt FFT).
             // Result is published to the lock — the display timer will
             // pick it up on the next tick.
-            guard let mags = SpectrumAnalyzer.computeMagnitudes(
-                from: buffer,
-                fftSize: Self.fftSize,
-                log2N: Self.log2N,
-                binCount: Self.binCount
-            ) else { return }
+            guard let mags = fft.computeMagnitudes(from: buffer, binCount: Self.binCount) else { return }
             target.withLock { $0 = mags }
         }
 
@@ -75,6 +82,8 @@ final class SpectrumAnalyzer {
         target.withLock { $0 = Array(repeating: 0, count: Self.binCount) }
         magnitudes = Array(repeating: 0, count: Self.binCount)
         spectrogramHistory.removeAll(keepingCapacity: false)
+        idleFrameStreak = 0
+        spectrogramAccumulator = 0
     }
 
     private func startDisplayTimer() {
@@ -92,6 +101,17 @@ final class SpectrumAnalyzer {
     /// out smoothly — the visual signature of music-spectrum displays.
     private func tick() {
         let latest = target.withLock { $0 }
+
+        // Fully settled (paused/silent long enough that bars and spectrogram
+        // are both blank): skip all observable writes so SwiftUI stops
+        // redrawing. The checks are a few hundred float compares — trivial
+        // next to a 60 fps Canvas redraw.
+        if idleFrameStreak >= Self.historyDepth,
+           latest.allSatisfy({ $0 < Self.idleEpsilon }),
+           magnitudes.allSatisfy({ $0 < Self.idleEpsilon }) {
+            return
+        }
+
         let count = magnitudes.count
         var smoothed = magnitudes
         smoothed.withUnsafeMutableBufferPointer { dst in
@@ -115,6 +135,11 @@ final class SpectrumAnalyzer {
         if spectrogramAccumulator >= 2 {
             spectrogramAccumulator = 0
             spectrogramHistory.append(smoothed)
+            if smoothed.allSatisfy({ $0 < Self.idleEpsilon }) {
+                idleFrameStreak += 1
+            } else {
+                idleFrameStreak = 0
+            }
             if spectrogramHistory.count > Self.historyDepth {
                 spectrogramHistory.removeFirst(spectrogramHistory.count - Self.historyDepth)
             }
@@ -123,64 +148,82 @@ final class SpectrumAnalyzer {
 
     // MARK: - FFT (audio thread)
 
-    /// Pure function — runs on the audio thread, no `self` capture. Applies
-    /// a Hann window, runs a real-to-complex FFT, then aggregates the linear
-    /// spectrum into log-spaced bins normalized to [0, 1].
-    nonisolated private static func computeMagnitudes(
-        from buffer: AVAudioPCMBuffer,
-        fftSize: Int,
-        log2N: vDSP_Length,
-        binCount: Int
-    ) -> [Float]? {
-        guard let channelData = buffer.floatChannelData else { return nil }
-        let frameLength = Int(buffer.frameLength)
-        guard frameLength >= fftSize else { return nil }
+    /// One-time FFT state reused across audio-tap invocations: the vDSP setup,
+    /// the Hann window, and mutable scratch buffers.
+    ///
+    /// `@unchecked Sendable` invariant: AVAudioEngine invokes a given node tap
+    /// serially, and this object is only ever used from inside one tap closure,
+    /// so the mutable scratch buffers are never touched by two threads at once.
+    /// `setup` and `window` are immutable after init.
+    nonisolated private final class FFTResources: @unchecked Sendable {
+        private let setup: FFTSetup
+        private let window: [Float]
+        private let fftSize: Int
+        private let log2N: vDSP_Length
+        private var samples: [Float]
+        private var realp: [Float]
+        private var imagp: [Float]
+        private var magnitudes: [Float]
 
-        var window = [Float](repeating: 0, count: fftSize)
-        vDSP_hann_window(&window, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
+        init?(fftSize: Int, log2N: vDSP_Length) {
+            guard let setup = vDSP_create_fftsetup(log2N, FFTRadix(kFFTRadix2)) else { return nil }
+            self.setup = setup
+            self.fftSize = fftSize
+            self.log2N = log2N
+            var window = [Float](repeating: 0, count: fftSize)
+            vDSP_hann_window(&window, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
+            self.window = window
+            let half = fftSize / 2
+            samples = [Float](repeating: 0, count: fftSize)
+            realp = [Float](repeating: 0, count: half)
+            imagp = [Float](repeating: 0, count: half)
+            magnitudes = [Float](repeating: 0, count: half)
+        }
 
-        var samples = [Float](repeating: 0, count: fftSize)
-        let src = channelData[0]
-        for i in 0..<fftSize { samples[i] = src[i] }
-        vDSP_vmul(samples, 1, window, 1, &samples, 1, vDSP_Length(fftSize))
+        deinit { vDSP_destroy_fftsetup(setup) }
 
-        let half = fftSize / 2
-        var realp = [Float](repeating: 0, count: half)
-        var imagp = [Float](repeating: 0, count: half)
+        /// Applies the Hann window, runs a real-to-complex FFT, then aggregates
+        /// the linear spectrum into log-spaced bins normalized to [0, 1].
+        func computeMagnitudes(from buffer: AVAudioPCMBuffer, binCount: Int) -> [Float]? {
+            guard let channelData = buffer.floatChannelData else { return nil }
+            let frameLength = Int(buffer.frameLength)
+            guard frameLength >= fftSize else { return nil }
 
-        guard let setup = vDSP_create_fftsetup(log2N, FFTRadix(kFFTRadix2)) else { return nil }
-        defer { vDSP_destroy_fftsetup(setup) }
+            let src = channelData[0]
+            for i in 0..<fftSize { samples[i] = src[i] }
+            vDSP_vmul(samples, 1, window, 1, &samples, 1, vDSP_Length(fftSize))
 
-        var magnitudes = [Float](repeating: 0, count: half)
-        realp.withUnsafeMutableBufferPointer { rp in
-            imagp.withUnsafeMutableBufferPointer { ip in
-                var split = DSPSplitComplex(realp: rp.baseAddress!, imagp: ip.baseAddress!)
-                samples.withUnsafeBufferPointer { sp in
-                    sp.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: half) { complexPtr in
-                        vDSP_ctoz(complexPtr, 2, &split, 1, vDSP_Length(half))
+            let half = fftSize / 2
+            realp.withUnsafeMutableBufferPointer { rp in
+                imagp.withUnsafeMutableBufferPointer { ip in
+                    var split = DSPSplitComplex(realp: rp.baseAddress!, imagp: ip.baseAddress!)
+                    samples.withUnsafeBufferPointer { sp in
+                        sp.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: half) { complexPtr in
+                            vDSP_ctoz(complexPtr, 2, &split, 1, vDSP_Length(half))
+                        }
                     }
+                    vDSP_fft_zrip(setup, &split, 1, log2N, FFTDirection(FFT_FORWARD))
+                    vDSP_zvabs(&split, 1, &magnitudes, 1, vDSP_Length(half))
                 }
-                vDSP_fft_zrip(setup, &split, 1, log2N, FFTDirection(FFT_FORWARD))
-                vDSP_zvabs(&split, 1, &magnitudes, 1, vDSP_Length(half))
             }
-        }
 
-        let scale: Float = 1.0 / Float(fftSize)
-        let scaled = magnitudes.map { $0 * scale }
+            var scale: Float = 1.0 / Float(fftSize)
+            vDSP_vsmul(magnitudes, 1, &scale, &magnitudes, 1, vDSP_Length(half))
 
-        var output = [Float](repeating: 0, count: binCount)
-        let minIdx: Float = 1
-        let maxIdx: Float = Float(half - 1)
-        for b in 0..<binCount {
-            let t0 = Float(b) / Float(binCount)
-            let t1 = Float(b + 1) / Float(binCount)
-            let lo = Int(minIdx * powf(maxIdx / minIdx, t0))
-            let hi = max(lo + 1, Int(minIdx * powf(maxIdx / minIdx, t1)))
-            let upper = min(hi, half)
-            var peak: Float = 0
-            for i in lo..<upper { peak = max(peak, scaled[i]) }
-            output[b] = min(1, sqrtf(peak * 8))
+            var output = [Float](repeating: 0, count: binCount)
+            let minIdx: Float = 1
+            let maxIdx: Float = Float(half - 1)
+            for b in 0..<binCount {
+                let t0 = Float(b) / Float(binCount)
+                let t1 = Float(b + 1) / Float(binCount)
+                let lo = Int(minIdx * powf(maxIdx / minIdx, t0))
+                let hi = max(lo + 1, Int(minIdx * powf(maxIdx / minIdx, t1)))
+                let upper = min(hi, half)
+                var peak: Float = 0
+                for i in lo..<upper { peak = max(peak, magnitudes[i]) }
+                output[b] = min(1, sqrtf(peak * 8))
+            }
+            return output
         }
-        return output
     }
 }

@@ -6,6 +6,7 @@ private struct EditableTrack: Identifiable {
     let id: UUID
     var title: String
     var artists: [String]
+    var trackNumber: Int
     let originalTrack: Track
 }
 
@@ -30,6 +31,14 @@ private struct TrackDropDelegate: DropDelegate {
                 fromOffsets: IndexSet(integer: from),
                 toOffset: from < toIndex ? toIndex + 1 : toIndex
             )
+            // Dragging expresses an explicit intent to resequence the album,
+            // so renumber everyone to match the new order. Track numbers are
+            // otherwise left untouched (see EditableTrack.trackNumber) so
+            // albums with sparse/non-contiguous numbering aren't silently
+            // rewritten just by opening the editor.
+            for i in tracks.indices {
+                tracks[i].trackNumber = i + 1
+            }
         }
         draggingIndex = toIndex
     }
@@ -49,8 +58,9 @@ struct AlbumMetadataEditorView: View {
     @State private var albumName:     String
     @State private var albumArtists:  [String]
     @State private var year:          String
-    @State private var genre:         String
-    @State private var isCompilation: Bool
+    @State private var genre:           String
+    @State private var secondaryGenres: [String]
+    @State private var isCompilation:   Bool
 
     @State private var artworkData:    Data?
     @State private var artworkChanged: Bool = false
@@ -76,19 +86,21 @@ struct AlbumMetadataEditorView: View {
         _albumArtists = State(initialValue: ArtistResolver.explicitlySeparated(albumOwnerSource ?? "")
             ?? (albumOwnerSource.flatMap { $0.isEmpty ? nil : [$0] } ?? []))
         _year          = State(initialValue: album.year.map { "\($0)" } ?? "")
-        _genre         = State(initialValue: album.genre  ?? "")
-        _isCompilation = State(initialValue: album.isCompilation)
+        _genre           = State(initialValue: album.genre ?? "")
+        _secondaryGenres = State(initialValue: album.secondaryGenres)
+        _isCompilation   = State(initialValue: album.isCompilation)
         _artworkData   = State(initialValue: album.artwork)
         let sorted = album.tracks.sorted {
             ($0.trackNumber ?? Int.max) < ($1.trackNumber ?? Int.max)
         }
-        _editableTracks = State(initialValue: sorted.map { track in
+        _editableTracks = State(initialValue: sorted.enumerated().map { index, track in
             let chips = ArtistResolver.explicitlySeparated(track.artist ?? "")
                 ?? (track.artist.flatMap { $0.isEmpty ? nil : [$0] } ?? [])
             return EditableTrack(
                 id: track.id,
                 title: track.title,
                 artists: chips,
+                trackNumber: track.trackNumber ?? (index + 1),
                 originalTrack: track
             )
         })
@@ -181,6 +193,7 @@ struct AlbumMetadataEditorView: View {
                 metaField("Year",  text: $year,  width: 80, numericOnly: true)
                 GenreFieldView(text: $genre)
             }
+            SecondaryGenresFieldView(genres: $secondaryGenres, primaryGenre: genre)
 
             if isSaving {
                 HStack(spacing: Theme.Spacing.xs) {
@@ -249,10 +262,12 @@ struct AlbumMetadataEditorView: View {
                     ForEach(editableTracks.indices, id: \.self) { index in
                         VStack(spacing: 4) {
                             HStack(spacing: Theme.Spacing.sm) {
-                                Text("\(index + 1)")
+                                TextField("", text: trackNumberText(index))
+                                    .textFieldStyle(.plain)
+                                    .multilineTextAlignment(.trailing)
                                     .font(Theme.Font.captionMono)
                                     .foregroundStyle(Theme.textTertiary)
-                                    .frame(width: 24, alignment: .trailing)
+                                    .frame(width: 28)
 
                                 TextField("", text: $editableTracks[index].title)
                                     .textFieldStyle(.plain)
@@ -280,7 +295,7 @@ struct AlbumMetadataEditorView: View {
                             }
 
                             HStack(alignment: .top, spacing: Theme.Spacing.sm) {
-                                Color.clear.frame(width: 24)
+                                Color.clear.frame(width: 28)
                                 ArtistsFieldView(
                                     artists: $editableTracks[index].artists,
                                     label: nil,
@@ -330,6 +345,19 @@ struct AlbumMetadataEditorView: View {
 
     // MARK: - Helpers
 
+    /// Text binding for a track row's number field, backed directly by
+    /// `EditableTrack.trackNumber` rather than the row's array position —
+    /// edits here are independent of drag-reorder.
+    private func trackNumberText(_ index: Int) -> Binding<String> {
+        Binding(
+            get: { String(editableTracks[index].trackNumber) },
+            set: { newValue in
+                let filtered = newValue.filter(\.isNumber)
+                editableTracks[index].trackNumber = Int(filtered) ?? 0
+            }
+        )
+    }
+
     /// Trim, drop empties, and serialise a chip list into the canonical
     /// `Artist A ; Artist B` form. Returns nil if the list is empty so the
     /// writer treats that as "clear the tag".
@@ -370,6 +398,7 @@ struct AlbumMetadataEditorView: View {
         let parsedYear = Int(year)
         let newAlbum   = albumName.trimmingCharacters(in: .whitespaces)
         let newGenre   = genre.isEmpty ? nil : genre
+        let cleanedSecondary = secondaryGenres.filter { $0.lowercased() != genre.lowercased() }
 
         // Album-level artist — written to the ALBUMARTIST tag on every track.
         // Always treated as explicit: a no-op edit yields the same string the
@@ -394,7 +423,7 @@ struct AlbumMetadataEditorView: View {
         Task {
             var collected: [Track] = []
             var firstError: String? = nil
-            for (index, item) in orderedTracks.enumerated() {
+            for item in orderedTracks {
                 let newTitle = item.title.trimmingCharacters(in: .whitespaces)
                 // Per-track artist: prefer the row's chips. If the user
                 // cleared them entirely, inherit from the album-level chips
@@ -409,7 +438,8 @@ struct AlbumMetadataEditorView: View {
                         album:             newAlbum,
                         year:              parsedYear,
                         genre:             newGenre,
-                        trackNumber:       index + 1,
+                        secondaryGenres:   cleanedSecondary,
+                        trackNumber:       item.trackNumber,
                         artworkChange:     artChange,
                         albumArtistChange: aaChange,
                         compilationChange: compilationChange

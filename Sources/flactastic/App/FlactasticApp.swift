@@ -3,11 +3,13 @@ import AppKit
 
 @main
 struct FlactasticApp: App {
-    @State private var library = LibraryStore()
+    // No default values here: every one of these is assigned in `init()`, and
+    // a default would construct a full extra store that is immediately discarded.
+    @State private var library: LibraryStore
     @State private var player: PlayerState
     @State private var listening: ListeningStore
     @State private var settings: Settings
-    @State private var playlistStore = PlaylistStore()
+    @State private var playlistStore: PlaylistStore
     @State private var artistStore: ArtistStore
     @State private var artistRemoteCache: ArtistRemoteCache
     @State private var artistImageFetcher: ArtistImageFetcher
@@ -31,11 +33,18 @@ struct FlactasticApp: App {
         _artistImageFetcher = State(initialValue: ArtistImageFetcher(cache: cache, store: store))
 
         // Streaming downloads: a single Lucida provider backed by a hidden
-        // WKWebView pointed at lucida.to. The WebView clears Cloudflare in
-        // the background so the first paste-and-resolve is fast.
+        // WKWebView pointed at lucida.to. The WebView (and its WebKit content
+        // process) is created lazily on first use — opening the Downloads tab
+        // triggers `warmUp()`, which clears Cloudflare before the first
+        // paste-and-resolve.
         let registry = StreamerRegistry()
         let lucidaController = LucidaWebController()
-        let lucidaProvider = LucidaWebProvider(controller: lucidaController)
+        // Shared across the provider (per-track fallback when Lucida's own
+        // Spotify downloader fails) and the playlist rebuild pipeline
+        // (Amazon-first source ordering) so both respect the same Odesli
+        // rate-limit throttle instead of racing two independent ones.
+        let amazonMatcher = AmazonMatchService()
+        let lucidaProvider = LucidaWebProvider(controller: lucidaController, amazonMatcher: amazonMatcher)
         registry.register(lucidaProvider)
         _lucidaController = State(initialValue: lucidaController)
         let lib = LibraryStore()
@@ -57,7 +66,7 @@ struct FlactasticApp: App {
             playlistStore: plStore,
             library: lib,
             lucidaProvider: lucidaProvider,
-            amazonMatcher: AmazonMatchService()
+            amazonMatcher: amazonMatcher
         ))
 
         let lyricsCache = LyricsRemoteCache()
@@ -67,7 +76,7 @@ struct FlactasticApp: App {
             metadataWriter: writer
         ))
     }
-    @State private var metadataWriter = MetadataWriter()
+    @State private var metadataWriter: MetadataWriter
     @State private var homeHighlight = HomeHighlight()
     @State private var importCoordinator = ImportCoordinator()
     @State private var playlistAddCoordinator = PlaylistAddCoordinator()
@@ -262,9 +271,12 @@ struct FlactasticApp: App {
 
     @MainActor
     private func bootstrap() async {
-        artistStore.load()
-        artistRemoteCache.load()
-        lyricsRemoteCache.load()
+        // Async loads: file reads + JSON decodes run off the main actor so
+        // launch doesn't block first paint on disk I/O (the listening log in
+        // particular grows with use).
+        await artistStore.loadAsync()
+        await artistRemoteCache.loadAsync()
+        await lyricsRemoteCache.loadAsync()
         player.engine.setVolume(settings.volume)
         discordPresence.attach(player: player, settings: settings)
         await spotifyAuth.restore()
@@ -273,7 +285,7 @@ struct FlactasticApp: App {
             if FileManager.default.fileExists(atPath: url.path) {
                 library.openFolder(url)
                 playlistStore.load(from: url)
-                listening.load(from: url)
+                await listening.loadAsync(from: url)
                 return
             }
         }

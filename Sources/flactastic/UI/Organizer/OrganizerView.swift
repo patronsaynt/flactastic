@@ -1,10 +1,11 @@
 import SwiftUI
 
 /// 5th tab: lets the user reshape their source folder by defining a folder
-/// hierarchy and filename template, previewing the resulting moves, and
-/// applying them. Designed to feel approachable: token chips replace
-/// memorisation, every template has a live example, and Apply is gated behind
-/// a confirmation because the operation moves files in place.
+/// hierarchy and filename template, previewing the resulting layout, and
+/// applying it. Two columns — a builder on the left, a live destination tree on
+/// the right. The preview re-plans automatically (debounced) as the rules are
+/// edited, and Apply is gated behind a confirmation because the operation moves
+/// files in place.
 struct OrganizerView: View {
     @Environment(LibraryStore.self) private var library
     @State private var store = OrganizerProfilesStore()
@@ -12,26 +13,47 @@ struct OrganizerView: View {
     @State private var showApplyConfirm = false
     @State private var showRename = false
     @State private var renameDraft = ""
+    @State private var isTagGuideExpanded = false
+    /// Which template the token chips and Tag Guide cards insert into. Survives
+    /// the field losing focus when a chip is clicked.
+    @State private var activeTarget: TemplateTarget = .filename
+    @FocusState private var focusedField: TemplateTarget?
+    @State private var draggingLevelID: UUID?
+
+    private enum TemplateTarget: Hashable {
+        case filename
+        case level(UUID)
+    }
+
+    /// Stand-in used to render template examples before a library has been
+    /// scanned, so the builder is never showing blank example lines.
+    private static let sampleTrack = Track(
+        url: URL(fileURLWithPath: "/Music/Sample Song.flac"),
+        title: "Sample Song",
+        artist: "SZA",
+        albumArtist: "SZA",
+        album: "Album Title",
+        trackNumber: 1,
+        fileFormat: .flac,
+        genre: "Electronic",
+        year: 2024
+    )
 
     var body: some View {
         VStack(spacing: 0) {
-            profileBar
-                .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.vertical, Theme.Spacing.md)
-
+            pageHeader
             Divider().background(Theme.divider)
 
-            HStack(alignment: .top, spacing: 0) {
-                configurationColumn
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .padding(Theme.Spacing.xl)
+            HStack(spacing: 0) {
+                builderColumn
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 Divider().background(Theme.divider)
 
                 previewColumn
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .padding(Theme.Spacing.xl)
+                    .frame(minWidth: 380, idealWidth: 440, maxWidth: 480, maxHeight: .infinity)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.background)
@@ -40,13 +62,23 @@ struct OrganizerView: View {
                 applyOverlay
             }
         }
+        .onChange(of: focusedField) { _, newValue in
+            if let newValue { activeTarget = newValue }
+        }
+        .onChange(of: store.selected) { _, _ in refreshPreview() }
+        .onChange(of: library.tracks.count) { _, _ in refreshPreview() }
+        .onChange(of: library.rootURL) { _, _ in refreshPreview() }
+        .task { refreshPreview() }
         .confirmationDialog(
             "Apply organization?",
             isPresented: $showApplyConfirm,
             titleVisibility: .visible
         ) {
             Button("Move \(model.moveCount) files", role: .destructive) {
-                Task { await model.apply(library: library, profile: store.selected) }
+                Task {
+                    await model.apply(library: library, profile: store.selected)
+                    refreshPreview()
+                }
             }
             Button("Cancel", role: .cancel) { }
         } message: {
@@ -57,25 +89,66 @@ struct OrganizerView: View {
         }
     }
 
-    // MARK: - Profile bar
+    private func refreshPreview() {
+        model.schedulePreview(
+            profile: store.selected,
+            tracks: library.tracks,
+            rootURL: library.rootURL
+        )
+    }
 
-    private var profileBar: some View {
-        HStack(spacing: Theme.Spacing.md) {
-            Image(systemName: "folder.badge.gearshape")
-                .font(.system(size: 18))
-                .foregroundStyle(Theme.textSecondary)
+    private func mutateProfile(_ body: (inout OrganizerProfile) -> Void) {
+        var profile = store.selected
+        body(&profile)
+        store.selected = profile
+    }
 
-            Text("Organizer")
-                .font(Theme.Font.title)
-                .foregroundStyle(Theme.textPrimary)
+    private var exampleTrack: Track {
+        library.tracks.first ?? Self.sampleTrack
+    }
 
-            Spacer()
+    private func example(for template: String, fallback: String) -> String {
+        OrganizerTemplate.render(
+            template,
+            for: exampleTrack,
+            fallback: fallback,
+            primaryArtistOnly: store.selected.usePrimaryArtistOnly
+        )
+    }
 
+    // MARK: - Page header
+
+    private var pageHeader: some View {
+        HStack(spacing: 16) {
+            Image(systemName: "folder.badge.plus")
+                .font(.system(size: 17, weight: .regular))
+                .foregroundStyle(Theme.accent)
+                .frame(width: 34, height: 34)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Theme.accent.opacity(0.10)))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Organizer")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                Text("Define how your library gets sorted into folders and named on disk.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            profilePicker
+        }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 20)
+    }
+
+    private var profilePicker: some View {
+        HStack(spacing: 6) {
             Menu {
                 ForEach(store.profiles) { profile in
                     Button {
                         store.selectedID = profile.id
-                        model.markStale()
+                        refreshPreview()
                     } label: {
                         if profile.id == store.selectedID {
                             Label(profile.name, systemImage: "checkmark")
@@ -85,56 +158,69 @@ struct OrganizerView: View {
                     }
                 }
                 Divider()
-                Button("New from Preset…") { } // anchor; presets below
-                ForEach(OrganizerProfile.presets) { preset in
-                    Button("New: \(preset.name)") {
-                        var fresh = preset
-                        fresh.id = UUID()
-                        store.add(fresh)
-                        model.markStale()
+                Section("New from preset") {
+                    ForEach(OrganizerProfile.presets) { preset in
+                        Button(preset.name) {
+                            var fresh = preset
+                            fresh.id = UUID()
+                            fresh.levels = preset.levels.map {
+                                HierarchyLevel(id: UUID(), groupBy: $0.groupBy, name: $0.name, nameTemplate: $0.nameTemplate)
+                            }
+                            store.add(fresh)
+                            refreshPreview()
+                        }
                     }
                 }
             } label: {
-                HStack(spacing: Theme.Spacing.xs) {
+                HStack(spacing: 6) {
                     Text(store.selected.name)
-                        .font(Theme.Font.bodyMedium)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Theme.textTertiary)
                 }
-                .foregroundStyle(Theme.textPrimary)
-                .padding(.horizontal, Theme.Spacing.md)
-                .padding(.vertical, Theme.Spacing.sm)
-                .background(Capsule().fill(Theme.surface))
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
             .fixedSize()
 
-            iconButton("pencil", help: "Rename profile") {
+            Rectangle()
+                .fill(Theme.divider)
+                .frame(width: 1, height: 18)
+                .padding(.horizontal, 2)
+
+            OrganizerIconButton(symbol: "pencil", help: "Rename profile", isCircular: true) {
                 renameDraft = store.selected.name
                 showRename = true
             }
-            iconButton("plus.square.on.square", help: "Duplicate profile") {
+            OrganizerIconButton(symbol: "plus.square.on.square", help: "Duplicate profile", isCircular: true) {
                 store.duplicateSelected()
-                model.markStale()
+                refreshPreview()
             }
-            iconButton("trash", help: "Delete profile") {
+            OrganizerIconButton(
+                symbol: "trash",
+                help: "Delete profile",
+                tint: Theme.qualityLow.opacity(0.75),
+                hoverTint: Theme.qualityLow,
+                isEnabled: store.profiles.count > 1,
+                isCircular: true
+            ) {
                 store.removeSelected()
-                model.markStale()
+                refreshPreview()
             }
             .disabled(store.profiles.count <= 1)
         }
-    }
-
-    private func iconButton(_ system: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: system)
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.textSecondary)
-                .frame(width: 28, height: 28)
-                .background(Circle().fill(Theme.surface))
-        }
-        .buttonStyle(.plain)
-        .help(help)
+        .padding(.leading, 14)
+        .padding(.trailing, 6)
+        .frame(height: 38)
+        .background(
+            Capsule()
+                .fill(Theme.surface)
+                .overlay(Capsule().stroke(Theme.divider, lineWidth: 1))
+        )
+        .fixedSize()
     }
 
     private var renameSheet: some View {
@@ -143,576 +229,645 @@ struct OrganizerView: View {
                 .font(Theme.Font.headline)
             TextField("Profile name", text: $renameDraft)
                 .textFieldStyle(.roundedBorder)
+                .onSubmit { commitRename() }
             HStack {
                 Spacer()
                 Button("Cancel") { showRename = false }
-                Button("Save") {
-                    var s = store.selected
-                    s.name = renameDraft.trimmingCharacters(in: .whitespaces)
-                    if !s.name.isEmpty { store.selected = s }
-                    showRename = false
-                }
-                .keyboardShortcut(.defaultAction)
+                Button("Save") { commitRename() }
+                    .keyboardShortcut(.defaultAction)
             }
         }
         .padding(Theme.Spacing.lg)
         .frame(width: 360)
     }
 
-    // MARK: - Configuration column
+    private func commitRename() {
+        let trimmed = renameDraft.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty {
+            mutateProfile { $0.name = trimmed }
+        }
+        showRename = false
+    }
 
-    private var configurationColumn: some View {
+    // MARK: - Builder column
+
+    private var builderColumn: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                sectionHeader("Folder hierarchy", subtitle: "Files are placed in nested folders, top to bottom.")
-
-                if store.selected.levels.isEmpty {
-                    emptyHierarchyHint
-                } else {
-                    VStack(spacing: Theme.Spacing.sm) {
-                        ForEach(store.selected.levels) { level in
-                            hierarchyRow(level)
-                        }
-                    }
-                }
-
-                Button {
-                    var s = store.selected
-                    s.levels.append(HierarchyLevel(groupBy: .album))
-                    store.selected = s
-                    model.markStale()
-                } label: {
-                    HStack(spacing: Theme.Spacing.xs) {
-                        Image(systemName: "plus.circle.fill")
-                        Text("Add level")
-                    }
-                    .font(Theme.Font.bodyMedium)
-                    .foregroundStyle(Theme.textSecondary)
-                }
-                .buttonStyle(.plain)
-
-                Divider().background(Theme.divider).padding(.vertical, Theme.Spacing.sm)
-
-                sectionHeader("File name", subtitle: "How each track file is named within its folder.")
-                templateField(
-                    template: Binding(
-                        get: { store.selected.fileTemplate },
-                        set: { newValue in
-                            var s = store.selected
-                            s.fileTemplate = newValue
-                            store.selected = s
-                            model.markStale()
-                        }
-                    ),
-                    fallback: "Untitled"
+            VStack(alignment: .leading, spacing: 0) {
+                sectionHeader(
+                    "Folder hierarchy",
+                    subtitle: "Each level nests inside the one above — files land in the deepest folder."
                 )
 
-                Divider().background(Theme.divider).padding(.vertical, Theme.Spacing.sm)
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(store.selected.levels.enumerated()), id: \.element.id) { index, level in
+                        levelRow(level, index: index)
+                    }
 
-                primaryArtistToggle
+                    addLevelButton
+                }
+                .padding(.top, 18)
 
-                deleteEmptyOriginalsToggle
+                sectionDivider
 
-                Divider().background(Theme.divider).padding(.vertical, Theme.Spacing.sm)
+                sectionHeader("File name", subtitle: "How each track file is named inside its final folder.")
+                    .padding(.bottom, 16)
 
-                tokenReference
+                filenameCard
+
+                sectionDivider
+
+                VStack(alignment: .leading, spacing: 18) {
+                    settingRow(
+                        title: "Use primary artist only",
+                        subtitle: "For tracks credited to multiple artists (\u{201C}A & B\u{201D}, \u{201C}A feat. B\u{201D}, \u{201C}A; B\u{201D}), file under just the first.",
+                        isOn: Binding(
+                            get: { store.selected.usePrimaryArtistOnly },
+                            set: { newValue in mutateProfile { $0.usePrimaryArtistOnly = newValue } }
+                        )
+                    )
+                    settingRow(
+                        title: "Delete empty original folders",
+                        subtitle: "After moves complete, remove any source folders that no longer contain audio (cover art and other leftovers are swept up too).",
+                        isOn: Binding(
+                            get: { store.selected.deleteEmptyOriginals },
+                            set: { newValue in mutateProfile { $0.deleteEmptyOriginals = newValue } }
+                        )
+                    )
+                }
+
+                sectionDivider
+
+                tagGuide
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 32)
+            .padding(.top, 28)
+            .padding(.bottom, 60)
+        }
+    }
+
+    private func sectionHeader(_ title: String, subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+            Text(subtitle)
+                .font(.system(size: 12.5))
+                .foregroundStyle(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var sectionDivider: some View {
+        Rectangle()
+            .fill(Theme.divider)
+            .frame(height: 1)
+            .padding(.vertical, 30)
+    }
+
+    // MARK: - Hierarchy levels
+
+    private func levelRow(_ level: HierarchyLevel, index: Int) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            if index > 0 {
+                connectorRail
+            }
+            levelCard(level, index: index)
+        }
+        .padding(.leading, CGFloat(index) * 20)
+        .opacity(draggingLevelID == level.id ? 0.4 : 1)
+        .dropDestination(for: String.self) { items, _ in
+            guard let raw = items.first, let draggedID = UUID(uuidString: raw) else { return false }
+            return moveLevel(id: draggedID, to: index)
+        }
+    }
+
+    /// Elbow connecting a level to its parent, mirroring the design's rail: a
+    /// vertical stem running up into the row above and a short horizontal stub
+    /// into the card.
+    private var connectorRail: some View {
+        ZStack(alignment: .topLeading) {
+            Rectangle()
+                .fill(Theme.divider)
+                .frame(width: 2)
+                .padding(.top, -14)
+                .padding(.bottom, 20)
+                .padding(.leading, 9)
+            Rectangle()
+                .fill(Theme.divider)
+                .frame(width: 11, height: 2)
+                .padding(.leading, 9)
+                .padding(.top, 20)
+        }
+        .frame(width: 20)
+    }
+
+    private func levelCard(_ level: HierarchyLevel, index: Int) -> some View {
+        let isActive = activeTarget == .level(level.id)
+        let levelCount = store.selected.levels.count
+
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.textTertiary)
+                    .frame(width: 22, height: 22)
+                    .help("Drag to reorder")
+                    .draggable(level.id.uuidString) {
+                        Text(level.displayLabel)
+                            .font(.system(size: 13, weight: .semibold))
+                            .padding(6)
+                            .background(Theme.surfaceElevated)
+                    }
+
+                Image(systemName: "folder")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(Theme.accent)
+
+                TextField(
+                    level.groupBy.displayName,
+                    text: Binding(
+                        get: { level.name },
+                        set: { newValue in
+                            mutateProfile { profile in
+                                if let i = profile.levels.firstIndex(where: { $0.id == level.id }) {
+                                    profile.levels[i].name = newValue
+                                }
+                            }
+                        }
+                    )
+                )
+                .textFieldStyle(.plain)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+                .frame(maxWidth: 150)
+
+                Spacer(minLength: 0)
+
+                OrganizerIconButton(
+                    symbol: "chevron.up",
+                    size: 12,
+                    help: "Move up",
+                    isEnabled: index > 0
+                ) {
+                    _ = moveLevel(id: level.id, to: index - 1)
+                }
+                .disabled(index == 0)
+
+                OrganizerIconButton(
+                    symbol: "chevron.down",
+                    size: 12,
+                    help: "Move down",
+                    isEnabled: index < levelCount - 1
+                ) {
+                    _ = moveLevel(id: level.id, to: index + 1)
+                }
+                .disabled(index >= levelCount - 1)
+
+                OrganizerIconButton(
+                    symbol: "trash",
+                    size: 12,
+                    help: "Remove level",
+                    tint: Theme.qualityLow.opacity(0.7),
+                    hoverTint: Theme.qualityLow,
+                    isEnabled: levelCount > 1
+                ) {
+                    mutateProfile { $0.levels.removeAll { $0.id == level.id } }
+                    if activeTarget == .level(level.id) { activeTarget = .filename }
+                }
+                .disabled(levelCount <= 1)
+            }
+            .padding(.leading, 4)
+            .padding(.trailing, 8)
+            .padding(.vertical, 10)
+
+            VStack(alignment: .leading, spacing: 0) {
+                templateField(
+                    text: Binding(
+                        get: { level.nameTemplate },
+                        set: { newValue in
+                            mutateProfile { profile in
+                                if let i = profile.levels.firstIndex(where: { $0.id == level.id }) {
+                                    profile.levels[i].nameTemplate = newValue
+                                }
+                            }
+                        }
+                    ),
+                    target: .level(level.id)
+                )
+
+                exampleLine(example(for: level.nameTemplate, fallback: level.displayLabel))
+
+                if isActive {
+                    tokenChipRow
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 14)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Theme.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(isActive ? Theme.accent : Theme.divider, lineWidth: 1.5)
+                )
+        )
+        .padding(.bottom, 14)
+    }
+
+    /// Moves the dragged level to `destination`, clamped into range. Returns
+    /// false when the move is a no-op so drop targets can reject it.
+    @discardableResult
+    private func moveLevel(id: UUID, to destination: Int) -> Bool {
+        var profile = store.selected
+        guard let from = profile.levels.firstIndex(where: { $0.id == id }) else { return false }
+        let to = min(max(destination, 0), profile.levels.count - 1)
+        guard from != to else { return false }
+        let level = profile.levels.remove(at: from)
+        profile.levels.insert(level, at: to)
+        store.selected = profile
+        return true
+    }
+
+    private var addLevelButton: some View {
+        Button {
+            let level = OrganizerProfile.newLevel()
+            mutateProfile { $0.levels.append(level) }
+            activeTarget = .level(level.id)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .bold))
+                Text("Add level")
+                    .font(.system(size: 13))
+            }
+            .foregroundStyle(Theme.textSecondary)
+            .padding(.leading, 12)
+            .padding(.trailing, 16)
+            .frame(height: 36)
+            .background(
+                Capsule().strokeBorder(
+                    Theme.divider,
+                    style: StrokeStyle(lineWidth: 1, dash: [4, 3])
+                )
+            )
+        }
+        .buttonStyle(.plain)
+        .help("Add another folder level below the last one")
+    }
+
+    // MARK: - File name
+
+    private var filenameCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            templateField(
+                text: Binding(
+                    get: { store.selected.fileTemplate },
+                    set: { newValue in mutateProfile { $0.fileTemplate = newValue } }
+                ),
+                target: .filename
+            )
+
+            exampleLine(
+                example(for: store.selected.fileTemplate, fallback: "Untitled")
+                    + "." + exampleTrack.url.pathExtension
+            )
+
+            tokenChipRow
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Theme.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(activeTarget == .filename ? Theme.accent : Theme.divider, lineWidth: 1.5)
+                )
+        )
+    }
+
+    private func templateField(text: Binding<String>, target: TemplateTarget) -> some View {
+        TextField("", text: text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 13.5, design: .monospaced))
+            .foregroundStyle(Theme.textPrimary)
+            .focused($focusedField, equals: target)
+            .padding(.horizontal, 14)
+            .frame(height: 40)
+            .background(
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(Theme.surfaceElevated)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9)
+                            .stroke(focusedField == target ? Theme.accent : Theme.divider, lineWidth: 1.5)
+                    )
+            )
+    }
+
+    private func exampleLine(_ text: String) -> some View {
+        HStack(spacing: 4) {
+            Text("Example:")
+                .foregroundStyle(Theme.textTertiary)
+            Text(text)
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .font(.system(size: 11.5))
+        .padding(.top, 8)
+    }
+
+    private var tokenChipRow: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Rectangle()
+                .fill(Theme.divider)
+                .frame(height: 1)
+                .padding(.bottom, 12)
+
+            FlowLayout(spacing: 6, lineSpacing: 6) {
+                ForEach(OrganizerTemplate.allTokens) { token in
+                    OrganizerTokenChip(text: token.placeholder, help: token.description) {
+                        insert(token)
+                    }
+                }
+            }
+        }
+        .padding(.top, 12)
+    }
+
+    private func insert(_ token: OrganizerTemplate.Token) {
+        mutateProfile { profile in
+            switch activeTarget {
+            case .filename:
+                profile.fileTemplate += token.placeholder
+            case .level(let id):
+                if let i = profile.levels.firstIndex(where: { $0.id == id }) {
+                    profile.levels[i].nameTemplate += token.placeholder
+                }
+            }
+        }
+    }
+
+    // MARK: - Toggles
+
+    private func settingRow(title: String, subtitle: String, isOn: Binding<Bool>) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            OrganizerPillToggle(isOn: isOn)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13.5, weight: .medium))
+                    .foregroundStyle(Theme.textPrimary)
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private func sectionHeader(_ title: String, subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(Theme.Font.headline)
-                .foregroundStyle(Theme.textPrimary)
-            Text(subtitle)
-                .font(Theme.Font.caption)
-                .foregroundStyle(Theme.textTertiary)
-        }
-    }
+    // MARK: - Tag guide
 
-    private var emptyHierarchyHint: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Text("Add a grouping level to begin.")
-                .font(Theme.Font.body)
-                .foregroundStyle(Theme.textSecondary)
-            HStack(spacing: Theme.Spacing.sm) {
-                ForEach(OrganizerProfile.presets) { preset in
-                    Button(preset.name) {
-                        var s = store.selected
-                        s.levels = preset.levels.map {
-                            HierarchyLevel(id: UUID(), groupBy: $0.groupBy, nameTemplate: $0.nameTemplate)
-                        }
-                        s.fileTemplate = preset.fileTemplate
-                        store.selected = s
-                        model.markStale()
-                    }
-                    .buttonStyle(.plain)
-                    .font(Theme.Font.caption)
-                    .padding(.horizontal, Theme.Spacing.md)
-                    .padding(.vertical, Theme.Spacing.xs)
-                    .background(Capsule().fill(Theme.surface))
-                    .foregroundStyle(Theme.textPrimary)
-                }
-            }
-        }
-        .padding(Theme.Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: Theme.Radius.md).fill(Theme.surface.opacity(0.5)))
-    }
-
-    private func hierarchyRow(_ level: HierarchyLevel) -> some View {
-        let idx = store.selected.levels.firstIndex(of: level) ?? 0
-        return VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            HStack(spacing: Theme.Spacing.sm) {
-                Text("\(idx + 1)")
-                    .font(Theme.Font.captionMono)
-                    .foregroundStyle(Theme.textTertiary)
-                    .frame(width: 18, alignment: .center)
-
-                Menu {
-                    ForEach(GroupingField.allCases) { field in
-                        Button(field.displayName) {
-                            var s = store.selected
-                            if let i = s.levels.firstIndex(where: { $0.id == level.id }) {
-                                let oldDefault = s.levels[i].groupBy.defaultTemplate
-                                s.levels[i].groupBy = field
-                                if s.levels[i].nameTemplate == oldDefault {
-                                    s.levels[i].nameTemplate = field.defaultTemplate
-                                }
-                            }
-                            store.selected = s
-                            model.markStale()
-                        }
-                    }
-                } label: {
-                    Text(level.groupBy.displayName)
-                        .font(Theme.Font.bodyMedium)
+    private var tagGuide: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeOut(duration: 0.15)) { isTagGuideExpanded.toggle() }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Theme.textTertiary)
+                        .rotationEffect(.degrees(isTagGuideExpanded ? 90 : 0))
+                    Text("Tag guide")
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
-                        .padding(.horizontal, Theme.Spacing.sm)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(Theme.surfaceElevated))
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-
-                templateField(
-                    template: Binding(
-                        get: { level.nameTemplate },
-                        set: { newValue in
-                            var s = store.selected
-                            if let i = s.levels.firstIndex(where: { $0.id == level.id }) {
-                                s.levels[i].nameTemplate = newValue
-                            }
-                            store.selected = s
-                            model.markStale()
-                        }
-                    ),
-                    fallback: level.groupBy.displayName,
-                    inline: true
-                )
-
-                Spacer(minLength: 0)
-
-                Button {
-                    moveLevel(level, by: -1)
-                } label: {
-                    Image(systemName: "chevron.up")
-                        .font(.system(size: 11))
+                    Text("\(OrganizerTemplate.allTokens.count) tokens")
+                        .font(.system(size: 12))
                         .foregroundStyle(Theme.textTertiary)
-                        .frame(width: 22, height: 22)
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(.plain)
-                .disabled(idx == 0)
-
-                Button {
-                    moveLevel(level, by: 1)
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.textTertiary)
-                        .frame(width: 22, height: 22)
-                }
-                .buttonStyle(.plain)
-                .disabled(idx == store.selected.levels.count - 1)
-
-                Button {
-                    var s = store.selected
-                    s.levels.removeAll { $0.id == level.id }
-                    store.selected = s
-                    model.markStale()
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.textTertiary)
-                        .frame(width: 22, height: 22)
-                }
-                .buttonStyle(.plain)
+                .contentShape(Rectangle())
             }
-        }
-        .padding(Theme.Spacing.sm)
-        .background(RoundedRectangle(cornerRadius: Theme.Radius.md).fill(Theme.surface))
-    }
+            .buttonStyle(.plain)
 
-    private func moveLevel(_ level: HierarchyLevel, by delta: Int) {
-        var s = store.selected
-        guard let i = s.levels.firstIndex(where: { $0.id == level.id }) else { return }
-        let j = i + delta
-        guard j >= 0 && j < s.levels.count else { return }
-        s.levels.swapAt(i, j)
-        store.selected = s
-        model.markStale()
-    }
-
-    private func templateField(template: Binding<String>, fallback: String, inline: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            TextField("Template", text: template)
-                .textFieldStyle(.plain)
-                .font(.system(.body, design: .monospaced))
-                .padding(.horizontal, Theme.Spacing.sm)
-                .padding(.vertical, 6)
-                .background(RoundedRectangle(cornerRadius: Theme.Radius.sm).fill(Theme.background))
-
-            if !inline {
-                tokenChips(insertInto: template)
-            }
-
-            if let sample = examplePreview(template: template.wrappedValue, fallback: fallback) {
-                Text("Example: \(sample)")
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.textTertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-        }
-    }
-
-    private func tokenChips(insertInto template: Binding<String>) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: Theme.Spacing.xs) {
-                ForEach(OrganizerTemplate.allTokens) { token in
-                    Button {
-                        template.wrappedValue += token.placeholder
-                        model.markStale()
-                    } label: {
-                        Text(token.placeholder)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(Theme.textSecondary)
-                            .padding(.horizontal, Theme.Spacing.sm)
-                            .padding(.vertical, 3)
-                            .background(Capsule().fill(Theme.surfaceElevated))
-                    }
-                    .buttonStyle(.plain)
-                    .help(token.description)
-                }
-            }
-        }
-    }
-
-    @State private var isTagGuideExpanded = false
-
-    private var tokenReference: some View {
-        DisclosureGroup(isExpanded: $isTagGuideExpanded) {
-            // Two-column grid of tokens for compact, scannable browsing.
-            let columns = [
-                GridItem(.flexible(), spacing: Theme.Spacing.lg, alignment: .leading),
-                GridItem(.flexible(), spacing: Theme.Spacing.lg, alignment: .leading)
-            ]
-            LazyVGrid(columns: columns, alignment: .leading, spacing: Theme.Spacing.sm) {
-                ForEach(OrganizerTemplate.allTokens) { token in
-                    HStack(spacing: Theme.Spacing.sm) {
-                        Text(token.placeholder)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(Theme.textPrimary)
-                            .padding(.horizontal, Theme.Spacing.xs)
-                            .padding(.vertical, 2)
-                            .background(RoundedRectangle(cornerRadius: Theme.Radius.sm).fill(Theme.surfaceElevated))
-                        Text(token.description)
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.textTertiary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
+            if isTagGuideExpanded {
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 10, alignment: .leading),
+                        GridItem(.flexible(), spacing: 10, alignment: .leading)
+                    ],
+                    alignment: .leading,
+                    spacing: 10
+                ) {
+                    ForEach(OrganizerTemplate.allTokens) { token in
+                        OrganizerTokenCard(token: token) { insert(token) }
                     }
                 }
-            }
-            .padding(.top, Theme.Spacing.sm)
-        } label: {
-            HStack(spacing: Theme.Spacing.xs) {
-                Image(systemName: "tag")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.textSecondary)
-                Text("Tag Guide")
-                    .font(Theme.Font.bodyMedium)
-                    .foregroundStyle(Theme.textPrimary)
-                Text("\(OrganizerTemplate.allTokens.count) tokens")
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.textTertiary)
+                .padding(.top, 16)
             }
         }
-        .tint(Theme.textSecondary)
-    }
-
-    private func examplePreview(template: String, fallback: String) -> String? {
-        guard let track = library.tracks.first else { return nil }
-        return OrganizerTemplate.render(template, for: track, fallback: fallback,
-                                        primaryArtistOnly: store.selected.usePrimaryArtistOnly)
-    }
-
-    private var primaryArtistToggle: some View {
-        settingRow(
-            title: "Use primary artist only",
-            subtitle: "For tracks credited to multiple artists (\u{201C}A & B\u{201D}, \u{201C}A feat. B\u{201D}, \u{201C}A; B\u{201D}), file under just the first.",
-            isOn: Binding(
-                get: { store.selected.usePrimaryArtistOnly },
-                set: { newValue in
-                    var s = store.selected
-                    s.usePrimaryArtistOnly = newValue
-                    store.selected = s
-                    model.markStale()
-                }
-            )
-        )
-    }
-
-    private var deleteEmptyOriginalsToggle: some View {
-        settingRow(
-            title: "Delete empty original folders",
-            subtitle: "After moves complete, remove any source folders that no longer contain audio (cover art and other leftovers are swept up too).",
-            isOn: Binding(
-                get: { store.selected.deleteEmptyOriginals },
-                set: { newValue in
-                    var s = store.selected
-                    s.deleteEmptyOriginals = newValue
-                    store.selected = s
-                }
-            )
-        )
-    }
-
-    /// Title + subtitle on the left, switch pinned to the trailing edge so all
-    /// toggles in the column align in a single vertical column.
-    private func settingRow(title: String, subtitle: String, isOn: Binding<Bool>) -> some View {
-        HStack(alignment: .center, spacing: Theme.Spacing.lg) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(Theme.Font.bodyMedium)
-                    .foregroundStyle(Theme.textPrimary)
-                Text(subtitle)
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: Theme.Spacing.md)
-            Toggle("", isOn: isOn)
-                .toggleStyle(.switch)
-                .labelsHidden()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Preview column
 
     private var previewColumn: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            HStack {
-                sectionHeader("Preview", subtitle: previewSubtitle)
-                Spacer()
-                Button {
-                    model.generatePreview(profile: store.selected, tracks: library.tracks, rootURL: library.rootURL)
-                } label: {
-                    HStack(spacing: Theme.Spacing.xs) {
-                        Image(systemName: "arrow.clockwise")
-                        Text(model.operations.isEmpty ? "Generate Preview" : "Refresh")
-                    }
-                    .font(Theme.Font.bodyMedium)
-                    .padding(.horizontal, Theme.Spacing.md)
-                    .padding(.vertical, Theme.Spacing.xs)
-                    .background(Capsule().fill(Theme.surfaceElevated))
+        let tree = OrganizerPreviewTree.rows(for: model.operations, rootURL: library.rootURL)
+
+        return VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Preview")
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
+                Text(previewSubtitle)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.top, 22)
+            .padding(.bottom, 16)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let error = model.lastError {
+                        inlineNotice(text: error, color: Theme.qualityLow)
+                    } else if let message = model.lastResultMessage, model.operations.isEmpty {
+                        inlineNotice(text: message, color: Theme.qualityCD)
+                    }
+
+                    if model.conflictCount > 0 {
+                        inlineNotice(
+                            text: "\(model.conflictCount) destination\(model.conflictCount == 1 ? "" : "s") collide — a numeric suffix will be appended unless you adjust the file name.",
+                            color: Theme.qualityMid
+                        )
+                    }
+
+                    if tree.rows.isEmpty {
+                        emptyPreviewState
+                    } else {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(tree.rows) { row in
+                                previewRow(row)
+                            }
+                            if tree.hiddenTrackCount > 0 {
+                                Text("+ \(tree.hiddenTrackCount) more track\(tree.hiddenTrackCount == 1 ? "" : "s") organized the same way")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Theme.textTertiary)
+                                    .padding(.leading, 44)
+                                    .padding(.vertical, 8)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Theme.surface)
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.divider, lineWidth: 1))
+                        )
+                    }
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 20)
             }
 
-            if let err = model.lastError {
-                inlineNotice(text: err, color: Theme.qualityLow)
-            } else if let msg = model.lastResultMessage, model.operations.isEmpty {
-                inlineNotice(text: msg, color: Theme.qualityCD)
-            }
+            Divider().background(Theme.divider)
 
-            if model.isPreviewStale && !model.operations.isEmpty {
-                inlineNotice(text: "Configuration changed — refresh to update the preview.", color: Theme.qualityMid)
-            }
+            HStack(spacing: 12) {
+                Text(applyFooterText)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            if model.operations.isEmpty {
-                emptyPreviewState
-            } else {
-                previewList
-            }
-
-            Spacer(minLength: 0)
-
-            HStack {
-                if model.conflictCount > 0 {
-                    Label("\(model.conflictCount) conflict\(model.conflictCount == 1 ? "" : "s")",
-                          systemImage: "exclamationmark.triangle.fill")
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.qualityMid)
-                }
-                Spacer()
                 Button {
                     showApplyConfirm = true
                 } label: {
-                    HStack(spacing: Theme.Spacing.xs) {
+                    HStack(spacing: 8) {
                         if model.isApplying {
                             ProgressView().controlSize(.small)
                         } else {
-                            Image(systemName: "play.fill")
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 11, weight: .bold))
                         }
                         Text(model.isApplying ? "Applying…" : "Apply")
+                            .font(.system(size: 13.5, weight: .semibold))
                     }
-                    .font(Theme.Font.bodyMedium)
-                    .padding(.horizontal, Theme.Spacing.lg)
-                    .padding(.vertical, Theme.Spacing.sm)
-                    .background(Capsule().fill(applyEnabled ? Theme.accent : Theme.surfaceElevated))
                     .foregroundStyle(applyEnabled ? Theme.background : Theme.textTertiary)
+                    .padding(.horizontal, 22)
+                    .frame(height: 40)
+                    .background(Capsule().fill(applyEnabled ? Theme.accent : Theme.surfaceElevated))
                 }
                 .buttonStyle(.plain)
                 .disabled(!applyEnabled)
             }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 18)
         }
+        .background(Theme.background)
+    }
+
+    private var previewSubtitle: String {
+        guard library.rootURL != nil else {
+            return "Choose a source folder in Settings to see a preview."
+        }
+        if model.isRecomputing && model.operations.isEmpty {
+            return "Working out where everything lands…"
+        }
+        let count = library.tracks.count
+        return "Updates live as you edit the rules. Showing how \(count) file\(count == 1 ? "" : "s") would land."
     }
 
     private var applyEnabled: Bool {
         !model.isApplying
-            && !model.isPreviewStale
+            && !model.isRecomputing
             && model.moveCount > 0
             && library.rootURL != nil
     }
 
-    private var previewSubtitle: String {
-        if model.operations.isEmpty {
-            return "Generate a preview to see what would change."
+    private var applyFooterText: String {
+        if library.rootURL == nil {
+            return "Choose a source folder in Settings first."
         }
-        return "\(model.moveCount) to move · \(model.unchangedCount) unchanged · \(model.conflictCount) conflicts"
+        if model.isRecomputing {
+            return "Recalculating…"
+        }
+        if model.operations.isEmpty {
+            return "No files will move until you apply."
+        }
+        if model.moveCount == 0 {
+            return "Everything is already where these rules want it."
+        }
+        return "\(model.moveCount) file\(model.moveCount == 1 ? "" : "s") to move · \(model.unchangedCount) already in place. Nothing moves until you apply."
+    }
+
+    private func previewRow(_ row: OrganizerPreviewRow) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: row.kind == .folder ? "folder" : "doc")
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(row.kind == .folder ? Theme.accent : Theme.textTertiary)
+                .frame(width: 15)
+
+            Text(row.label)
+                .font(.system(size: 13))
+                .foregroundStyle(previewRowColor(row))
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Spacer(minLength: 0)
+
+            if let badge = row.badge {
+                Text(badge)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(row.isConflict ? Theme.qualityMid : Theme.accent)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill((row.isConflict ? Theme.qualityMid : Theme.accent).opacity(0.10))
+                    )
+            }
+        }
+        .padding(.leading, 10 + CGFloat(row.depth) * 22)
+        .padding(.trailing, 10)
+        .padding(.vertical, 8)
+    }
+
+    private func previewRowColor(_ row: OrganizerPreviewRow) -> Color {
+        if row.isConflict { return Theme.qualityMid }
+        switch row.kind {
+        case .folder: return Theme.textPrimary
+        case .file: return row.isUnchanged ? Theme.textTertiary : Theme.textSecondary
+        }
     }
 
     private var emptyPreviewState: some View {
         VStack(spacing: Theme.Spacing.md) {
             Image(systemName: "rectangle.stack.badge.play")
-                .font(.system(size: 36))
+                .font(.system(size: 32))
                 .foregroundStyle(Theme.textTertiary)
-            Text("No preview yet")
-                .font(Theme.Font.headline)
+            Text(model.isRecomputing ? "Building preview…" : "Nothing to preview yet")
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Theme.textSecondary)
-            if library.rootURL == nil {
-                Text("Choose a source folder in Settings, then come back.")
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.textTertiary)
-            } else {
-                Text("Click Generate Preview to see how \(library.tracks.count) files would be organized.")
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.textTertiary)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(Theme.Spacing.xl)
-        .background(RoundedRectangle(cornerRadius: Theme.Radius.md).fill(Theme.surface.opacity(0.5)))
-    }
-
-    private var previewList: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 1, pinnedViews: [.sectionHeaders]) {
-                ForEach(groupedPreview, id: \.folder) { group in
-                    Section {
-                        ForEach(group.ops) { op in
-                            previewRow(op)
-                        }
-                    } header: {
-                        Text(displayPath(group.folder))
-                            .font(Theme.Font.captionMono)
-                            .foregroundStyle(Theme.textSecondary)
-                            .padding(.horizontal, Theme.Spacing.sm)
-                            .padding(.vertical, 4)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Theme.surfaceElevated)
-                    }
-                }
-            }
-        }
-        .background(RoundedRectangle(cornerRadius: Theme.Radius.md).fill(Theme.surface.opacity(0.5)))
-    }
-
-    private struct PreviewGroup {
-        let folder: URL
-        let ops: [OrganizerOperation]
-    }
-
-    private var groupedPreview: [PreviewGroup] {
-        let grouped = Dictionary(grouping: model.operations) { $0.destinationFolder }
-        return grouped
-            .map { PreviewGroup(folder: $0.key, ops: $0.value) }
-            .sorted { $0.folder.path.localizedStandardCompare($1.folder.path) == .orderedAscending }
-    }
-
-    private func displayPath(_ url: URL) -> String {
-        guard let root = library.rootURL else { return url.path }
-        let rootPath = root.standardizedFileURL.path
-        let p = url.standardizedFileURL.path
-        if p.hasPrefix(rootPath) {
-            let rel = String(p.dropFirst(rootPath.count))
-            return rel.isEmpty ? "/" : rel
-        }
-        return p
-    }
-
-    private func previewRow(_ op: OrganizerOperation) -> some View {
-        HStack(spacing: Theme.Spacing.sm) {
-            Image(systemName: statusIcon(op.status))
-                .font(.system(size: 11))
-                .foregroundStyle(statusColor(op.status))
-                .frame(width: 16)
-            Text(op.destinationURL.lastPathComponent)
-                .font(Theme.Font.body)
-                .foregroundStyle(textColor(op.status))
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer()
-            Text(op.sourceURL.lastPathComponent)
-                .font(Theme.Font.caption)
+            Text(library.rootURL == nil
+                 ? "Choose a source folder in Settings, then come back."
+                 : "Scan a library folder to see how your rules reshape it.")
+                .font(.system(size: 12))
                 .foregroundStyle(Theme.textTertiary)
-                .lineLimit(1)
-                .truncationMode(.middle)
+                .multilineTextAlignment(.center)
         }
-        .padding(.horizontal, Theme.Spacing.sm)
-        .padding(.vertical, 4)
-        .help("From: \(op.sourceURL.path)\nTo: \(op.destinationURL.path)")
-    }
-
-    private func statusIcon(_ status: OrganizerOperation.Status) -> String {
-        switch status {
-        case .move: return "arrow.right.circle"
-        case .unchanged: return "equal.circle"
-        case .conflict: return "exclamationmark.triangle.fill"
-        }
-    }
-
-    private func statusColor(_ status: OrganizerOperation.Status) -> Color {
-        switch status {
-        case .move: return Theme.textSecondary
-        case .unchanged: return Theme.textTertiary
-        case .conflict: return Theme.qualityMid
-        }
-    }
-
-    private func textColor(_ status: OrganizerOperation.Status) -> Color {
-        switch status {
-        case .move: return Theme.textPrimary
-        case .unchanged: return Theme.textTertiary
-        case .conflict: return Theme.qualityMid
-        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 48)
+        .padding(.horizontal, 24)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Theme.surface)
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.divider, lineWidth: 1))
+        )
     }
 
     private var applyOverlay: some View {
@@ -738,14 +893,144 @@ struct OrganizerView: View {
     }
 
     private func inlineNotice(text: String, color: Color) -> some View {
-        HStack(spacing: Theme.Spacing.xs) {
-            Circle().fill(color).frame(width: 6, height: 6)
+        HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+                .padding(.top, 5)
             Text(text)
-                .font(Theme.Font.caption)
+                .font(.system(size: 12))
                 .foregroundStyle(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(Theme.Spacing.sm)
+        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: Theme.Radius.sm).fill(color.opacity(0.12)))
+        .background(RoundedRectangle(cornerRadius: 9).fill(color.opacity(0.12)))
+    }
+}
+
+// MARK: - Building blocks
+
+/// Borderless icon button that fills its background on hover, matching the
+/// design's `.fl-icbtn` treatment.
+private struct OrganizerIconButton: View {
+    let symbol: String
+    var size: CGFloat = 13
+    let help: String
+    var tint: Color = Theme.textTertiary
+    var hoverTint: Color = Theme.textPrimary
+    var isEnabled: Bool = true
+    var isCircular: Bool = false
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: size, weight: .medium))
+                .foregroundStyle(isHovering && isEnabled ? hoverTint : tint)
+                .frame(width: 26, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: isCircular ? 13 : 8)
+                        .fill(isHovering && isEnabled ? Theme.surfaceElevated : Color.clear)
+                )
+        }
+        .buttonStyle(.plain)
+        .opacity(isEnabled ? 1 : 0.35)
+        .onHover { isHovering = $0 }
+        .help(help)
+    }
+}
+
+/// Monospaced token pill. Clicking appends the token to whichever template is
+/// currently active.
+private struct OrganizerTokenChip: View {
+    let text: String
+    let help: String
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(text)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(isHovering ? Theme.accent : Theme.textSecondary)
+                .padding(.horizontal, 11)
+                .frame(height: 26)
+                .background(
+                    Capsule()
+                        .fill(isHovering ? Theme.accent.opacity(0.10) : Theme.surfaceElevated)
+                        .overlay(Capsule().stroke(isHovering ? Theme.accent : Theme.divider, lineWidth: 1))
+                )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help(help)
+    }
+}
+
+/// Token + description card used in the expanded Tag guide grid.
+private struct OrganizerTokenCard: View {
+    let token: OrganizerTemplate.Token
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(token.placeholder)
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Theme.accent)
+                Text(token.description)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Theme.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(isHovering ? Theme.accent.opacity(0.10) : Theme.surface)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9)
+                            .stroke(isHovering ? Theme.accent : Theme.divider, lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help("Insert \(token.placeholder)")
+    }
+}
+
+/// Pill switch matching the design's `.fl-toggle` — 40×24 track with an 18pt
+/// knob. Used instead of the stock macOS switch so the builder column keeps a
+/// consistent look with the rest of the redesign.
+private struct OrganizerPillToggle: View {
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Button {
+            isOn.toggle()
+        } label: {
+            ZStack(alignment: isOn ? .trailing : .leading) {
+                Capsule()
+                    .fill(isOn ? Theme.accent : Theme.divider)
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 18, height: 18)
+                    .shadow(color: .black.opacity(0.3), radius: 1.5, y: 1)
+                    .padding(.horizontal, 3)
+            }
+            .frame(width: 40, height: 24)
+        }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.18), value: isOn)
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
     }
 }

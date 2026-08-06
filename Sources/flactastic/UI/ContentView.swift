@@ -155,6 +155,10 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.28), value: player.isQueueVisible)
         .animation(.easeInOut(duration: 0.3), value: router.artworkZoomData != nil)
         .animation(.easeInOut(duration: 0.25), value: router.selectedTab)
+        // Drive the loading-cover fade off the flag directly, so its removal
+        // isn't dependent on the originating `withAnimation` transaction
+        // surviving a tick that also mutates other library state.
+        .animation(.easeOut(duration: 0.35), value: library.hasCompletedInitialLoad)
         .background(Theme.background)
     }
 
@@ -171,7 +175,7 @@ struct ContentView: View {
                 Spacer()
                 GeometryReader { geo in
                     let size = min(geo.size.width, geo.size.height) * 0.85
-                    ArtworkView(data: data, size: size)
+                    ArtworkView(data: data, size: size, fullResolution: true)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 Spacer()

@@ -68,6 +68,7 @@ actor MetadataWriter {
         album: String?,
         year: Int?,
         genre: String?,
+        secondaryGenres: [String] = [],
         trackNumber: Int?,
         artworkChange: ArtworkChange = .unchanged,
         albumArtistChange: AlbumArtistChange = .unchanged,
@@ -100,7 +101,9 @@ actor MetadataWriter {
         title.withCString            { taglib_tag_set_title(tag, $0) }
         (artist      ?? "").withCString { taglib_tag_set_artist(tag, $0) }
         (album       ?? "").withCString { taglib_tag_set_album(tag, $0) }
-        (genre       ?? "").withCString { taglib_tag_set_genre(tag, $0) }
+        // Primary + secondary genres pack into the one GENRE tag string.
+        let genreTagString = GenreResolver.join(primary: genre, secondary: secondaryGenres)
+        (genreTagString ?? "").withCString { taglib_tag_set_genre(tag, $0) }
         taglib_tag_set_year(tag,  UInt32(max(0, year        ?? 0)))
         taglib_tag_set_track(tag, UInt32(max(0, trackNumber ?? 0)))
 
@@ -152,7 +155,12 @@ actor MetadataWriter {
         updated.title       = title.isEmpty ? track.title : title
         updated.artist      = artist.flatMap      { $0.isEmpty ? nil : $0 }
         updated.album       = album.flatMap       { $0.isEmpty ? nil : $0 }
-        updated.genre       = genre.flatMap       { $0.isEmpty ? nil : $0 }
+        // Re-derive from the string we actually just wrote, not the raw caller
+        // input — guarantees `updated` matches what a fresh LibraryScanner read
+        // would produce (cap/dedup/case-folding applied consistently).
+        let (resolvedGenre, resolvedSecondary) = GenreResolver.split(genreTagString)
+        updated.genre           = resolvedGenre
+        updated.secondaryGenres = resolvedSecondary
         updated.year        = year
         updated.trackNumber = trackNumber
         switch albumArtistChange {

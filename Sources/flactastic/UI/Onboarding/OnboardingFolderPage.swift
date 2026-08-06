@@ -11,9 +11,7 @@ struct OnboardingFolderPage: View {
 
     var body: some View {
         VStack(spacing: Theme.Spacing.xxl) {
-            Text("FLACtastic")
-                .font(.system(.largeTitle, weight: .bold))
-                .foregroundStyle(Theme.textPrimary)
+            Wordmark(height: 48)
                 .riseFadeIn(delay: 0.0)
 
             VStack(spacing: Theme.Spacing.lg) {

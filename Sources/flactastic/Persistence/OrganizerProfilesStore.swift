@@ -53,12 +53,16 @@ final class OrganizerProfilesStore {
     }
 
     func duplicateSelected() {
-        var copy = selected
-        copy = OrganizerProfile(
+        let source = selected
+        let copy = OrganizerProfile(
             id: UUID(),
-            name: "\(copy.name) Copy",
-            levels: copy.levels.map { HierarchyLevel(id: UUID(), groupBy: $0.groupBy, nameTemplate: $0.nameTemplate) },
-            fileTemplate: copy.fileTemplate
+            name: "\(source.name) Copy",
+            levels: source.levels.map {
+                HierarchyLevel(id: UUID(), groupBy: $0.groupBy, name: $0.name, nameTemplate: $0.nameTemplate)
+            },
+            fileTemplate: source.fileTemplate,
+            usePrimaryArtistOnly: source.usePrimaryArtistOnly,
+            deleteEmptyOriginals: source.deleteEmptyOriginals
         )
         add(copy)
     }

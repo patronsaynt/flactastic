@@ -80,6 +80,22 @@ final class DownloadCoordinator {
     /// files.
     private var jobTasks: [UUID: Task<Void, Never>] = [:]
 
+    /// Debounces the post-download library rescan. An album download used to
+    /// trigger one full filesystem rescan per completed file; now the rescan
+    /// fires once, ~1.5 s after the most recent completion. Dedupe safety is
+    /// unaffected: `enqueue` guards in-flight duplicates by track+service, and
+    /// the on-disk `findExistingMatch` check runs before each download starts.
+    private var refreshDebounceTask: Task<Void, Never>?
+
+    private func scheduleLibraryRefresh() {
+        refreshDebounceTask?.cancel()
+        refreshDebounceTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            self?.library.refreshLibrary()
+        }
+    }
+
     init(
         registry: StreamerRegistry,
         library: LibraryStore,
@@ -165,6 +181,13 @@ final class DownloadCoordinator {
         finish(id, .cancelled)
     }
 
+    /// Cancel every in-flight job. Terminal jobs are untouched.
+    func cancelAll() {
+        for job in jobs where job.status.canCancel {
+            cancel(job.id)
+        }
+    }
+
     func clearCompleted() {
         jobs.removeAll { $0.status.isTerminal }
     }
@@ -222,10 +245,24 @@ final class DownloadCoordinator {
             let handle = try FileHandle(forWritingTo: tempURL)
             defer { try? handle.close() }
 
+            // Throttle progress publication: `jobs` is @Observable, so an
+            // update per network chunk re-renders the download UI at
+            // network-chunk cadence (hundreds of invalidations per file).
+            // Report at most every 256 KB or 100 ms, plus a final update.
             var received: Int64 = 0
+            var lastReportedBytes: Int64 = 0
+            var lastReportTime = ContinuousClock.now
             for try await chunk in stream.bytes {
                 try handle.write(contentsOf: chunk)
                 received += Int64(chunk.count)
+                if received - lastReportedBytes >= 262_144
+                    || lastReportTime.duration(to: .now) >= .milliseconds(100) {
+                    lastReportedBytes = received
+                    lastReportTime = .now
+                    update(jobID, .downloading(receivedBytes: received, totalBytes: stream.sizeBytes))
+                }
+            }
+            if received != lastReportedBytes {
                 update(jobID, .downloading(receivedBytes: received, totalBytes: stream.sizeBytes))
             }
             try handle.close()
@@ -299,7 +336,7 @@ final class DownloadCoordinator {
             try FileManager.default.moveItem(at: tempURL, to: dest)
 
             finish(jobID, .completed(dest))
-            library.refreshLibrary()
+            scheduleLibraryRefresh()
         } catch is CancellationError {
             // Task was cancelled via `cancel(_:)`. The status has already
             // been set to `.cancelled` there; don't overwrite with a
@@ -336,11 +373,11 @@ final class DownloadCoordinator {
     ///   4. Loose tag-title match.
     ///
     /// For each strategy we collect every library track that matches the title
-    /// key. A lone hit is accepted as-is — a full title like "Song - X Remix" is
-    /// specific enough on its own. When several tracks share the key we
-    /// disambiguate by artist overlap, then album overlap, so we don't collapse
-    /// genuinely distinct recordings. The loose strategies additionally require
-    /// artist *or* album overlap, since a flattened title is a weaker signal.
+    /// key, then require the match to share an **artist or album** with the
+    /// remote track — a title alone is never enough, since distinct recordings
+    /// (covers, same title by different artists) routinely collide. A bare
+    /// title-only match is accepted only when the remote track carries no
+    /// artist/album info to disambiguate on (so we can't do any better).
     ///
     /// Exposed so the playlist rebuild can pre-check duplicates before spending
     /// an Odesli lookup on a track it won't download.
@@ -356,7 +393,9 @@ final class DownloadCoordinator {
         let keyed: [(track: Track, fileExact: String, fileLoose: String,
                      tagExact: String, tagLoose: String)] = tracks.map { t in
             var stem = t.url.deletingPathExtension().lastPathComponent
-            if let r = stem.range(of: #"^\d{1,3}\s*-\s*"#, options: .regularExpression) {
+            let stemRange = NSRange(stem.startIndex..., in: stem)
+            if let m = Self.leadingTrackNumber.firstMatch(in: stem, range: stemRange),
+               let r = Range(m.range, in: stem) {
                 stem = String(stem[r.upperBound...])
             }
             return (t, normalize(stem), looseTitle(stem), normalize(t.title), looseTitle(t.title))
@@ -371,23 +410,29 @@ final class DownloadCoordinator {
             (looseKey, { keyed[$0].tagLoose },  true),
         ]
 
+        // A title match alone is never enough to call something a duplicate —
+        // many distinct recordings share a title (covers, different artists).
+        // We require the library track to share an artist or the album with the
+        // remote track. A bare title-only match is accepted *only* when we have
+        // no artist/album info on the remote track to compare against (so we
+        // can't do any better).
+        let canDisambiguate = !remoteArtists.isEmpty || !remoteAlbum.isEmpty
+
         for tier in tiers {
             guard !tier.key.isEmpty else { continue }
             let hits = keyed.indices.filter { tier.keyPath($0) == tier.key }.map { keyed[$0].track }
             guard !hits.isEmpty else { continue }
 
-            if tier.requireOverlap {
-                if let m = hits.first(where: { overlaps($0, remoteArtists: remoteArtists, remoteAlbum: remoteAlbum) }) {
-                    return m
-                }
-                continue
-            }
-
-            // Confident tier: a lone hit is the match; several disambiguate by overlap.
-            if hits.count == 1 { return hits[0] }
+            // Prefer a hit that shares an artist or album.
             if let m = hits.first(where: { overlaps($0, remoteArtists: remoteArtists, remoteAlbum: remoteAlbum) }) {
                 return m
             }
+
+            // No artist/album overlap. The loose tiers always demand it; the
+            // exact-title tiers accept a title-only match only when there's
+            // nothing to disambiguate on. Otherwise this is a same-title but
+            // different recording — not a duplicate — so keep looking.
+            if tier.requireOverlap || canDisambiguate { continue }
             return hits[0]
         }
         return nil
@@ -395,12 +440,26 @@ final class DownloadCoordinator {
 
     /// True when a library track shares an artist token or its album name with
     /// the remote track (used to disambiguate same-title matches).
+    ///
+    /// When *both* sides carry artist info and no artist matches, that's a
+    /// veto: they're different recordings, full stop. The album name is only
+    /// consulted when one side lacks artist info — otherwise a self-titled
+    /// single ("Kiss" by X vs the single "Kiss" by Y, both on an album named
+    /// "Kiss") would falsely read as the same track.
     private static func overlaps(_ t: Track, remoteArtists: Set<String>, remoteAlbum: String) -> Bool {
         let libArtists = artistTokens(t.artist).union(artistTokens(t.albumArtist))
-        if !remoteArtists.isEmpty, !remoteArtists.isDisjoint(with: libArtists) { return true }
+        if !remoteArtists.isEmpty, !libArtists.isEmpty {
+            return !remoteArtists.isDisjoint(with: libArtists)
+        }
         if !remoteAlbum.isEmpty, normalize(t.album ?? "") == remoteAlbum { return true }
         return false
     }
+
+    /// Compiled once — this used to be re-compiled per library track per job
+    /// via `range(of:options:.regularExpression)`. `nonisolated(unsafe)` is
+    /// sound here: NSRegularExpression is documented immutable & thread-safe.
+    nonisolated(unsafe) private static let leadingTrackNumber =
+        try! NSRegularExpression(pattern: #"^\d{1,3}\s*-\s*"#)
 
     private static func normalize(_ s: String) -> String {
         s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

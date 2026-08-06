@@ -101,7 +101,14 @@ final class DiscordPresenceService {
                     lastStartMs = snap.startUnixMs
                 }
             }
-            try? await Task.sleep(for: .seconds(2))
+            // Adaptive cadence: the 2 s poll only exists to catch seeks during
+            // active playback. When presence is disabled or nothing is playing
+            // there is nothing to detect, so back off to 10 s — the app spends
+            // most of its life idle, and a permanent 2 s wakeup defeats timer
+            // coalescing/App Nap. Worst case: presence appears up to 10 s after
+            // resuming from a long idle.
+            let inactive = !snap.key.enabled || snap.key.activeTrackID == nil
+            try? await Task.sleep(for: .seconds(inactive ? 10 : 2))
         }
     }
 

@@ -33,12 +33,30 @@ struct ArtworkShadow: ViewModifier {
 
     func body(content: Content) -> some View {
         if settings.showArtworkShadow {
-            content.shadow(
-                color: .black.opacity(opacity),
-                radius: radius,
-                x: 0,
-                y: yOffset
-            )
+            // Flattening art+shadow into one rasterized layer
+            // (`.drawingGroup()`) saves re-blurring during scroll compositing,
+            // but each instance costs an offscreen Metal pass — worth it for
+            // large art with a wide blur, a net loss for the dozens of ≤80pt
+            // thumbnails alive in a scrolling track list, where the 2–5pt
+            // shadow is cheap to composite directly.
+            if size >= 80 {
+                content
+                    .shadow(
+                        color: .black.opacity(opacity),
+                        radius: radius,
+                        x: 0,
+                        y: yOffset
+                    )
+                    .drawingGroup()
+            } else {
+                content
+                    .shadow(
+                        color: .black.opacity(opacity),
+                        radius: radius,
+                        x: 0,
+                        y: yOffset
+                    )
+            }
         } else {
             content
         }

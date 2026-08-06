@@ -137,6 +137,12 @@ final class PlaylistRebuildCoordinator {
         try await spotifyService.resolve(url, userToken: userToken)
     }
 
+    /// Resolve the user's Liked Songs into a `RemotePlaylist`, same pipeline
+    /// as a real playlist from here on.
+    func resolveLikedSongs(userToken: String) async throws -> SpotifyPlaylistService.Result {
+        try await spotifyService.resolveLikedSongs(userToken: userToken)
+    }
+
     var isRunning: Bool {
         if case .running = phase { return true }
         if case .fetchingArtwork = phase { return true }

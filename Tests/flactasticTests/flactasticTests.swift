@@ -45,7 +45,11 @@ import Testing
     let track = Track.makeFromURL(url)
     #expect(track != nil)
     #expect(track?.title == "03 Song Title")
-    #expect(track?.album == "MyAlbum")
+    // The cheap-scan stub carries no album: deriving it from the parent
+    // folder was removed deliberately (folders like "Artist - Album" or
+    // "Downloads" don't match tags and would corrupt album grouping).
+    // The real album comes from LibraryScanner.loadMetadata's tag read.
+    #expect(track?.album == nil)
     #expect(track?.fileFormat == .flac)
 }
 
@@ -98,7 +102,9 @@ import Testing
     let tracks = try await scanner.scan(root: tempDir)
 
     #expect(tracks.count == 2)
-    #expect(tracks.allSatisfy { $0.album == "TestAlbum" })
+    // The cheap scan yields metadata-free stubs — album stays nil until
+    // loadMetadata reads the real tag (see trackMakeFromURLValidFlac).
+    #expect(tracks.allSatisfy { $0.album == nil })
     // Hidden files should be excluded
     #expect(tracks.allSatisfy { !$0.title.contains("hidden") })
     // Non-audio files excluded

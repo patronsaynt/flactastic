@@ -31,7 +31,7 @@ final class SpotifyAuthController {
     /// Bare scheme handed to `ASWebAuthenticationSession`, which intercepts the
     /// redirect itself (no Info.plist URL-type registration required on macOS).
     private static let callbackScheme = "flactastic"
-    private static let scopes = "playlist-read-private playlist-read-collaborative"
+    private static let scopes = "playlist-read-private playlist-read-collaborative user-library-read"
 
     private static var isConfigured: Bool {
         !clientID.isEmpty && clientID != "REPLACE_WITH_FLACTASTIC_SPOTIFY_CLIENT_ID"
@@ -71,6 +71,22 @@ final class SpotifyAuthController {
         /// `open.spotify.com/playlist/<id>` — feeds the resolve pipeline.
         let externalURL: URL
     }
+
+    /// Sentinel id marking the synthetic "Liked Songs" entry — it isn't a real
+    /// playlist, so it's resolved via `/v1/me/tracks` instead of
+    /// `/v1/playlists/<id>`.
+    static let likedSongsID = "__liked_songs__"
+
+    /// A synthetic playlist card for the user's saved tracks. Not fetched from
+    /// `/v1/me/playlists` — Spotify doesn't expose Liked Songs there.
+    static let likedSongsSummary = PlaylistSummary(
+        id: likedSongsID,
+        name: "Liked Songs",
+        owner: nil,
+        trackCount: -1,
+        coverArtURL: nil,
+        externalURL: URL(string: "https://open.spotify.com/collection/tracks")!
+    )
 
     enum AuthError: LocalizedError {
         case notConfigured

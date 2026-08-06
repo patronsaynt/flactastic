@@ -16,7 +16,7 @@ struct AlbumDetailView: View {
     @State private var knownTrackIDs: Set<UUID> = []
 
     private var album: Album? {
-        if let exact = library.albums.first(where: { $0.id == albumID }) {
+        if let exact = library.albumsByID[albumID] {
             return exact
         }
         guard !knownTrackIDs.isEmpty else { return nil }
@@ -71,7 +71,7 @@ struct AlbumDetailView: View {
 
     private func albumHeader(_ album: Album) -> some View {
         HStack(alignment: .top, spacing: Theme.Spacing.xl) {
-            ArtworkView(data: album.artwork, size: 200)
+            ArtworkView(data: album.artwork, size: 200, id: "album:\(album.id)")
                 .onTapGesture {
                     withAnimation(.easeInOut(duration: 0.3)) {
                         router.artworkZoomData = album.artwork
@@ -100,6 +100,9 @@ struct AlbumDetailView: View {
                     }
                     if let genre = album.genre {
                         metadataTag(genre)
+                    }
+                    ForEach(album.secondaryGenres, id: \.self) { secondary in
+                        metadataTag(secondary)
                     }
                     metadataTag("\(album.trackCount) tracks")
                     metadataTag(FormatUtils.formatDuration(album.totalDuration))
@@ -146,7 +149,9 @@ struct AlbumDetailView: View {
     // MARK: - Track List
 
     private func trackList(_ tracks: [Track]) -> some View {
-        VStack(spacing: 0) {
+        // Lazy so a 100-track box set doesn't instantiate every TrackRow
+        // (each with artwork) eagerly — rows materialize as they scroll in.
+        LazyVStack(spacing: 0) {
             ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
                 TrackRow(track: track, isPlaying: player.currentTrack?.id == track.id)
                     .contentShape(Rectangle())

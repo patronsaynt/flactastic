@@ -55,6 +55,24 @@ final class ArtistRemoteCache {
         }
     }
 
+    /// Async variant of `load()` for app bootstrap: file read + JSON decode
+    /// run off the main actor so launch doesn't block first paint on disk I/O.
+    func loadAsync() async {
+        let url = fileURL
+        let loaded: [ArtistRemoteEntry]? = await Task.detached(priority: .userInitiated) {
+            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+            do {
+                let data = try Data(contentsOf: url)
+                return try JSONDecoder().decode([ArtistRemoteEntry].self, from: data)
+            } catch {
+                print("[ArtistRemoteCache] Failed to load: \(error)")
+                return nil
+            }
+        }.value
+        guard let loaded else { return }
+        entries = Dictionary(uniqueKeysWithValues: loaded.map { ($0.canonicalKey, $0) })
+    }
+
     func save() {
         do {
             let list = Array(entries.values).sorted { $0.canonicalKey < $1.canonicalKey }

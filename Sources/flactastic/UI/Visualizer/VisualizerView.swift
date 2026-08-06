@@ -8,6 +8,14 @@ struct VisualizerView: View {
     @State private var analyzer = SpectrumAnalyzer()
     @State private var isFullScreen: Bool = false
 
+    /// The window hosting this view, captured by `WindowFullScreenObserver`.
+    /// Fullscreen toggles and toolbar restoration MUST target this window,
+    /// not `NSApp.keyWindow` — during fullscreen transitions (including the
+    /// system's own Esc exit) there is briefly no key window, so a
+    /// keyWindow-based restore silently no-ops and leaves the windowed view
+    /// with its toolbar missing.
+    @State private var hostWindow: NSWindow?
+
     /// Height of the hover-reveal zone at the top of the canvas. Only this
     /// strip activates the picker — the rest of the visualizer area is
     /// uninterrupted.
@@ -60,13 +68,20 @@ struct VisualizerView: View {
             // still in fullscreen.
             applyToolbarVisibility(fullScreen: false)
         }
-        .onChange(of: settings.visualizerMode) { _, newMode in
+        .onChange(of: settings.visualizerMode) { oldMode, newMode in
             syncTap(for: newMode)
             if newMode == .bigPicture {
                 requestFullScreen()
+            } else if oldMode == .bigPicture {
+                // Jumping out of Big Picture via the mode picker: return to
+                // the windowed view instead of stranding the user fullscreen
+                // in another visualizer. (When this change was itself caused
+                // by an Esc fullscreen exit, the window is already windowed
+                // and the styleMask guard makes this a no-op.)
+                requestExitFullScreen()
             }
         }
-        .background(WindowFullScreenObserver(isFullScreen: $isFullScreen))
+        .background(WindowFullScreenObserver(isFullScreen: $isFullScreen, window: $hostWindow))
         .onChange(of: isFullScreen) { _, fs in
             // Drive toolbar visibility imperatively rather than via SwiftUI's
             // `.toolbar(.hidden, for: .windowToolbar)`. The parent ContentView
@@ -74,12 +89,20 @@ struct VisualizerView: View {
             // didn't reliably hide them — and toggling it during the
             // fullscreen animation could deadlock the window on exit.
             applyToolbarVisibility(fullScreen: fs)
+
+            // Big Picture only makes sense fullscreen. When the user exits
+            // fullscreen, drop back to the small-details visualizer so they
+            // aren't stranded in Big Picture with no obvious way out.
+            if !fs && settings.visualizerMode == .bigPicture {
+                settings.visualizerMode = .albumArtSmallDetails
+            }
         }
     }
 
     private func applyToolbarVisibility(fullScreen: Bool) {
+        let window = hostWindow
         DispatchQueue.main.async {
-            guard let toolbar = NSApp.keyWindow?.toolbar else { return }
+            guard let toolbar = (window ?? NSApp.keyWindow)?.toolbar else { return }
             let shouldShow = !fullScreen
             if toolbar.isVisible != shouldShow {
                 toolbar.isVisible = shouldShow
@@ -104,16 +127,30 @@ struct VisualizerView: View {
     }
 
     private func requestFullScreen() {
-        guard !isFullScreen else { return }
-        // Defer until after the view is in the window hierarchy.
+        // Defer until after the view is in the window hierarchy, and check
+        // the window's REAL state inside the deferred block: the SwiftUI
+        // `isFullScreen` mirror can lag during transitions, and a stale guard
+        // here turns "enter fullscreen" into a toggle *out* of it.
+        let window = hostWindow
         DispatchQueue.main.async {
-            NSApp.keyWindow?.toggleFullScreen(nil)
+            guard let window = window ?? NSApp.keyWindow,
+                  !window.styleMask.contains(.fullScreen) else { return }
+            window.toggleFullScreen(nil)
+        }
+    }
+
+    private func requestExitFullScreen() {
+        let window = hostWindow
+        DispatchQueue.main.async {
+            guard let window = window ?? NSApp.keyWindow,
+                  window.styleMask.contains(.fullScreen) else { return }
+            window.toggleFullScreen(nil)
         }
     }
 
     private var fullScreenToggle: some View {
         Button {
-            NSApp.keyWindow?.toggleFullScreen(nil)
+            (hostWindow ?? NSApp.keyWindow)?.toggleFullScreen(nil)
         } label: {
             Image(systemName: isFullScreen
                   ? "arrow.down.right.and.arrow.up.left"
@@ -145,9 +182,13 @@ struct VisualizerView: View {
 /// duplicates to fire after exiting fullscreen and leave the window stuck.
 private struct WindowFullScreenObserver: NSViewRepresentable {
     @Binding var isFullScreen: Bool
+    /// The concrete window this view lives in, published so the visualizer
+    /// can target it directly instead of `NSApp.keyWindow` (which is nil
+    /// mid-fullscreen-transition).
+    @Binding var window: NSWindow?
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(isFullScreen: $isFullScreen)
+        Coordinator(isFullScreen: $isFullScreen, window: $window)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -171,12 +212,14 @@ private struct WindowFullScreenObserver: NSViewRepresentable {
     @MainActor
     final class Coordinator {
         @Binding private var isFullScreen: Bool
+        @Binding private var hostWindow: NSWindow?
         private weak var observedWindow: NSWindow?
         private var enterToken: NSObjectProtocol?
         private var exitToken: NSObjectProtocol?
 
-        init(isFullScreen: Binding<Bool>) {
+        init(isFullScreen: Binding<Bool>, window: Binding<NSWindow?>) {
             self._isFullScreen = isFullScreen
+            self._hostWindow = window
         }
 
         func attach(to window: NSWindow?) {
@@ -188,6 +231,7 @@ private struct WindowFullScreenObserver: NSViewRepresentable {
             }
             detach()
             observedWindow = window
+            if hostWindow !== window { hostWindow = window }
             syncState(from: window)
             let center = NotificationCenter.default
             enterToken = center.addObserver(

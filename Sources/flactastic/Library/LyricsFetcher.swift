@@ -21,6 +21,14 @@ final class LyricsFetcher {
     /// that a temporary outage clears itself before the next session.
     private(set) var recentErrors: [String: Date] = [:]
     private let errorTTL: TimeInterval = 300
+    /// Cooldown for transport-level failures that the client already retried
+    /// and that say nothing about whether lrclib has this track. Kept short
+    /// so a brief connectivity blip doesn't lock out a whole album for the
+    /// full `errorTTL`; the next play retries almost immediately.
+    private let transportErrorTTL: TimeInterval = 20
+    /// Keys whose last failure was transport-level, so `hasRecentError` can
+    /// apply `transportErrorTTL` instead of the full `errorTTL`.
+    private var transportErrorKeys: Set<String> = []
 
     init(cache: LyricsRemoteCache,
          client: LrcLibClient = .shared,
@@ -34,7 +42,8 @@ final class LyricsFetcher {
     /// (i.e. we should surface "Unable to find lyrics" instead of spinning).
     func hasRecentError(forKey key: String) -> Bool {
         guard let when = recentErrors[key] else { return false }
-        return Date().timeIntervalSince(when) < errorTTL
+        let ttl = transportErrorKeys.contains(key) ? transportErrorTTL : errorTTL
+        return Date().timeIntervalSince(when) < ttl
     }
 
     /// If a fresh cached entry exists, parse and return it. Otherwise — when
@@ -125,6 +134,9 @@ final class LyricsFetcher {
                         || response?.plainLyrics?.isEmpty == false)
 
                 await MainActor.run {
+                    // A result of any kind clears a prior failure for this key.
+                    self?.recentErrors.removeValue(forKey: key)
+                    self?.transportErrorKeys.remove(key)
                     if foundLyrics, let response {
                         self?.cache.setEntry(LyricsCacheEntry(
                             key: key,
@@ -161,8 +173,14 @@ final class LyricsFetcher {
                 // mark the in-memory error slot so the view shows the
                 // "Unable to find lyrics" message and we don't immediately
                 // retry the same key during prefetch passes.
+                let isTransport = error is URLError
                 await MainActor.run {
                     self?.recentErrors[key] = Date()
+                    if isTransport {
+                        self?.transportErrorKeys.insert(key)
+                    } else {
+                        self?.transportErrorKeys.remove(key)
+                    }
                 }
             }
         }

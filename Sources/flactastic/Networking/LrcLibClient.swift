@@ -64,13 +64,13 @@ actor LrcLibClient {
 
         var request = URLRequest(url: url)
         // lrclib's docs request a User-Agent that identifies the client.
-        request.setValue("FLACtastic (https://github.com/anthropics)", forHTTPHeaderField: "User-Agent")
+        request.setValue("FLACtastic (https://github.com/patronsaynt/flactastic)", forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         await semaphore.wait()
         defer { Task { await semaphore.signal() } }
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await sendWithRetry(request)
         guard let http = response as? HTTPURLResponse else {
             throw LrcLibClientError.badResponse(-1)
         }
@@ -79,5 +79,40 @@ actor LrcLibClient {
             throw LrcLibClientError.badResponse(http.statusCode)
         }
         return try JSONDecoder().decode(LrcLibResponse.self, from: data)
+    }
+
+    /// Transient transport failures that are worth a second attempt on a
+    /// fresh connection. `secureConnectionFailed` (-1200) is the common one:
+    /// a TLS handshake that lost the race, not a real trust problem — a
+    /// genuine bad certificate surfaces as `serverCertificate*` instead and
+    /// is deliberately absent here so we never retry past a trust failure.
+    private static let retryableCodes: Set<URLError.Code> = [
+        .secureConnectionFailed,
+        .networkConnectionLost,
+        .timedOut,
+        .cannotConnectToHost,
+    ]
+
+    /// Issue the request, retrying transient transport errors with a short
+    /// exponential backoff. Caps at `maxAttempts` so a genuinely unreachable
+    /// host still fails fast rather than stalling the fetcher's semaphore.
+    private func sendWithRetry(
+        _ request: URLRequest,
+        maxAttempts: Int = 3
+    ) async throws -> (Data, URLResponse) {
+        var attempt = 1
+        while true {
+            do {
+                return try await session.data(for: request)
+            } catch let error as URLError
+                where Self.retryableCodes.contains(error.code) && attempt < maxAttempts {
+                // 250ms, then 500ms. Jittered so a batch of tracks that all
+                // failed together doesn't retry in lockstep.
+                let backoff = 0.25 * pow(2.0, Double(attempt - 1))
+                let jitter = Double.random(in: 0...0.1)
+                try await Task.sleep(nanoseconds: UInt64((backoff + jitter) * 1_000_000_000))
+                attempt += 1
+            }
+        }
     }
 }

@@ -18,8 +18,13 @@ final class OrganizerModel {
     /// nothing is running. Drives the progress bar in the Organizer view.
     var applyPhaseLabel: String?
     var applyProgress: Double?
+    /// True while a debounced re-plan is pending or running. The preview column
+    /// keeps showing the previous plan (rather than flashing empty) and Apply is
+    /// held until the numbers settle.
+    var isRecomputing: Bool = false
 
     private let executor = OrganizerExecutor()
+    private var previewTask: Task<Void, Never>?
 
     var moveCount: Int { operations.lazy.filter { if case .move = $0.status { return true } else { return false } }.count }
     var unchangedCount: Int { operations.lazy.filter { if case .unchanged = $0.status { return true } else { return false } }.count }
@@ -39,6 +44,35 @@ final class OrganizerModel {
 
     func markStale() {
         isPreviewStale = true
+    }
+
+    /// Re-plans after a short quiet period. Called on every edit in the builder
+    /// so the preview tracks the rules live; the debounce keeps a burst of
+    /// keystrokes from replanning the whole library once per character, and the
+    /// plan itself runs off the main actor so typing stays smooth.
+    func schedulePreview(profile: OrganizerProfile, tracks: [Track], rootURL: URL?, debounceMilliseconds: Int = 300) {
+        previewTask?.cancel()
+        guard let rootURL else {
+            previewTask = nil
+            operations = []
+            isRecomputing = false
+            isPreviewStale = true
+            lastError = "Choose a source folder in Settings before organizing."
+            return
+        }
+        lastError = nil
+        isRecomputing = true
+        previewTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(debounceMilliseconds))
+            guard !Task.isCancelled else { return }
+            let ops = await Task.detached(priority: .userInitiated) {
+                OrganizerPlanner.plan(tracks: tracks, profile: profile, rootURL: rootURL)
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            self.operations = ops
+            self.isPreviewStale = false
+            self.isRecomputing = false
+        }
     }
 
     func apply(library: LibraryStore, profile: OrganizerProfile) async {

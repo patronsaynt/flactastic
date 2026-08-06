@@ -51,10 +51,22 @@ enum Theme {
 
     // MARK: - Quality Tier Colors
 
-    static let qualityLossless = Color(red: 0.0, green: 0.9, blue: 0.8)   // bright turquoise — hi-res
-    static let qualityCD = Color(red: 0.3, green: 0.85, blue: 0.4)        // green — CD quality
-    static let qualityMid = Color(red: 0.95, green: 0.75, blue: 0.2)      // amber — mid quality
-    static let qualityLow = Color(red: 0.95, green: 0.3, blue: 0.3)       // red — low quality
+    static let qualityLossless = Color(nsColor: adaptive(
+        dark:  NSColor(red: 0.0,  green: 0.9,  blue: 0.8,  alpha: 1), // bright turquoise — hi-res
+        light: NSColor(red: 0.0,  green: 0.5,  blue: 0.45, alpha: 1)  // muted teal pastel
+    ))
+    static let qualityCD = Color(nsColor: adaptive(
+        dark:  NSColor(red: 0.3,  green: 0.85, blue: 0.4,  alpha: 1), // green — CD quality
+        light: NSColor(red: 0.15, green: 0.5,  blue: 0.25, alpha: 1)  // muted green pastel
+    ))
+    static let qualityMid = Color(nsColor: adaptive(
+        dark:  NSColor(red: 0.95, green: 0.75, blue: 0.2,  alpha: 1), // amber — mid quality
+        light: NSColor(red: 0.68, green: 0.48, blue: 0.05, alpha: 1)  // muted amber pastel
+    ))
+    static let qualityLow = Color(nsColor: adaptive(
+        dark:  NSColor(red: 0.95, green: 0.3,  blue: 0.3,  alpha: 1), // red — low quality
+        light: NSColor(red: 0.72, green: 0.18, blue: 0.18, alpha: 1)  // muted red pastel
+    ))
 
     // MARK: - Helpers
 

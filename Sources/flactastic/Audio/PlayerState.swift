@@ -394,13 +394,24 @@ final class PlayerState {
 
     private func syncFromEngine() {
         updateListeningTracker()
-        currentTrack = engine.currentTrack
-        isPlaying = engine.isPlaying
+        // `@Observable` fires invalidations on every assignment regardless of
+        // value equality, and this runs on every 50 ms engine tick — so only
+        // write properties that actually changed, or every view observing any
+        // of them re-renders 20×/s for the whole duration of playback.
+        // `currentTime` is the one field that genuinely changes per tick.
+        if currentTrack?.id != engine.currentTrack?.id { currentTrack = engine.currentTrack }
+        if isPlaying != engine.isPlaying { isPlaying = engine.isPlaying }
         currentTime = engine.currentTime
-        duration = engine.duration
-        volume = engine.volume
-        queue = engine.queue
-        currentIndex = engine.currentIndex
+        if duration != engine.duration { duration = engine.duration }
+        if volume != engine.volume { volume = engine.volume }
+        // Compare by count + ids: queue mutations are structural (set/append/
+        // insert/remove), and comparing full `Track` values would hash/equate
+        // multi-MB artwork `Data` blobs every tick.
+        if queue.count != engine.queue.count
+            || !zip(queue, engine.queue).allSatisfy({ $0.id == $1.id }) {
+            queue = engine.queue
+        }
+        if currentIndex != engine.currentIndex { currentIndex = engine.currentIndex }
         // Push metadata + playback state into MPNowPlayingInfoCenter so
         // Control Center, the lock screen, hardware remotes, and AirPods all
         // see accurate info without needing to poll us.

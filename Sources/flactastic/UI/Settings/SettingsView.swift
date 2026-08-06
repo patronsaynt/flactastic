@@ -1,6 +1,8 @@
 import SwiftUI
 import AppKit
 
+// MARK: - SettingsView
+
 struct SettingsView: View {
     @Environment(LibraryStore.self) private var library
     @Environment(Settings.self) private var settings
@@ -9,60 +11,63 @@ struct SettingsView: View {
     @Environment(PlayerState.self) private var player
     @Environment(\.dismiss) private var dismiss
 
-    @State private var selectedTab: SettingsTab = .config
+    @State private var selectedTab: SettingsTab = .general
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            // Header
-            HStack(alignment: .firstTextBaseline) {
+        VStack(spacing: 0) {
+            // Header: centered wordmark + trailing close button.
+            ZStack {
                 Wordmark(height: 16)
-                    .opacity(0.85)
-                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] }
-
-                Text("Settings")
-                    .font(Theme.Font.title)
-                    .foregroundStyle(Theme.textPrimary)
-                    .padding(.leading, Theme.Spacing.md)
-
-                Spacer()
-
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Theme.textSecondary)
+                    .opacity(0.9)
+                HStack {
+                    Spacer()
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, Theme.Spacing.xl)
                 }
-                .buttonStyle(.plain)
             }
+            .frame(height: 52)
 
-            // Tab bar
+            Divider().foregroundStyle(Theme.divider)
+
+            // Centered tab bar.
             SettingsTabBar(selectedTab: $selectedTab)
+                .padding(.vertical, Theme.Spacing.sm + 2)
 
-            // Tab content
+            Divider().foregroundStyle(Theme.divider)
+
+            // Scrollable content pane.
             ScrollView(.vertical, showsIndicators: true) {
                 Group {
                     switch selectedTab {
-                    case .config:
-                        ConfigSettingsSection(openFolder: openFolder)
+                    case .general:
+                        GeneralSettingsPane(openFolder: openFolder)
                     case .connections:
-                        ConnectionsSettingsSection()
+                        ConnectionsSettingsPane()
                     case .appearance:
-                        AppearanceSettingsSection()
+                        AppearanceSettingsPane()
                     case .visualizer:
-                        VisualizerSettingsSection()
+                        VisualizerSettingsPane()
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
-                .padding(.trailing, Theme.Spacing.sm)
-                .padding(.bottom, Theme.Spacing.md)
+                .padding(.horizontal, Theme.Spacing.lg + 4)
+                .padding(.top, Theme.Spacing.lg + 4)
+                .padding(.bottom, Theme.Spacing.xl)
             }
             .scrollBounceBehavior(.basedOnSize)
         }
-        .padding(Theme.Spacing.xl)
-        .frame(width: 600, height: 560)
+        .frame(width: 700, height: 560)
         .background(Theme.surface)
     }
+
+    // ── Folder picker ──────────────────────────────────────────────────────
 
     private func openFolder() {
         let panel = NSOpenPanel()
@@ -86,10 +91,10 @@ struct SettingsView: View {
 // MARK: - Tab model
 
 private enum SettingsTab: String, CaseIterable, Identifiable {
-    case config = "Config"
+    case general     = "General"
     case connections = "Connections"
-    case appearance = "Appearance"
-    case visualizer = "Visualizer"
+    case appearance  = "Appearance"
+    case visualizer  = "Visualizer"
     var id: String { rawValue }
 }
 
@@ -100,15 +105,11 @@ private struct SettingsTabBar: View {
     @Namespace private var tabAnimation
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 2) {
             ForEach(SettingsTab.allCases) { tab in
                 tabButton(tab)
             }
         }
-        .padding(3)
-        .background(
-            Capsule().fill(Theme.background)
-        )
     }
 
     private func tabButton(_ tab: SettingsTab) -> some View {
@@ -119,13 +120,13 @@ private struct SettingsTabBar: View {
             }
         } label: {
             Text(tab.rawValue)
-                .font(Theme.Font.bodyMedium)
-                .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textTertiary)
-                .padding(.horizontal, Theme.Spacing.lg)
+                .font(isSelected ? Theme.Font.bodyMedium : Theme.Font.body)
+                .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
+                .padding(.horizontal, Theme.Spacing.lg + 2)
                 .padding(.vertical, Theme.Spacing.sm)
                 .background {
                     if isSelected {
-                        Capsule()
+                        RoundedRectangle(cornerRadius: Theme.Radius.md)
                             .fill(Theme.surfaceElevated)
                             .matchedGeometryEffect(id: "activeSettingsTab", in: tabAnimation)
                     }
@@ -135,9 +136,77 @@ private struct SettingsTabBar: View {
     }
 }
 
-// MARK: - Config tab
+// MARK: - Shared primitives
 
-private struct ConfigSettingsSection: View {
+/// A titled group of settings rows rendered on a raised surface card.
+private struct SettingsGroup<Content: View>: View {
+    var title: String? = nil
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            if let title {
+                Text(title.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.textTertiary)
+                    .kerning(0.6)
+                    .padding(.horizontal, 2)
+            }
+            VStack(spacing: 0) {
+                content()
+            }
+            .background(Theme.surfaceElevated)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+    }
+}
+
+/// Hair-line divider between rows inside a SettingsGroup.
+private struct GroupDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Theme.divider)
+            .frame(height: 0.5)
+            .padding(.leading, Theme.Spacing.lg)
+    }
+}
+
+/// Standard label + toggle row for use inside SettingsGroup.
+private struct ToggleRow: View {
+    let label: String
+    var subtitle: String? = nil
+    @Binding var isOn: Bool
+    var isEnabled: Bool = true
+
+    var body: some View {
+        HStack(alignment: subtitle != nil ? .top : .center, spacing: Theme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(Theme.Font.body)
+                    .foregroundStyle(Theme.textPrimary)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer()
+            Toggle("", isOn: $isOn)
+                .toggleStyle(.switch)
+                .tint(Theme.accent)
+                .labelsHidden()
+                .disabled(!isEnabled)
+        }
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.md)
+        .opacity(isEnabled ? 1 : 0.4)
+    }
+}
+
+// MARK: - General pane
+
+private struct GeneralSettingsPane: View {
     @Environment(LibraryStore.self) private var library
     @Environment(Settings.self) private var settings
     @Environment(\.debugMode) private var debugMode
@@ -146,12 +215,10 @@ private struct ConfigSettingsSection: View {
     var body: some View {
         @Bindable var settings = settings
 
-        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                Text("Music Folder")
-                    .font(Theme.Font.bodyMedium)
-                    .foregroundStyle(Theme.textPrimary)
+        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
 
+            // Library ──────────────────────────────────────────────────────
+            SettingsGroup(title: "Library") {
                 HStack(spacing: Theme.Spacing.md) {
                     if let rootURL = library.rootURL {
                         Image(systemName: "folder.fill")
@@ -162,76 +229,57 @@ private struct ConfigSettingsSection: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     } else {
+                        Image(systemName: "folder")
+                            .foregroundStyle(Theme.textTertiary)
                         Text("No folder selected")
                             .font(Theme.Font.caption)
                             .foregroundStyle(Theme.textTertiary)
                     }
-
                     Spacer()
-
-                    Button("Choose Folder…") {
-                        openFolder()
-                    }
-                    .buttonStyle(PillButtonStyle())
+                    Button("Choose Folder…") { openFolder() }
+                        .buttonStyle(PillButtonStyle())
                 }
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.md)
             }
 
-            Divider().foregroundStyle(Theme.divider)
-
-            HStack {
-                Text("Menu Bar Mini-Player")
-                    .font(Theme.Font.body)
-                    .foregroundStyle(Theme.textSecondary)
-                Spacer()
-                Toggle("", isOn: $settings.showMenuBarPlayer)
-                    .toggleStyle(.switch)
-                    .tint(Theme.accent)
-                    .labelsHidden()
+            // Playback ─────────────────────────────────────────────────────
+            SettingsGroup(title: "Playback") {
+                ToggleRow(
+                    label: "Menu Bar Mini-Player",
+                    subtitle: "Show a compact player in the system menu bar.",
+                    isOn: $settings.showMenuBarPlayer
+                )
+                GroupDivider()
+                ToggleRow(
+                    label: "Auto-Fetch Artist Images",
+                    subtitle: "Automatically download artist artwork from Deezer when missing.",
+                    isOn: $settings.autoFetchArtistImages
+                )
             }
 
-            HStack {
-                Text("Auto-Fetch Artist Images")
-                    .font(Theme.Font.body)
-                    .foregroundStyle(Theme.textSecondary)
-                Spacer()
-                Toggle("", isOn: $settings.autoFetchArtistImages)
-                    .toggleStyle(.switch)
-                    .tint(Theme.accent)
-                    .labelsHidden()
+            // Statistics ───────────────────────────────────────────────────
+            SettingsGroup(title: "Statistics") {
+                CountedPlayThresholdRow()
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .padding(.vertical, Theme.Spacing.md)
             }
 
-            Divider().foregroundStyle(Theme.divider)
-
-            CountedPlayThresholdRow()
-
+            // Debug (hidden behind debugMode flag) ─────────────────────────
             if debugMode {
-                Divider().foregroundStyle(Theme.divider)
-
-                Text("Downloads")
-                    .font(Theme.Font.bodyMedium)
-                    .foregroundStyle(Theme.textPrimary)
-
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Show VPN Advisory")
-                            .font(Theme.Font.body)
-                            .foregroundStyle(Theme.textSecondary)
-                        Text("Show a reminder to use a VPN when opening the Downloads tab.")
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.textTertiary)
-                    }
-                    Spacer()
-                    Toggle("", isOn: $settings.showVpnNotice)
-                        .toggleStyle(.switch)
-                        .tint(Theme.accent)
-                        .labelsHidden()
+                SettingsGroup(title: "Debug") {
+                    ToggleRow(
+                        label: "Show VPN Advisory",
+                        subtitle: "Show a reminder to use a VPN when opening the Downloads tab.",
+                        isOn: $settings.showVpnNotice
+                    )
                 }
             }
         }
     }
 }
 
-// MARK: - Counted-play threshold control
+// MARK: - Counted-play threshold
 
 /// Lets the user choose what percentage of a track must play straight through
 /// for it to count as one play (streaming-service style). Backed by
@@ -246,29 +294,21 @@ private struct CountedPlayThresholdRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Text("Counted Play Threshold")
-                .font(Theme.Font.bodyMedium)
-                .foregroundStyle(Theme.textPrimary)
-            Text("Percentage of a track that must play straight through before it counts as a single play in your listening stats. Higher values are stricter; scrubbing or skipping never counts.")
-                .font(Theme.Font.caption)
-                .foregroundStyle(Theme.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: Theme.Spacing.md) {
-                Slider(
-                    value: Binding(
-                        get: { settings.countedPlayFraction },
-                        set: { settings.countedPlayFraction = $0 }
-                    ),
-                    in: 0...1,
-                    step: 0.01
-                )
-                .tint(Theme.accent)
-
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Counted Play Threshold")
+                        .font(Theme.Font.body)
+                        .foregroundStyle(Theme.textPrimary)
+                    Text("Percentage of a track that must play straight through before it counts as a single play. Higher values are stricter; scrubbing or skipping never counts.")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: Theme.Spacing.xl)
                 HStack(spacing: 2) {
                     TextField("90", text: $text)
                         .textFieldStyle(.roundedBorder)
-                        .frame(width: 48)
+                        .frame(width: 46)
                         .multilineTextAlignment(.trailing)
                         .monospacedDigit()
                         .onSubmit { commit() }
@@ -277,6 +317,15 @@ private struct CountedPlayThresholdRow: View {
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
+            Slider(
+                value: Binding(
+                    get: { settings.countedPlayFraction },
+                    set: { settings.countedPlayFraction = $0 }
+                ),
+                in: 0...1,
+                step: 0.01
+            )
+            .tint(Theme.accent)
         }
         .onAppear { text = String(percent) }
         // Keep the field in sync when the slider moves it.
@@ -293,247 +342,243 @@ private struct CountedPlayThresholdRow: View {
     }
 }
 
-// MARK: - Connections tab
+// MARK: - Connections pane
 
-private struct ConnectionsSettingsSection: View {
+private struct ConnectionsSettingsPane: View {
     @Environment(Settings.self) private var settings
     @Environment(SpotifyAuthController.self) private var spotifyAuth
 
     var body: some View {
         @Bindable var settings = settings
 
-        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            HStack {
-                Text("Discord Rich Presence")
-                    .font(Theme.Font.body)
-                    .foregroundStyle(Theme.textSecondary)
-                Spacer()
-                Toggle("", isOn: $settings.discordRichPresenceEnabled)
-                    .toggleStyle(.switch)
-                    .tint(Theme.accent)
-                    .labelsHidden()
+        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+
+            // Social ───────────────────────────────────────────────────────
+            SettingsGroup(title: "Social") {
+                ToggleRow(
+                    label: "Discord Rich Presence",
+                    subtitle: "Show the currently playing track in your Discord status.",
+                    isOn: $settings.discordRichPresenceEnabled
+                )
             }
 
-            Divider().foregroundStyle(Theme.divider)
+            // Spotify account ──────────────────────────────────────────────
+            SettingsGroup(title: "Spotify Account") {
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    Text("Connect your Spotify account to browse and download your own playlists, including private ones, in full.")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                Text("Spotify account")
-                    .font(Theme.Font.bodyMedium)
-                    .foregroundStyle(Theme.textPrimary)
-                Text("Connect your Spotify account to browse and download your own playlists, including private ones, in full.")
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                HStack(spacing: Theme.Spacing.md) {
-                    switch spotifyAuth.state {
-                    case .disconnected:
-                        Button("Connect Spotify") {
-                            Task { await spotifyAuth.connect() }
-                        }
-                        .buttonStyle(PillButtonStyle(isPrimary: true))
-                    case .connecting:
-                        ProgressView().controlSize(.small)
-                        Text("Connecting…")
-                            .font(Theme.Font.body)
-                            .foregroundStyle(Theme.textSecondary)
-                    case .connected(let name):
-                        HStack(spacing: 6) {
-                            Circle().fill(Theme.qualityCD).frame(width: 7, height: 7)
-                            Text("Connected as ")
+                    HStack(spacing: Theme.Spacing.md) {
+                        switch spotifyAuth.state {
+                        case .disconnected:
+                            Button("Connect Spotify") {
+                                Task { await spotifyAuth.connect() }
+                            }
+                            .buttonStyle(PillButtonStyle(isPrimary: true))
+                        case .connecting:
+                            ProgressView().controlSize(.small)
+                            Text("Connecting…")
+                                .font(Theme.Font.body)
                                 .foregroundStyle(Theme.textSecondary)
-                            + Text(name).foregroundStyle(Theme.textPrimary).fontWeight(.medium)
+                        case .connected(let name):
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(Theme.qualityCD)
+                                    .frame(width: 7, height: 7)
+                                (Text("Connected as ")
+                                    .foregroundStyle(Theme.textSecondary)
+                                + Text(name)
+                                    .foregroundStyle(Theme.textPrimary)
+                                    .fontWeight(.medium))
+                                    .font(Theme.Font.body)
+                            }
+                            Spacer()
+                            Button("Disconnect") { spotifyAuth.disconnect() }
+                                .buttonStyle(PillButtonStyle())
                         }
-                        .font(Theme.Font.body)
-                        Spacer()
-                        Button("Disconnect") { spotifyAuth.disconnect() }
-                            .buttonStyle(PillButtonStyle())
                     }
                 }
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.md)
+
+                ToggleRow(
+                    label: "Show Liked Songs",
+                    subtitle: "Show a Liked Songs entry alongside your playlists on the Playlists download screen.",
+                    isOn: $settings.showSpotifyLikedSongs
+                )
             }
 
-            Divider().foregroundStyle(Theme.divider)
+            // Legacy API keys ──────────────────────────────────────────────
+            SettingsGroup(title: "Spotify API Keys (Legacy)") {
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    Text("Optional. Used only for the public-link paste fallback when you're not connected above. Without keys, pasted public playlists use Spotify's preview, capped at 100 tracks. Add a free Spotify Developer app's Client ID and Secret (developer.spotify.com → Dashboard → Create app) to fetch pasted public playlists of any length.")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                Text("Spotify API keys (legacy)")
-                    .font(Theme.Font.bodyMedium)
-                    .foregroundStyle(Theme.textPrimary)
-                Text("Optional. Used only for the public-link paste fallback when you're not connected above. Without keys, pasted public playlists use Spotify's preview, capped at 100 tracks. Add a free Spotify Developer app's Client ID and Secret (developer.spotify.com → Dashboard → Create app) to fetch pasted public playlists of any length.")
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                HStack {
-                    Text("Client ID")
-                        .font(Theme.Font.body)
-                        .foregroundStyle(Theme.textSecondary)
-                        .frame(width: 90, alignment: .leading)
-                    TextField("Client ID", text: $settings.spotifyClientID)
-                        .textFieldStyle(.roundedBorder)
+                    HStack(spacing: Theme.Spacing.md) {
+                        Text("Client ID")
+                            .font(Theme.Font.body)
+                            .foregroundStyle(Theme.textSecondary)
+                            .frame(width: 90, alignment: .leading)
+                        TextField("Client ID", text: $settings.spotifyClientID)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    HStack(spacing: Theme.Spacing.md) {
+                        Text("Client Secret")
+                            .font(Theme.Font.body)
+                            .foregroundStyle(Theme.textSecondary)
+                            .frame(width: 90, alignment: .leading)
+                        SecureField("Client Secret", text: $settings.spotifyClientSecret)
+                            .textFieldStyle(.roundedBorder)
+                    }
                 }
-                HStack {
-                    Text("Client Secret")
-                        .font(Theme.Font.body)
-                        .foregroundStyle(Theme.textSecondary)
-                        .frame(width: 90, alignment: .leading)
-                    SecureField("Client Secret", text: $settings.spotifyClientSecret)
-                        .textFieldStyle(.roundedBorder)
-                }
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.md)
             }
         }
     }
 }
 
-// MARK: - Visualizer tab
+// MARK: - Appearance pane
 
-private struct VisualizerSettingsSection: View {
-    @Environment(Settings.self) private var settings
-
-    var body: some View {
-        @Bindable var settings = settings
-
-        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Big Picture Fullscreen Toggle")
-                        .font(Theme.Font.body)
-                        .foregroundStyle(Theme.textSecondary)
-                    Text("Show a small icon in Big Picture mode to enter or exit fullscreen.")
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.textTertiary)
-                }
-                Spacer()
-                Toggle("", isOn: $settings.showBigPictureFullScreenToggle)
-                    .toggleStyle(.switch)
-                    .tint(Theme.accent)
-                    .labelsHidden()
-            }
-
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Fetch Lyrics from lrclib.net")
-                        .font(Theme.Font.body)
-                        .foregroundStyle(Theme.textSecondary)
-                    Text("Enables the Lyrics visualizer mode. Lookups are cached on disk; disable to stay fully offline.")
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.textTertiary)
-                }
-                Spacer()
-                Toggle("", isOn: $settings.lyricsLookupEnabled)
-                    .toggleStyle(.switch)
-                    .tint(Theme.accent)
-                    .labelsHidden()
-            }
-
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Save Lyrics to Audio Files")
-                        .font(Theme.Font.body)
-                        .foregroundStyle(Theme.textSecondary)
-                    Text("Embed fetched lyrics into the LYRICS tag on each file (Vorbis, ID3v2 USLT, MP4). Other players will pick them up automatically.")
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.textTertiary)
-                }
-                Spacer()
-                Toggle("", isOn: $settings.saveLyricsToFiles)
-                    .toggleStyle(.switch)
-                    .tint(Theme.accent)
-                    .labelsHidden()
-                    .disabled(!settings.lyricsLookupEnabled)
-            }
-        }
-    }
-}
-
-// MARK: - Appearance tab
-
-private struct AppearanceSettingsSection: View {
+private struct AppearanceSettingsPane: View {
     @Environment(Settings.self) private var settings
 
     private let scaleRange: ClosedRange<Double> = 0.9...1.35
 
-    private func settingsToggle(_ label: String, isOn: Binding<Bool>) -> some View {
-        HStack {
-            Text(label)
-                .font(Theme.Font.body)
-                .foregroundStyle(Theme.textSecondary)
-            Spacer()
-            Toggle("", isOn: isOn)
-                .toggleStyle(.switch)
-                .tint(Theme.accent)
-                .labelsHidden()
+    var body: some View {
+        @Bindable var settings = settings
+
+        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+
+            // Theme ────────────────────────────────────────────────────────
+            SettingsGroup(title: "Theme") {
+                ToggleRow(
+                    label: "Light Mode",
+                    subtitle: "Switch to a light background throughout the app.",
+                    isOn: $settings.useLightMode
+                )
+            }
+
+            // Library View ─────────────────────────────────────────────────
+            SettingsGroup(title: "Library View") {
+                ToggleRow(label: "List Layout", isOn: $settings.useListLayout)
+                GroupDivider()
+                ToggleRow(
+                    label: "Group Albums by Artist",
+                    subtitle: "In Icon View, cluster albums under their artist.",
+                    isOn: $settings.groupByArtist
+                )
+            }
+
+            // Artwork ──────────────────────────────────────────────────────
+            SettingsGroup(title: "Artwork") {
+                ToggleRow(label: "Rounded Album Art", isOn: $settings.roundedArtwork)
+                GroupDivider()
+                ToggleRow(label: "Drop Shadow", isOn: $settings.showArtworkShadow)
+            }
+
+            // Animations ───────────────────────────────────────────────────
+            SettingsGroup(title: "Animations") {
+                ToggleRow(label: "Fade Animations", isOn: $settings.fadeAnimationsEnabled)
+                GroupDivider()
+                HStack {
+                    Text("Fade Direction")
+                        .font(Theme.Font.body)
+                        .foregroundStyle(settings.fadeAnimationsEnabled ? Theme.textPrimary : Theme.textTertiary)
+                    Spacer()
+                    Picker("", selection: $settings.fadeAnimationDirection) {
+                        ForEach(FadeAnimationDirection.allCases) { dir in
+                            Text(dir.label).tag(dir)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .disabled(!settings.fadeAnimationsEnabled)
+                }
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.md)
+                .opacity(settings.fadeAnimationsEnabled ? 1 : 0.4)
+            }
+
+            // Interface ────────────────────────────────────────────────────
+            SettingsGroup(title: "Interface") {
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("UI Scale")
+                                .font(Theme.Font.body)
+                                .foregroundStyle(Theme.textPrimary)
+                            Text("Scales text and controls throughout the app.")
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.textTertiary)
+                        }
+                        Spacer()
+                        Text("\(Int((settings.uiScale * 100).rounded()))%")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.textTertiary)
+                            .monospacedDigit()
+                    }
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Image(systemName: "textformat.size.smaller")
+                            .foregroundStyle(Theme.textTertiary)
+                        Slider(value: $settings.uiScale, in: scaleRange, step: 0.05)
+                            .tint(Theme.accent)
+                        Image(systemName: "textformat.size.larger")
+                            .foregroundStyle(Theme.textTertiary)
+                        Button {
+                            settings.uiScale = 1.0
+                        } label: {
+                            Text("Reset")
+                                .font(Theme.Font.caption)
+                        }
+                        .buttonStyle(PillButtonStyle())
+                        .disabled(abs(settings.uiScale - 1.0) < 0.001)
+                    }
+                }
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.md)
+            }
         }
     }
+}
+
+// MARK: - Visualizer pane
+
+private struct VisualizerSettingsPane: View {
+    @Environment(Settings.self) private var settings
 
     var body: some View {
         @Bindable var settings = settings
 
-        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            settingsToggle("Light Mode", isOn: $settings.useLightMode)
-            settingsToggle("List Layout", isOn: $settings.useListLayout)
-            settingsToggle("Group Albums by Artist (Icon View)", isOn: $settings.groupByArtist)
-            settingsToggle("Rounded Album Art", isOn: $settings.roundedArtwork)
-            settingsToggle("Artwork Drop Shadow", isOn: $settings.showArtworkShadow)
-            settingsToggle("Fade Animations", isOn: $settings.fadeAnimationsEnabled)
+        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
 
-            HStack {
-                Text("Fade Direction")
-                    .font(Theme.Font.body)
-                    .foregroundStyle(Theme.textSecondary)
-                Spacer()
-                Picker("", selection: $settings.fadeAnimationDirection) {
-                    ForEach(FadeAnimationDirection.allCases) { dir in
-                        Text(dir.label).tag(dir)
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .disabled(!settings.fadeAnimationsEnabled)
+            // Display ──────────────────────────────────────────────────────
+            SettingsGroup(title: "Display") {
+                ToggleRow(
+                    label: "Big Picture Fullscreen Toggle",
+                    subtitle: "Show a small icon in Big Picture mode to enter or exit fullscreen.",
+                    isOn: $settings.showBigPictureFullScreenToggle
+                )
             }
 
-            Divider().foregroundStyle(Theme.divider)
-
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                HStack {
-                    Text("UI Scale")
-                        .font(Theme.Font.body)
-                        .foregroundStyle(Theme.textSecondary)
-
-                    Spacer()
-
-                    Text("\(Int((settings.uiScale * 100).rounded()))%")
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.textTertiary)
-                        .monospacedDigit()
-                }
-
-                HStack(spacing: Theme.Spacing.sm) {
-                    Image(systemName: "textformat.size.smaller")
-                        .foregroundStyle(Theme.textTertiary)
-
-                    Slider(
-                        value: $settings.uiScale,
-                        in: scaleRange,
-                        step: 0.05
-                    )
-                    .tint(Theme.accent)
-
-                    Image(systemName: "textformat.size.larger")
-                        .foregroundStyle(Theme.textTertiary)
-
-                    Button {
-                        settings.uiScale = 1.0
-                    } label: {
-                        Text("Reset")
-                            .font(Theme.Font.caption)
-                    }
-                    .buttonStyle(PillButtonStyle())
-                    .disabled(abs(settings.uiScale - 1.0) < 0.001)
-                }
-
-                Text("Scales text and controls throughout the app.")
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.textTertiary)
+            // Lyrics ───────────────────────────────────────────────────────
+            SettingsGroup(title: "Lyrics") {
+                ToggleRow(
+                    label: "Fetch Lyrics from lrclib.net",
+                    subtitle: "Enables the Lyrics visualizer mode. Lookups are cached on disk; disable to stay fully offline.",
+                    isOn: $settings.lyricsLookupEnabled
+                )
+                GroupDivider()
+                ToggleRow(
+                    label: "Save Lyrics to Audio Files",
+                    subtitle: "Embed fetched lyrics into the LYRICS tag on each file (Vorbis, ID3v2 USLT, MP4). Other players will pick them up automatically.",
+                    isOn: $settings.saveLyricsToFiles,
+                    isEnabled: settings.lyricsLookupEnabled
+                )
             }
         }
     }

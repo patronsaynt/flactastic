@@ -28,6 +28,11 @@ struct AllTracksView: View {
     /// Anchor row for shift-click range selection.
     @State private var anchorID: UUID? = nil
     @State private var mergePayload: MergeSheetPayload? = nil
+    /// Gates the initial bulk reveal — see `CollectionView.canAnimateEntrances`.
+    @State private var canAnimateEntrances = false
+    private var animatedTrackIDs: Binding<Set<UUID>> {
+        Binding(get: { library.revealedTrackIDs }, set: { library.revealedTrackIDs = $0 })
+    }
 
     /// Cached sorted+filtered track list. Recomputed only when the underlying
     /// inputs change (tracks, search text, sort option, direction) — NOT on
@@ -60,6 +65,7 @@ struct AllTracksView: View {
                 trackList
             }
         }
+        .task { canAnimateEntrances = true }
         .onAppear { recomputeVisible() }
         .onChange(of: tracks) { _, _ in recomputeVisible() }
         .onChange(of: searchText) { _, _ in recomputeVisible() }
@@ -183,7 +189,7 @@ struct AllTracksView: View {
                             artistItems
                         }
                     }
-                    .riseFadeIn(index: index)
+                    .riseFadeIn(index: index, animated: track.id, animatedIDs: animatedTrackIDs, enabled: canAnimateEntrances)
                 }
             }
             .padding(.bottom, 100)

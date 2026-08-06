@@ -15,8 +15,9 @@ struct TrackMetadataEditorView: View {
     @State private var artists:     [String]
     @State private var album:       String
     @State private var year:        String
-    @State private var genre:       String
-    @State private var trackNumber: String
+    @State private var genre:           String
+    @State private var secondaryGenres: [String]
+    @State private var trackNumber:     String
 
     // Artwork state
     @State private var artworkData:    Data?
@@ -37,8 +38,9 @@ struct TrackMetadataEditorView: View {
             ?? (track.artist.flatMap { $0.isEmpty ? nil : [$0] } ?? []))
         _album       = State(initialValue: track.album       ?? "")
         _year        = State(initialValue: track.year.map    { "\($0)" } ?? "")
-        _genre       = State(initialValue: track.genre       ?? "")
-        _trackNumber = State(initialValue: track.trackNumber.map { "\($0)" } ?? "")
+        _genre           = State(initialValue: track.genre ?? "")
+        _secondaryGenres = State(initialValue: track.secondaryGenres)
+        _trackNumber     = State(initialValue: track.trackNumber.map { "\($0)" } ?? "")
         _artworkData = State(initialValue: track.artwork)
     }
 
@@ -127,6 +129,7 @@ struct TrackMetadataEditorView: View {
                     .frame(maxWidth: .infinity)
             }
             GenreFieldView(text: $genre)
+            SecondaryGenresFieldView(genres: $secondaryGenres, primaryGenre: genre)
         }
     }
 
@@ -225,6 +228,7 @@ struct TrackMetadataEditorView: View {
         let parsedYear        = Int(year)
         let parsedTrackNumber = Int(trackNumber)
         let snapshot = track
+        let cleanedSecondary = secondaryGenres.filter { $0.lowercased() != genre.lowercased() }
 
         let joinedArtist: String? = {
             let cleaned = artists.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -241,13 +245,15 @@ struct TrackMetadataEditorView: View {
                     title:       title.trimmingCharacters(in: .whitespaces),
                     artist:      joinedArtist,
                     album:       album.isEmpty   ? nil : album,
-                    year:        parsedYear,
-                    genre:       genre.isEmpty   ? nil : genre,
-                    trackNumber: parsedTrackNumber,
+                    year:            parsedYear,
+                    genre:           genre.isEmpty ? nil : genre,
+                    secondaryGenres: cleanedSecondary,
+                    trackNumber:     parsedTrackNumber,
                     artworkChange: artChange
                 )
                 await MainActor.run {
                     library.updateTrack(id: snapshot.id, with: updated)
+                    ArtworkImageCache.shared.invalidate(id: "track:\(snapshot.id.uuidString)")
                     dismiss()
                 }
             } catch {

@@ -25,6 +25,20 @@ final class NowPlayingController {
     private var cachedArtworkTrackID: UUID?
     private var cachedArtwork: MPMediaItemArtwork?
 
+    /// Last state pushed to `MPNowPlayingInfoCenter`, used to skip redundant
+    /// pushes: the OS extrapolates elapsed time from `playbackRate` on its own,
+    /// so re-sending the dictionary on every engine tick (~20×/s) is pure churn.
+    /// We only push when the track, play state, or duration changes — or when
+    /// the real elapsed time drifts from that linear extrapolation (a seek).
+    private var lastPushedTrackID: UUID?
+    private var lastPushedIsPlaying: Bool?
+    private var lastPushedDuration: TimeInterval?
+    private var lastPushedElapsed: TimeInterval = 0
+    private var lastPushDate: Date = .distantPast
+
+    /// Elapsed-time drift (seconds) beyond which we re-push — i.e. seek detection.
+    private static let elapsedDriftTolerance: TimeInterval = 1.0
+
     init() {
         setupRemoteCommands()
     }
@@ -46,6 +60,14 @@ final class NowPlayingController {
             return
         }
 
+        let expectedElapsed = lastPushedElapsed
+            + (lastPushedIsPlaying == true ? Date.now.timeIntervalSince(lastPushDate) : 0)
+        let stateChanged = track.id != lastPushedTrackID
+            || isPlaying != lastPushedIsPlaying
+            || duration != lastPushedDuration
+        let seeked = abs(currentTime - expectedElapsed) > Self.elapsedDriftTolerance
+        guard stateChanged || seeked else { return }
+
         var info: [String: Any] = [:]
         info[MPMediaItemPropertyTitle] = track.title
         if let artist = track.artist { info[MPMediaItemPropertyArtist] = artist }
@@ -63,14 +85,28 @@ final class NowPlayingController {
         // macOS requires explicit playbackState — unlike iOS, `nowPlayingInfo`
         // alone does not drive the Control Center widget.
         center.playbackState = isPlaying ? .playing : .paused
+
+        lastPushedTrackID = track.id
+        lastPushedIsPlaying = isPlaying
+        lastPushedDuration = duration
+        lastPushedElapsed = currentTime
+        lastPushDate = .now
     }
 
     func clear() {
+        // `lastPushedIsPlaying == nil` doubles as "already cleared", so the
+        // per-tick call while stopped doesn't hit the info center repeatedly.
+        guard lastPushedIsPlaying != nil || cachedArtwork != nil else { return }
         let center = MPNowPlayingInfoCenter.default()
         center.nowPlayingInfo = nil
         center.playbackState = .stopped
         cachedArtworkTrackID = nil
         cachedArtwork = nil
+        lastPushedTrackID = nil
+        lastPushedIsPlaying = nil
+        lastPushedDuration = nil
+        lastPushedElapsed = 0
+        lastPushDate = .distantPast
     }
 
     // MARK: - OS → App (remote commands)

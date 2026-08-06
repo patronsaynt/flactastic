@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -17,6 +18,10 @@ struct PlayEvent: Codable, Sendable, Identifiable {
     var albumID: String?
     var album: String?
     var genre: String?
+    /// Secondary genres of the track at play time. Optional so existing
+    /// `listening.json` files (which predate the field) still decode — the
+    /// synthesized decoder would otherwise throw on the missing key.
+    var secondaryGenres: [String]?
     var secondsListened: Double
     /// True when this listen qualified as a play under the streaming-style
     /// ~90%-heard rule (decided at record time, where the genuine listened
@@ -33,6 +38,7 @@ struct PlayEvent: Codable, Sendable, Identifiable {
         albumID: String? = nil,
         album: String? = nil,
         genre: String? = nil,
+        secondaryGenres: [String]? = nil,
         secondsListened: Double,
         counted: Bool
     ) {
@@ -44,6 +50,7 @@ struct PlayEvent: Codable, Sendable, Identifiable {
         self.albumID = albumID
         self.album = album
         self.genre = genre
+        self.secondaryGenres = secondaryGenres
         self.secondsListened = secondsListened
         self.counted = counted
     }
@@ -112,8 +119,85 @@ final class ListeningStore {
         }
     }
 
+    /// Async variant of `load(from:)` for app bootstrap: file read + JSON
+    /// decode run off the main actor. The listening log grows with use, so
+    /// the synchronous decode was a launch stall that scales with history.
+    /// State is assigned only after the decode resolves, so nothing can
+    /// observe (or save over) a half-switched store during the await.
+    func loadAsync(from libraryRootURL: URL) async {
+        let url = libraryRootURL
+            .appendingPathComponent(".flactastic", isDirectory: true)
+            .appendingPathComponent("listening.json")
+        let loaded: PersistedData? = await Task.detached(priority: .userInitiated) {
+            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+            do {
+                let data = try Data(contentsOf: url)
+                let decoder = JSONDecoder()
+                if let container = try? decoder.decode(PersistedData.self, from: data) {
+                    return container
+                }
+                // Legacy format: a bare array of events with no recent contexts.
+                return PersistedData(events: try decoder.decode([PlayEvent].self, from: data), contexts: [])
+            } catch {
+                print("[ListeningStore] Failed to load listening history: \(error)")
+                return nil
+            }
+        }.value
+        currentRootURL = libraryRootURL
+        events = loaded?.events ?? []
+        recentContexts = loaded?.contexts ?? []
+    }
+
+    /// Serializes background writes: encode + atomic write happen off the
+    /// main actor, in order, and a stale snapshot can never clobber a newer
+    /// one (the generation guard drops out-of-order arrivals).
+    private actor Persister {
+        private var latestGeneration: UInt64 = 0
+
+        func write(_ snapshot: PersistedData, generation: UInt64, to url: URL) {
+            guard generation > latestGeneration else { return }
+            latestGeneration = generation
+            do {
+                let data = try JSONEncoder().encode(snapshot)
+                try data.write(to: url, options: .atomic)
+            } catch {
+                print("[ListeningStore] Failed to save listening history: \(error)")
+            }
+        }
+    }
+
+    private let persister = Persister()
+    @ObservationIgnored private var saveGeneration: UInt64 = 0
+
+    init() {
+        // Detached save tasks don't get a chance to run once the app begins
+        // tearing down, so flush synchronously at quit — otherwise the last
+        // track's play event could be lost.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.saveNow() }
+        }
+    }
+
+    /// Snapshot current state and persist it off the main actor. The events
+    /// array grows unboundedly with listening history, so encoding it
+    /// synchronously here (once per track change) produced main-thread stalls
+    /// that scale with how long the user has had the app.
     func save() {
         guard let url = fileURL else { return }
+        saveGeneration &+= 1
+        let generation = saveGeneration
+        let snapshot = PersistedData(events: events, contexts: recentContexts)
+        Task.detached(priority: .utility) { [persister] in
+            await persister.write(snapshot, generation: generation, to: url)
+        }
+    }
+
+    /// Synchronous write for app termination.
+    private func saveNow() {
+        guard let url = fileURL else { return }
+        saveGeneration &+= 1
         do {
             let data = try JSONEncoder().encode(PersistedData(events: events, contexts: recentContexts))
             try data.write(to: url, options: .atomic)
@@ -140,6 +224,7 @@ final class ListeningStore {
             albumID: Self.albumID(for: track),
             album: track.album,
             genre: track.genre,
+            secondaryGenres: track.secondaryGenres,
             secondsListened: secondsListened,
             counted: counted
         )
@@ -191,22 +276,29 @@ final class ListeningStore {
 
     var hasHistory: Bool { !events.isEmpty }
 
-    var totalSecondsListened: Double {
-        events.reduce(0) { $0 + $1.secondsListened }
+    /// Events on or after `since` (all events when `since` is nil). Backs the
+    /// time-range filter on the home page.
+    private func filtered(_ since: Date?) -> [PlayEvent] {
+        guard let since else { return events }
+        return events.filter { $0.date >= since }
+    }
+
+    func totalSecondsListened(since: Date? = nil) -> Double {
+        filtered(since).reduce(0) { $0 + $1.secondsListened }
     }
 
     /// Distinct albums the listener has actually played (counted plays only).
-    var albumsPlayedCount: Int {
+    func albumsPlayedCount(since: Date? = nil) -> Int {
         var albums = Set<String>()
-        for event in events where event.counted {
+        for event in filtered(since) where event.counted {
             if let albumID = event.albumID { albums.insert(albumID) }
         }
         return albums.count
     }
 
     /// Total counted plays (each listen that cleared the ~90%-heard rule).
-    var tracksPlayedCount: Int {
-        events.filter(\.counted).count
+    func tracksPlayedCount(since: Date? = nil) -> Int {
+        filtered(since).filter(\.counted).count
     }
 
     /// Newest-first collections (albums/playlists) the user intentionally
@@ -220,8 +312,8 @@ final class ListeningStore {
 
     /// Number of listening sessions — runs of events separated by gaps larger
     /// than `sessionGap`.
-    var sessionCount: Int {
-        let sorted = events.map(\.date).sorted()
+    func sessionCount(since: Date? = nil) -> Int {
+        let sorted = filtered(since).map(\.date).sorted()
         guard !sorted.isEmpty else { return 0 }
         var count = 1
         for i in 1..<sorted.count where sorted[i].timeIntervalSince(sorted[i - 1]) > Self.sessionGap {
@@ -280,8 +372,8 @@ final class ListeningStore {
         }
     }
 
-    func topArtists(limit: Int) -> [RankedItem] {
-        aggregate(key: { $0.artist }, since: nil)
+    func topArtists(limit: Int, since: Date? = nil) -> [RankedItem] {
+        aggregate(key: { $0.artist }, since: since)
             .prefix(limit)
             .map { $0 }
     }
@@ -316,13 +408,22 @@ final class ListeningStore {
             .map { $0 }
     }
 
-    var topGenre: (name: String, share: Double)? {
-        let counted = events.filter(\.counted)
+    func topGenre(since: Date? = nil) -> (name: String, share: Double)? {
+        let counted = filtered(since).filter(\.counted)
         guard !counted.isEmpty else { return nil }
         var counts: [String: Int] = [:]
         for event in counted {
-            guard let genre = event.genre, !genre.isEmpty else { continue }
-            counts[genre, default: 0] += 1
+            // Count the primary genre and every secondary genre at equal
+            // weight, deduped within the event (case-insensitive) so one play
+            // never double-counts a genre.
+            var genresForEvent: [String] = []
+            if let g = event.genre, !g.isEmpty { genresForEvent.append(g) }
+            genresForEvent.append(contentsOf: (event.secondaryGenres ?? []).filter { !$0.isEmpty })
+
+            var seen = Set<String>()
+            for g in genresForEvent where seen.insert(g.lowercased()).inserted {
+                counts[g, default: 0] += 1
+            }
         }
         guard let top = counts.max(by: { $0.value < $1.value }) else { return nil }
         return (top.key, Double(top.value) / Double(counted.count))

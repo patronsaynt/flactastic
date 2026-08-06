@@ -115,6 +115,48 @@ actor SpotifyPlaylistService {
         return try await resolveViaAPI(playlistID: playlistID, sourceURL: url, token: userToken)
     }
 
+    /// Resolve the user's saved ("Liked Songs") tracks via `/v1/me/tracks`.
+    /// Uncapped, paginated 50 at a time. No embed fallback — this endpoint
+    /// requires a user OAuth token.
+    func resolveLikedSongs(userToken token: String) async throws -> Result {
+        var tracks: [RemoteTrack] = []
+        var cover: [RemoteCoverArt] = []
+        var offset = 0
+        let limit = 50
+        while true {
+            let fields = "next,items(track(name,duration_ms,is_local,external_urls(spotify),artists(name),album(images)))"
+            let page = try await apiGet(
+                "https://api.spotify.com/v1/me/tracks?offset=\(offset)&limit=\(limit)&fields=\(fields.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? fields)",
+                token: token, as: APISavedTracksPage.self)
+            for entry in page.items ?? [] {
+                if cover.isEmpty, let images = entry.track?.album?.images {
+                    cover = images.compactMap { img -> RemoteCoverArt? in
+                        guard let s = img.url, let u = URL(string: s) else { return nil }
+                        return RemoteCoverArt(url: u, width: img.width, height: img.height)
+                    }
+                }
+                if let track = Self.remoteTrack(from: entry.track, index: tracks.count) {
+                    tracks.append(track)
+                }
+            }
+            let got = page.items?.count ?? 0
+            if page.next == nil || got < limit { break }
+            offset += limit
+        }
+
+        let sourceURL = URL(string: "https://open.spotify.com/collection/tracks")!
+        let playlist = RemotePlaylist(
+            id: sourceURL.absoluteString,
+            title: "Liked Songs",
+            creator: nil,
+            coverArt: cover,
+            url: sourceURL,
+            tracks: tracks,
+            serviceID: "lucida"
+        )
+        return Result(playlist: playlist, wasTruncated: false)
+    }
+
     // MARK: - Web API path
 
     private func resolveViaAPI(
@@ -409,6 +451,15 @@ private struct APITrack: Decodable {
     let is_local: Bool?
     let external_urls: ExternalURLs?
     let artists: [Artist]?
+    let album: Album?
     struct ExternalURLs: Decodable { let spotify: String? }
     struct Artist: Decodable { let name: String? }
+    struct Album: Decodable { let images: [Image]? }
+    struct Image: Decodable { let url: String?; let width: Int?; let height: Int? }
+}
+
+private struct APISavedTracksPage: Decodable {
+    let items: [Item]?
+    let next: String?
+    struct Item: Decodable { let track: APITrack? }
 }

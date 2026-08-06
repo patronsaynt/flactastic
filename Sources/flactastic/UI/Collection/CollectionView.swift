@@ -15,50 +15,69 @@ struct CollectionView: View {
     @State private var contentMode: CollectionContentMode = .albums
     @State private var editingAlbum: Album? = nil
     @State private var refreshRotation: Double = 0
-
-    private var filteredAlbums: [Album] {
-        let sorted = sortedAlbums
-        guard !searchText.isEmpty else { return sorted }
-        let query = searchText.lowercased()
-        return sorted.filter {
-            $0.name.localizedCaseInsensitiveContains(query) ||
-            ($0.artist?.localizedCaseInsensitiveContains(query) ?? false) ||
-            $0.tracks.contains { $0.title.localizedCaseInsensitiveContains(query) }
-        }
+    /// Gates the *initial* bulk reveal of the album grid/list for this
+    /// mount: starts `false` so the first synchronous render of however
+    /// many cells populate at once shows instantly (animating dozens of
+    /// cells simultaneously is itself a source of stutter), then flips
+    /// `true` shortly after so anything appearing from then on (search
+    /// results, continued scrolling) still gets the fade. Per-item replay
+    /// prevention lives on `library.revealedAlbumIDs` instead of local
+    /// state, since this view gets fully remounted on every tab switch.
+    @State private var canAnimateEntrances = false
+    private var animatedAlbumIDs: Binding<Set<String>> {
+        Binding(get: { library.revealedAlbumIDs }, set: { library.revealedAlbumIDs = $0 })
     }
 
-    private var sortedAlbums: [Album] {
+    /// Cached sorted+filtered (and, for artist/genre sorts, grouped) album
+    /// lists. Recomputed only when the underlying inputs change — NOT on every
+    /// body evaluation. Sorting with `localizedStandardCompare` inside `body`
+    /// re-sorted the whole library on every render (hover, selection, any
+    /// observable tick). Same pattern as `AllTracksView.cachedVisible`.
+    @State private var cachedFiltered: [Album] = []
+    @State private var cachedGroups: [(key: String, albums: [Album])] = []
+
+    private func recomputeVisible() {
         let albums = library.albums
+        let sorted: [Album]
         switch sortOption {
         case .album:
-            return albums.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            sorted = albums.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         case .artist:
-            return albums.sorted {
+            sorted = albums.sorted {
                 ($0.artist ?? "").localizedStandardCompare($1.artist ?? "") == .orderedAscending
             }
         case .year:
-            return albums.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
+            sorted = albums.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
         case .genre:
-            return albums.sorted {
+            sorted = albums.sorted {
                 ($0.genre ?? "Unknown").localizedStandardCompare($1.genre ?? "Unknown") == .orderedAscending
             }
         }
-    }
 
-    /// Groups albums by the current sort key when sorting by artist or genre.
-    private var groupedAlbums: [(key: String, albums: [Album])] {
-        let albums = filteredAlbums
+        let filtered: [Album]
+        if searchText.isEmpty {
+            filtered = sorted
+        } else {
+            let query = searchText.lowercased()
+            filtered = sorted.filter {
+                $0.name.localizedCaseInsensitiveContains(query) ||
+                ($0.artist?.localizedCaseInsensitiveContains(query) ?? false) ||
+                $0.tracks.contains { $0.title.localizedCaseInsensitiveContains(query) }
+            }
+        }
+        cachedFiltered = filtered
+
         switch sortOption {
         case .artist:
-            let grouped = Dictionary(grouping: albums) { $0.artist ?? "Unknown Artist" }
-            return grouped.map { (key: $0.key, albums: $0.value) }
+            let grouped = Dictionary(grouping: filtered) { $0.artist ?? "Unknown Artist" }
+            cachedGroups = grouped.map { (key: $0.key, albums: $0.value) }
                 .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
         case .genre:
-            let grouped = Dictionary(grouping: albums) { $0.genre ?? "Unknown" }
-            return grouped.map { (key: $0.key, albums: $0.value) }
+            let grouped = Dictionary(grouping: filtered) { $0.genre ?? "Unknown" }
+            cachedGroups = grouped.map { (key: $0.key, albums: $0.value) }
                 .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
         default:
-            return []
+            cachedGroups = []
         }
     }
 
@@ -85,6 +104,10 @@ struct CollectionView: View {
             }
         }
         .animation(.easeInOut(duration: 0.22), value: router.collectionPath)
+        .onAppear { recomputeVisible() }
+        .onChange(of: library.tracks) { _, _ in recomputeVisible() }
+        .onChange(of: searchText) { _, _ in recomputeVisible() }
+        .onChange(of: sortOption) { _, _ in recomputeVisible() }
         .sheet(item: $editingAlbum) { album in
             AlbumMetadataEditorView(album: album)
                 .environment(library)
@@ -107,14 +130,15 @@ struct CollectionView: View {
                         if shouldGroup {
                             groupedContent
                         } else if settings.useListLayout {
-                            albumList(filteredAlbums)
+                            albumList(cachedFiltered)
                         } else {
-                            albumGrid(filteredAlbums)
+                            albumGrid(cachedFiltered)
                         }
                     }
                     .padding(.horizontal, Theme.Spacing.xl)
                     .padding(.bottom, 100)
                 }
+                .task { canAnimateEntrances = true }
             case .tracks:
                 // Tracks uses List internally — omit the outer ScrollView so
                 // List can take full height and scroll on its own.
@@ -202,7 +226,7 @@ struct CollectionView: View {
     private var countLabel: String {
         switch contentMode {
         case .albums:
-            let n = filteredAlbums.count
+            let n = cachedFiltered.count
             return "LIBRARY — \(n) ALBUM\(n == 1 ? "" : "S")"
         case .tracks:
             let n = library.tracks.count
@@ -218,7 +242,7 @@ struct CollectionView: View {
 
     private var groupedContent: some View {
         LazyVStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-            ForEach(groupedAlbums, id: \.key) { group in
+            ForEach(cachedGroups, id: \.key) { group in
                 Section {
                     if settings.useListLayout {
                         albumList(group.albums)
@@ -248,7 +272,7 @@ struct CollectionView: View {
                 }
                 .buttonStyle(.plain)
                 .flContextMenu { albumContextMenu(album) }
-                .riseFadeIn(index: index)
+                .riseFadeIn(index: index, animated: album.id, animatedIDs: animatedAlbumIDs, enabled: canAnimateEntrances)
             }
         }
     }
@@ -263,7 +287,7 @@ struct CollectionView: View {
                 }
                 .buttonStyle(.plain)
                 .flContextMenu { albumContextMenu(album) }
-                .riseFadeIn(index: index)
+                .riseFadeIn(index: index, animated: album.id, animatedIDs: animatedAlbumIDs, enabled: canAnimateEntrances)
             }
         }
     }

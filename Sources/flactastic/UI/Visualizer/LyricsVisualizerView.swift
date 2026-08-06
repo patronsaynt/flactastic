@@ -108,7 +108,9 @@ struct LyricsVisualizerView: View {
                 if entry.notFound {
                     unavailable("Unable to find lyrics for this song")
                 } else if let lyrics = fetcher.parsedLyrics(from: entry, duration: track.duration ?? 0) {
-                    TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+                    // Paused schedule: lyrics only advance with playback time,
+                    // so ticking at 10 Hz while paused is pure redraw waste.
+                    TimelineView(.animation(minimumInterval: 0.1, paused: !player.isPlaying)) { _ in
                         LyricsScrollerView(
                             lyrics: lyrics,
                             currentTime: player.currentTime,

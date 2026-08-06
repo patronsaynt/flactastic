@@ -14,6 +14,11 @@ struct Track: Sendable, Identifiable, Hashable {
     var sampleRate: Double?
     var bitDepth: Int?
     var genre: String?
+    /// Up to `GenreResolver.maxSecondaryCount` additional genres beyond the
+    /// primary `genre`. Packed into the same single GENRE tag string on disk
+    /// via `GenreResolver` — there is no separate file tag for these. Defaults
+    /// to empty for tracks/files that predate the feature.
+    var secondaryGenres: [String] = []
     var year: Int?
     /// Mirrors the file's COMPILATION tag (Xiph COMPILATION / ID3v2 TCMP /
     /// MP4 cpil). When true the album this track belongs to is treated as a
@@ -39,6 +44,7 @@ struct Track: Sendable, Identifiable, Hashable {
         sampleRate: Double? = nil,
         bitDepth: Int? = nil,
         genre: String? = nil,
+        secondaryGenres: [String] = [],
         year: Int? = nil,
         isCompilation: Bool = false,
         dateAdded: Date? = nil
@@ -56,6 +62,7 @@ struct Track: Sendable, Identifiable, Hashable {
         self.sampleRate = sampleRate
         self.bitDepth = bitDepth
         self.genre = genre
+        self.secondaryGenres = secondaryGenres
         self.year = year
         self.isCompilation = isCompilation
         self.dateAdded = dateAdded
@@ -87,6 +94,7 @@ extension Track {
             sampleRate: sampleRate,
             bitDepth: bitDepth,
             genre: genre,
+            secondaryGenres: secondaryGenres,
             year: year,
             isCompilation: isCompilation,
             dateAdded: dateAdded

@@ -79,6 +79,13 @@ struct MarqueeText: View {
                 }
             }
             .onChange(of: text) { _, _ in restart() }
+            // Invalidate the token so the self-perpetuating asyncAfter chain
+            // in `scheduleReturn` stops when the view leaves the hierarchy —
+            // otherwise every marquee ever shown keeps rescheduling forever
+            // (the closures retain the state storage, so the token guard
+            // alone never fails). Reappearing re-runs the preference-change
+            // handlers, which restart the scroll.
+            .onDisappear { animationToken &+= 1 }
     }
 
     private func restart() {

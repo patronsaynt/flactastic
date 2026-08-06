@@ -66,6 +66,24 @@ final class LyricsRemoteCache {
         }
     }
 
+    /// Async variant of `load()` for app bootstrap: file read + JSON decode
+    /// run off the main actor so launch doesn't block first paint on disk I/O.
+    func loadAsync() async {
+        let url = fileURL
+        let loaded: [LyricsCacheEntry]? = await Task.detached(priority: .userInitiated) {
+            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+            do {
+                let data = try Data(contentsOf: url)
+                return try JSONDecoder().decode([LyricsCacheEntry].self, from: data)
+            } catch {
+                print("[LyricsRemoteCache] Failed to load: \(error)")
+                return nil
+            }
+        }.value
+        guard let loaded else { return }
+        entries = Dictionary(uniqueKeysWithValues: loaded.map { ($0.key, $0) })
+    }
+
     func save() {
         do {
             let list = Array(entries.values).sorted { $0.key < $1.key }

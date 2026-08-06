@@ -12,12 +12,28 @@ struct ArtistsCollectionView: View {
     @Environment(Settings.self)            private var settings
     @Environment(NavigationRouter.self)    private var router
 
+    /// Gates the initial bulk reveal — see `CollectionView.canAnimateEntrances`.
+    @State private var canAnimateEntrances = false
+    private var animatedArtistIDs: Binding<Set<String>> {
+        Binding(get: { library.revealedArtistIDs }, set: { library.revealedArtistIDs = $0 })
+    }
+
+    /// Cached full artist index. Building it walks every album and track, so
+    /// it must NOT live in a computed property read from `body` — entrance
+    /// animations and remote image fetches mutate observable state on every
+    /// scroll frame, and each mutation would rebuild the whole index. Instead
+    /// it's recomputed only when the library or artist overrides change.
+    @State private var allSummaries: [ArtistSummary] = []
+
     private var summaries: [ArtistSummary] {
-        let resolver = library.makeArtistResolver()
-        let all = library.allArtists(resolver: resolver, overrides: artistStore.overrides)
-        guard !searchText.isEmpty else { return all }
+        guard !searchText.isEmpty else { return allSummaries }
         let q = searchText.lowercased()
-        return all.filter { $0.displayName.lowercased().contains(q) }
+        return allSummaries.filter { $0.displayName.lowercased().contains(q) }
+    }
+
+    private func rebuildSummaries() {
+        let resolver = library.makeArtistResolver()
+        allSummaries = library.allArtists(resolver: resolver, overrides: artistStore.overrides)
     }
 
     var body: some View {
@@ -36,7 +52,7 @@ struct ArtistsCollectionView: View {
                         )
                     }
                     .buttonStyle(.plain)
-                    .riseFadeIn(index: index)
+                    .riseFadeIn(index: index, animated: summary.id, animatedIDs: animatedArtistIDs, enabled: canAnimateEntrances)
                     .task(id: summary.id) {
                         if settings.autoFetchArtistImages {
                             artistImageFetcher.ensureImage(
@@ -50,6 +66,12 @@ struct ArtistsCollectionView: View {
             .padding(.horizontal, Theme.Spacing.xl)
             .padding(.bottom, 100)
         }
+        .task {
+            rebuildSummaries()
+            canAnimateEntrances = true
+        }
+        .onChange(of: library.tracks) { rebuildSummaries() }
+        .onChange(of: artistStore.overrides) { rebuildSummaries() }
     }
 
     private func preferredImage(for summary: ArtistSummary) -> Data? {

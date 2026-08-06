@@ -5,7 +5,7 @@ struct AlbumRowView: View {
 
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
-            ArtworkView(data: album.artwork, size: 48)
+            ArtworkView(data: album.artwork, size: 48, id: "album:\(album.id)")
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(album.name)

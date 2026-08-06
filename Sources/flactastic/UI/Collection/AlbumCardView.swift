@@ -2,10 +2,23 @@ import SwiftUI
 
 struct AlbumCardView: View {
     @Environment(Settings.self) private var settings
+    @Environment(\.displayScale) private var displayScale
 
     let album: Album
 
+    private let artSize: CGFloat = 180
     private var cornerRadius: CGFloat { settings.roundedArtwork ? Theme.Radius.md : 0 }
+
+    private var artworkCacheID: String { "album:\(album.id)" }
+
+    /// Off-main-decoded image, tagged with the cache id it was decoded for so
+    /// a cell whose identity changes never shows the previous album's cover.
+    /// See `ArtworkView.decoded` for the pattern.
+    @State private var decoded: DecodedImage? = nil
+    private struct DecodedImage {
+        let key: String
+        let image: NSImage
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
@@ -13,7 +26,7 @@ struct AlbumCardView: View {
                 .aspectRatio(1, contentMode: .fit)
                 .overlay { albumArtwork }
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-                .artworkShadow(size: 180)
+                .artworkShadow(size: artSize)
 
             Text(album.name)
                 .font(Theme.Font.bodyMedium)
@@ -27,11 +40,31 @@ struct AlbumCardView: View {
                 .foregroundStyle(Theme.textSecondary)
                 .lineLimit(1)
         }
+        .task(id: artworkCacheID) {
+            guard resolvedImage == nil, let data = album.artwork else { return }
+            let box = await ArtworkImageCache.shared.thumbnailAsync(
+                for: data, id: artworkCacheID, pointSize: artSize, scale: displayScale
+            )
+            guard let image = box.image else { return }
+            decoded = DecodedImage(key: artworkCacheID, image: image)
+        }
+    }
+
+    /// Memory-only lookup in the body — the disk read / decode for cold cells
+    /// happens in the `.task` above so scrolling never blocks on it.
+    private var resolvedImage: NSImage? {
+        if let hit = ArtworkImageCache.shared.cachedThumbnail(
+            id: artworkCacheID, pointSize: artSize, scale: displayScale
+        ) {
+            return hit
+        }
+        if let decoded, decoded.key == artworkCacheID { return decoded.image }
+        return nil
     }
 
     @ViewBuilder
     private var albumArtwork: some View {
-        if let data = album.artwork, let nsImage = NSImage(data: data) {
+        if let nsImage = resolvedImage {
             Image(nsImage: nsImage)
                 .resizable()
                 .aspectRatio(contentMode: .fill)

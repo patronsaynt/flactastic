@@ -108,6 +108,12 @@ final class Settings {
         didSet { UserDefaults.standard.set(spotifyClientSecret, forKey: "flactastic.spotifyClientSecret") }
     }
 
+    /// Whether the synthetic "Liked Songs" entry appears at the top of the
+    /// Spotify Playlists screen. Defaults to shown.
+    var showSpotifyLikedSongs: Bool {
+        didSet { UserDefaults.standard.set(showSpotifyLikedSongs, forKey: "flactastic.showSpotifyLikedSongs") }
+    }
+
     /// Fraction of a track (0.0–1.0) that must be genuinely played straight
     /// through for the listen to count as a single play, mirroring streaming
     /// services. Default 0.90 (90%). Clamped to 0…1 on write.
@@ -156,6 +162,8 @@ final class Settings {
         showVpnNotice = (storedVpn as? Bool) ?? true
         spotifyClientID = UserDefaults.standard.string(forKey: "flactastic.spotifyClientID") ?? ""
         spotifyClientSecret = UserDefaults.standard.string(forKey: "flactastic.spotifyClientSecret") ?? ""
+        let storedLikedSongs = UserDefaults.standard.object(forKey: "flactastic.showSpotifyLikedSongs")
+        showSpotifyLikedSongs = (storedLikedSongs as? Bool) ?? true
         let storedCPF = UserDefaults.standard.object(forKey: "flactastic.countedPlayFraction")
         countedPlayFraction = (storedCPF as? Double) ?? 0.90
     }

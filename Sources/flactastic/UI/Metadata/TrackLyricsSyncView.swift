@@ -55,7 +55,9 @@ struct TrackLyricsSyncView: View {
     }
 
     private var transportRow: some View {
-        TimelineView(.periodic(from: .now, by: 0.05)) { _ in
+        // Paused schedule: the readout only moves with playback time, so
+        // ticking at 20 Hz while paused is pure redraw waste.
+        TimelineView(.animation(minimumInterval: 0.05, paused: !player.isPlaying)) { _ in
             HStack(spacing: Theme.Spacing.md) {
                 transportButton(systemName: "backward.end.fill", help: "Restart") {
                     player.engine.seek(to: 0)

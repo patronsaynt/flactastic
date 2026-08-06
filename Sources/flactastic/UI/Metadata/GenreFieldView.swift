@@ -137,7 +137,7 @@ private struct GenrePickerPopover: View {
 
 // MARK: - Chip
 
-private struct GenreChip: View {
+struct GenreChip: View {
     let label: String
     let isSelected: Bool
     let isCustom: Bool
