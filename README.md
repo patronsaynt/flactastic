@@ -1,6 +1,6 @@
 # FLACtastic
 
-<img width="3162" height="407" alt="logo_v2_white_lighting" src="https://github.com/user-attachments/assets/eda30fc5-ae73-406d-b5a3-d5ab8776bf3b" />
+<img width="1624" height="1061" alt="image" src="https://github.com/user-attachments/assets/e17fd960-a1e8-4705-bed9-08b2d6ffc60b" />
 
 **The beautiful way to organize and play your lossless music collection on macOS.**
 
