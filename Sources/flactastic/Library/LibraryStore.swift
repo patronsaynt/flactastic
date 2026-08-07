@@ -119,7 +119,11 @@ final class LibraryStore {
             for group in subgroups {
                 let sorted = group.sorted { ($0.trackNumber ?? Int.max) < ($1.trackNumber ?? Int.max) }
                 let aa = sorted.first(where: { $0.albumArtist != nil })?.albumArtist
-                let distinct = Set(sorted.compactMap(\.artist))
+                // Compare lead credits, not raw tags: one track reading
+                // "Deadmau5 ; Rob Swire" against nine reading "Deadmau5" is a
+                // single-artist album with a guest, not a compilation. Counting
+                // the raw strings made it read as "Various Artists".
+                let distinct = Set(sorted.compactMap(\.artist).map(ArtistResolver.primaryCredit))
                 let displayArtist: String?
                 if let aa { displayArtist = aa }
                 else if distinct.count > 1 { displayArtist = "Various Artists" }

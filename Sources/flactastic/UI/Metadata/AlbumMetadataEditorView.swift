@@ -74,6 +74,16 @@ struct AlbumMetadataEditorView: View {
     @State private var savedCount:   Int     = 0
     @State private var errorMessage: String? = nil
 
+    /// True when the Album Artist field was seeded from `album.artist` (the
+    /// per-track roll-up) because the album carries no real ALBUMARTIST tag.
+    /// That roll-up can be the synthetic label "Various Artists", which exists
+    /// only for display — writing it to disk would invent metadata the user
+    /// never typed, and silently refile the album under a bogus artist.
+    private let albumArtistSeededFromRollUp: Bool
+    /// The chips the field started with, so save can tell an untouched seed
+    /// from a deliberate edit.
+    private let seededAlbumArtists: [String]
+
     init(album: Album) {
         self.album = album
         _albumName    = State(initialValue: album.name)
@@ -83,8 +93,11 @@ struct AlbumMetadataEditorView: View {
         // missing an explicit ALBUMARTIST tag still surfaces a sensible
         // starting list.
         let albumOwnerSource = album.albumArtist ?? album.artist
-        _albumArtists = State(initialValue: ArtistResolver.explicitlySeparated(albumOwnerSource ?? "")
-            ?? (albumOwnerSource.flatMap { $0.isEmpty ? nil : [$0] } ?? []))
+        let seeded = ArtistResolver.explicitlySeparated(albumOwnerSource ?? "")
+            ?? (albumOwnerSource.flatMap { $0.isEmpty ? nil : [$0] } ?? [])
+        _albumArtists = State(initialValue: seeded)
+        self.seededAlbumArtists = seeded
+        self.albumArtistSeededFromRollUp = album.albumArtist == nil
         _year          = State(initialValue: album.year.map { "\($0)" } ?? "")
         _genre           = State(initialValue: album.genre ?? "")
         _secondaryGenres = State(initialValue: album.secondaryGenres)
@@ -401,13 +414,21 @@ struct AlbumMetadataEditorView: View {
         let cleanedSecondary = secondaryGenres.filter { $0.lowercased() != genre.lowercased() }
 
         // Album-level artist — written to the ALBUMARTIST tag on every track.
-        // Always treated as explicit: a no-op edit yields the same string the
-        // album already had, so the writer's idempotent path still applies.
         let newAlbumArtist: String? = Self.joinedChips(albumArtists)
         let aaChange: MetadataWriter.AlbumArtistChange = {
             let existing = album.albumArtist ?? ""
             let target = newAlbumArtist ?? ""
             if existing == target { return .unchanged }
+            // Don't promote a display-only roll-up into a real tag. When the
+            // album had no ALBUMARTIST, the field was pre-filled from
+            // `album.artist` — which is "Various Artists" whenever the tracks
+            // carry more than one distinct artist. Saving an untouched field
+            // would stamp that label onto every file, and the Organizer would
+            // then dutifully file the album under it. Only write what the user
+            // actually changed.
+            if albumArtistSeededFromRollUp && albumArtists == seededAlbumArtists {
+                return .unchanged
+            }
             return .set(newAlbumArtist)
         }()
 

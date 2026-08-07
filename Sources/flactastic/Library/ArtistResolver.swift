@@ -113,6 +113,20 @@ struct ArtistResolver: Sendable {
         return nil
     }
 
+    /// The lead credit of a multi-artist string, using only the explicit
+    /// storage delimiters — `"Deadmau5 ; Rob Swire"` → `"Deadmau5"`.
+    ///
+    /// Deliberately narrower than `splitOnSeparators`: that splits on `", "`
+    /// and `" x "` too, which would maul legitimate names like
+    /// "Tyler, The Creator". Only the unambiguous delimiters the app itself
+    /// writes are honoured here.
+    static func primaryCredit(_ raw: String) -> String {
+        guard let pieces = explicitlySeparated(raw), let lead = pieces.first else {
+            return raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return lead
+    }
+
     /// Canonical storage form for a list of explicitly-defined artists.
     /// Uses `" ; "` (space-semicolon-space) so the file tag remains readable
     /// in third-party editors while still being machine-parseable.
