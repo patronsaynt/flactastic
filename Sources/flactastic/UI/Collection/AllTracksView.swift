@@ -4,8 +4,9 @@ import SwiftUI
 /// library as a sortable, searchable list, with Play All / Shuffle All buttons
 /// that queue the entire (filtered + sorted) catalogue.
 ///
-/// The parent `CollectionView` owns the search text and the mode toggle. This
-/// view owns sort state (option + direction), the action buttons, and the list.
+/// The parent `CollectionView` owns the search text, the mode toggle and the
+/// sort state (so one control row serves every mode). This view owns the
+/// Play All / Shuffle All buttons and the list.
 struct AllTracksView: View {
     @Environment(PlayerState.self) private var player
     @Environment(LibraryStore.self) private var library
@@ -15,14 +16,10 @@ struct AllTracksView: View {
 
     let tracks: [Track]
     let searchText: String
+    /// Persisted by `CollectionView`, which renders the sort control.
+    @Binding var sortOption: AllTracksSortOption
+    @Binding var ascending: Bool
 
-    /// Persisted across launches. Default stays `.dateAdded` for first-time
-    /// users; subsequent runs honour whatever was last picked.
-    @AppStorage("flactastic.allTracksSort") private var sortOption: AllTracksSortOption = .dateAdded
-    /// `false` for `.dateAdded` means newest-first (the natural default for a
-    /// "recently added" sort). For alphabetical sorts the default flips to
-    /// ascending (A→Z) via `.onChange` below. Persisted alongside `sortOption`.
-    @AppStorage("flactastic.allTracksAscending") private var ascending: Bool = false
     @State private var editingTrack: Track? = nil
     @State private var selection: Set<UUID> = []
     /// Anchor row for shift-click range selection.
@@ -39,6 +36,12 @@ struct AllTracksView: View {
     /// every selection toggle. Without this cache, every tap would re-sort the
     /// entire library, producing seconds-long lag on large collections.
     @State private var cachedVisible: [Track] = []
+    /// `cachedVisible` is only filled by `recomputeVisible()` from `.onAppear`,
+    /// so the very first render always sees an empty list. Without this flag
+    /// that frame would render the "no matches" state and then swap to the
+    /// full list — a height change the mode-switch crossfade animates, which
+    /// reads as the list lurching down from the top.
+    @State private var hasComputed = false
 
     private func recomputeVisible() {
         let filtered: [Track]
@@ -53,15 +56,21 @@ struct AllTracksView: View {
             }
         }
         cachedVisible = sorted(filtered, by: sortOption, ascending: ascending)
+        hasComputed = true
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            controls
+        // Branch on the *source* tracks, not the cache: this keeps the outer
+        // layout identical from the first frame, so switching into Tracks
+        // crossfades a stable shape instead of animating a height change.
+        VStack(alignment: .leading, spacing: 0) {
+            playControls
+                .padding(.bottom, 18)
 
-            if cachedVisible.isEmpty {
-                emptyState
+            if tracks.isEmpty {
+                emptyState(message: "No tracks in your library")
             } else {
+                FLTrackListHeader()
                 trackList
             }
         }
@@ -88,74 +97,60 @@ struct AllTracksView: View {
         let tracks: [Track]
     }
 
-    // MARK: - Controls row
+    // MARK: - Play controls
 
-    private var controls: some View {
-        HStack(spacing: Theme.Spacing.md) {
+    private var playControls: some View {
+        HStack(spacing: 10) {
             Button { playAll(shuffle: false) } label: {
-                HStack(spacing: Theme.Spacing.xs) {
+                HStack(spacing: Theme.Spacing.sm) {
                     Image(systemName: "play.fill")
+                        .font(.system(size: 11))
                     Text("Play All")
                 }
             }
-            .buttonStyle(PillButtonStyle(isPrimary: true))
+            .buttonStyle(FLActionPillStyle(isPrimary: true))
             .disabled(cachedVisible.isEmpty)
 
             Button { playAll(shuffle: true) } label: {
-                HStack(spacing: Theme.Spacing.xs) {
+                HStack(spacing: Theme.Spacing.sm) {
                     Image(systemName: "shuffle")
+                        .font(.system(size: 12))
                     Text("Shuffle All")
                 }
             }
-            .buttonStyle(PillButtonStyle())
+            .buttonStyle(FLActionPillStyle())
             .disabled(cachedVisible.isEmpty)
-
-            Spacer()
-
-            Picker("Sort", selection: $sortOption) {
-                ForEach(AllTracksSortOption.allCases) { option in
-                    Text(option.rawValue).tag(option)
-                }
-            }
-            .pickerStyle(.menu)
-            .tint(Theme.textSecondary)
-            .onChange(of: sortOption) { _, newValue in
-                // Reset direction to the sensible default for the chosen sort.
-                ascending = (newValue != .dateAdded)
-            }
-
-            Button {
-                ascending.toggle()
-            } label: {
-                Image(systemName: ascending ? "arrow.up" : "arrow.down")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.textSecondary)
-                    .frame(width: 24, height: 24)
-                    .background(
-                        Circle().fill(Theme.surfaceElevated)
-                    )
-            }
-            .buttonStyle(.plain)
-            .help(ascending ? "Ascending" : "Descending")
         }
     }
 
     // MARK: - Track list
 
+    @ViewBuilder
     private var trackList: some View {
         ScrollView {
-            LazyVStack(spacing: 2) {
+            // Lives inside the scroll view so toggling it can't resize the
+            // container above it.
+            if hasComputed && cachedVisible.isEmpty {
+                emptyState(message: "No tracks match your search")
+            } else {
+                trackRows
+            }
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    private var trackRows: some View {
+        Group {
+            LazyVStack(spacing: 0) {
                 ForEach(Array(cachedVisible.enumerated()), id: \.element.id) { index, track in
                     TrackRow(
                         track: track,
                         isPlaying: player.currentTrack?.id == track.id,
-                        displayNumber: nil,
-                        showAlbumArt: true
+                        displayNumber: index + 1,
+                        showAlbumArt: true,
+                        showAlbumInSubtitle: true
                     )
-                    .padding(.horizontal, Theme.Spacing.sm)
-                    .padding(.vertical, 4)
-                    .background(rowBackground(for: track))
-                    .contentShape(Rectangle())
+                    .flRowStyle(fill: rowFill(for: track))
                     .onTapGesture(count: 2) { play(track: track) }
                     .simultaneousGesture(
                         TapGesture(count: 1).onEnded { handleSelection(for: track) }
@@ -237,19 +232,12 @@ struct AllTracksView: View {
         anchorID = nil
     }
 
-    @ViewBuilder
-    private func rowBackground(for track: Track) -> some View {
-        let isPlaying = player.currentTrack?.id == track.id
-        let isSelected = selection.contains(track.id)
-        if isPlaying {
-            RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                .fill(Theme.surfaceElevated)
-        } else if isSelected {
-            RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                .fill(Theme.surfaceElevated.opacity(0.55))
-        } else {
-            Color.clear
-        }
+    /// Playing / selected rows carry their own fill; everything else falls
+    /// through to `flRowStyle`'s hover fill.
+    private func rowFill(for track: Track) -> Color? {
+        if player.currentTrack?.id == track.id { return Theme.surfaceElevated }
+        if selection.contains(track.id) { return Theme.surfaceElevated.opacity(0.55) }
+        return nil
     }
 
     private func addToPlaylistMenuItem(tracks: [Track]) -> FLContextMenuItem {
@@ -279,12 +267,12 @@ struct AllTracksView: View {
         return .submenu("Add to Playlist", systemImage: "plus.square.on.square", items: children)
     }
 
-    private var emptyState: some View {
+    private func emptyState(message: String) -> some View {
         VStack(spacing: Theme.Spacing.md) {
             Image(systemName: "music.note.list")
                 .font(.system(size: 36))
                 .foregroundStyle(Theme.textTertiary)
-            Text(tracks.isEmpty ? "No tracks in your library" : "No tracks match your search")
+            Text(message)
                 .font(Theme.Font.body)
                 .foregroundStyle(Theme.textTertiary)
         }

@@ -6,6 +6,9 @@ struct ArtistGridCell: View {
     /// when set, falling back to a banner crop, then the artwork sample.
     let preferredImage: Data?
 
+    /// Drives the cell's rise and the artwork's highlight together.
+    @State private var isHovering = false
+
     @Environment(Settings.self) private var settings
     @Environment(\.displayScale) private var displayScale
 
@@ -30,23 +33,27 @@ struct ArtistGridCell: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+        VStack(alignment: .leading, spacing: 3) {
             Color.clear
                 .aspectRatio(1, contentMode: .fit)
                 .overlay { artwork }
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
                 .artworkShadow(size: artSize)
+                .coverHoverHighlight(isHovering: isHovering, cornerRadius: cornerRadius)
+                .padding(.bottom, 7)
 
             Text(summary.displayName)
-                .font(Theme.Font.bodyMedium)
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Theme.textPrimary)
                 .lineLimit(1)
 
             Text(countLabel)
-                .font(Theme.Font.caption)
-                .foregroundStyle(Theme.textSecondary)
+                .font(.system(size: 11.5))
+                .foregroundStyle(Theme.textTertiary)
                 .lineLimit(1)
         }
+        .cardHoverLift(isHovering: isHovering)
+        .onHover { isHovering = $0 }
         .task(id: target?.id) {
             guard let target, resolvedImage == nil else { return }
             var box = await ArtworkImageCache.shared.thumbnailAsync(

@@ -39,19 +39,18 @@ struct ArtistsCollectionView: View {
     var body: some View {
         ScrollView {
             LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: Theme.Spacing.lg)],
-                spacing: Theme.Spacing.xl
+                columns: [GridItem(.adaptive(minimum: 180, maximum: 240), spacing: 24)],
+                spacing: 24
             ) {
                 ForEach(Array(summaries.enumerated()), id: \.element.id) { index, summary in
-                    Button {
+                    ArtistGridCell(
+                        summary: summary,
+                        preferredImage: preferredImage(for: summary)
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture {
                         router.collectionPath.append(NavigationRoute.artist(key: summary.id))
-                    } label: {
-                        ArtistGridCell(
-                            summary: summary,
-                            preferredImage: preferredImage(for: summary)
-                        )
                     }
-                    .buttonStyle(.plain)
                     .riseFadeIn(index: index, animated: summary.id, animatedIDs: animatedArtistIDs, enabled: canAnimateEntrances)
                     .task(id: summary.id) {
                         if settings.autoFetchArtistImages {
@@ -63,7 +62,8 @@ struct ArtistsCollectionView: View {
                     }
                 }
             }
-            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.horizontal, collectionGutter)
+            .padding(.top, cardHoverHeadroom)
             .padding(.bottom, 100)
         }
         .task {

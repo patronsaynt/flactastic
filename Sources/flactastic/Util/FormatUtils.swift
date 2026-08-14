@@ -82,6 +82,23 @@ enum FormatUtils {
         }
     }
 
+    /// Coarser than `formatDuration` — "4h 12m" / "38m" — for aggregate
+    /// lengths where seconds are noise.
+    static func coarseDuration(_ seconds: TimeInterval) -> String {
+        guard seconds.isFinite, seconds > 0 else { return "0m" }
+        let total = Int(seconds.rounded())
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        return h > 0 ? String(format: "%dh %02dm", h, m) : "\(m)m"
+    }
+
+    /// "64 tracks · 4h 12m" — the playlist card/row subtitle.
+    static func playlistSummary(trackCount: Int, duration: TimeInterval) -> String {
+        let tracks = "\(trackCount) track\(trackCount == 1 ? "" : "s")"
+        guard duration > 0 else { return tracks }
+        return "\(tracks) · \(coarseDuration(duration))"
+    }
+
     static func formatSampleRate(_ rate: Double?, bitDepth: Int?) -> String? {
         guard let rate else { return nil }
         let khz = rate / 1000.0

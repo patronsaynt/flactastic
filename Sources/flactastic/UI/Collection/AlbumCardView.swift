@@ -6,6 +6,10 @@ struct AlbumCardView: View {
 
     let album: Album
 
+    /// Drives the card's rise and the cover's highlight together, so hovering
+    /// anywhere on the card — cover or captions — lights the whole thing.
+    @State private var isHovering = false
+
     private let artSize: CGFloat = 180
     private var cornerRadius: CGFloat { settings.roundedArtwork ? Theme.Radius.md : 0 }
 
@@ -21,25 +25,29 @@ struct AlbumCardView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+        VStack(alignment: .leading, spacing: 3) {
             Color.clear
                 .aspectRatio(1, contentMode: .fit)
                 .overlay { albumArtwork }
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
                 .artworkShadow(size: artSize)
+                .coverHoverHighlight(isHovering: isHovering, cornerRadius: cornerRadius)
+                .padding(.bottom, 7)
 
             Text(album.name)
-                .font(Theme.Font.bodyMedium)
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Theme.textPrimary)
                 .lineLimit(1)
 
             Text(album.isCompilation
                  ? "Compilation"
                  : (ArtistResolver.displayString(album.artist) ?? "Unknown Artist"))
-                .font(Theme.Font.caption)
-                .foregroundStyle(Theme.textSecondary)
+                .font(.system(size: 11.5))
+                .foregroundStyle(Theme.textTertiary)
                 .lineLimit(1)
         }
+        .cardHoverLift(isHovering: isHovering)
+        .onHover { isHovering = $0 }
         .task(id: artworkCacheID) {
             guard resolvedImage == nil, let data = album.artwork else { return }
             let box = await ArtworkImageCache.shared.thumbnailAsync(

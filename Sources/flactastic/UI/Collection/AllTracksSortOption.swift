@@ -13,8 +13,8 @@ enum AllTracksSortOption: String, CaseIterable, Identifiable {
 /// see the entire catalogue as a flat sortable track list.
 enum CollectionContentMode: String, CaseIterable, Identifiable {
     case albums = "Albums"
-    case tracks = "Tracks"
     case artists = "Artists"
+    case tracks = "Tracks"
 
     var id: String { rawValue }
 }

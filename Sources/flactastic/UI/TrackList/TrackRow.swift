@@ -8,40 +8,45 @@ struct TrackRow: View {
     /// to signal that the row can be reordered by dragging.
     var showDragHandle: Bool = false
     var showAlbumArt: Bool = false
+    /// When `true`, the secondary line reads "artist — album" instead of just
+    /// the artist. Used by the flat All Tracks list, where the album isn't
+    /// implied by context.
+    var showAlbumInSubtitle: Bool = false
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.md) {
+        HStack(spacing: 14) {
             if showAlbumArt && displayNumber != nil {
                 numberWithAlbumArt
             } else if showAlbumArt {
                 albumArtOrIndicator
             } else {
                 trackNumberOrIndicator
-                    .frame(width: 28, alignment: .trailing)
+                    .frame(width: 26, alignment: .center)
             }
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(track.title)
-                    .font(Theme.Font.bodyMedium)
+                    .font(.system(size: 13.5))
                     .foregroundStyle(isPlaying ? Theme.accent : Theme.textPrimary)
                     .lineLimit(1)
 
-                if let artist = ArtistResolver.displayString(track.artist) {
-                    Text(artist)
-                        .font(Theme.Font.caption)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 11.5))
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                 }
             }
 
-            Spacer()
+            Spacer(minLength: Theme.Spacing.sm)
 
             // File format badge
             Text(track.fileFormat.displayName)
-                .font(Theme.Font.captionMono)
+                .font(.system(size: 10, weight: .medium))
+                .tracking(0.3)
                 .foregroundStyle(Theme.textTertiary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .fill(Theme.surfaceElevated)
@@ -51,9 +56,10 @@ struct TrackRow: View {
             qualityBadge
 
             Text(FormatUtils.formatDuration(track.duration))
-                .font(Theme.Font.captionMono)
-                .foregroundStyle(Theme.textTertiary)
+                .font(.system(size: 12.5))
+                .foregroundStyle(Theme.textSecondary)
                 .monospacedDigit()
+                .frame(width: 44, alignment: .trailing)
 
             if showDragHandle {
                 Image(systemName: "line.3.horizontal")
@@ -62,14 +68,19 @@ struct TrackRow: View {
                     .frame(width: 18)
             }
         }
-        .padding(.vertical, Theme.Spacing.xs)
-        .padding(.horizontal, Theme.Spacing.sm)
+    }
+
+    private var subtitle: String? {
+        let artist = ArtistResolver.displayString(track.artist)
+        guard showAlbumInSubtitle, let album = track.album, !album.isEmpty else { return artist }
+        guard let artist else { return album }
+        return "\(artist) — \(album)"
     }
 
     @ViewBuilder
     private var albumArtOrIndicator: some View {
         if isPlaying {
-            ArtworkView(data: track.artwork, size: 36)
+            ArtworkView(data: track.artwork, size: 34)
                 .overlay(alignment: .center) {
                     Image(systemName: "speaker.wave.2.fill")
                         .font(.system(size: 11))
@@ -77,27 +88,17 @@ struct TrackRow: View {
                         .shadow(radius: 2)
                 }
         } else {
-            ArtworkView(data: track.artwork, size: 36)
+            ArtworkView(data: track.artwork, size: 34)
         }
     }
 
     @ViewBuilder
     private var numberWithAlbumArt: some View {
-        HStack(spacing: Theme.Spacing.xs) {
-            Group {
-                if isPlaying {
-                    Image(systemName: "speaker.wave.2.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.accent)
-                } else if let num = displayNumber {
-                    Text("\(num)")
-                        .font(Theme.Font.captionMono)
-                        .foregroundStyle(Theme.textTertiary)
-                }
-            }
-            .frame(width: 22, alignment: .trailing)
+        HStack(spacing: 14) {
+            trackNumberOrIndicator
+                .frame(width: 26, alignment: .center)
 
-            ArtworkView(data: track.artwork, size: 36)
+            ArtworkView(data: track.artwork, size: 34)
         }
     }
 
@@ -108,8 +109,9 @@ struct TrackRow: View {
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.accent)
         } else if let num = displayNumber ?? track.trackNumber {
-            Text("\(num)")
-                .font(Theme.Font.captionMono)
+            Text(String(format: "%02d", num))
+                .font(.system(size: 12.5))
+                .monospacedDigit()
                 .foregroundStyle(Theme.textTertiary)
         } else {
             Text("")
@@ -126,10 +128,11 @@ struct TrackRow: View {
         let label = detail.map { "\(quality.label) · \($0)" } ?? quality.label
 
         return Text(label)
-            .font(Theme.Font.captionMono)
+            .font(.system(size: 10, weight: .semibold))
+            .tracking(0.3)
             .foregroundStyle(quality.color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
                     .fill(quality.color.opacity(0.12))

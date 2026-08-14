@@ -25,20 +25,24 @@ struct PlaylistDetailView: View {
             let tracks = playlistStore.resolvedTracks(for: playlist, in: library)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-                    DetailBackButton {
+                VStack(alignment: .leading, spacing: 0) {
+                    FLBackLink(title: "Back to Playlists") {
                         if !router.playlistsPath.isEmpty { router.playlistsPath.removeLast() }
                     }
+                    .padding(.top, 24)
+
                     playlistHeader(playlist, tracks: tracks)
+                        .padding(.top, 22)
+                        .padding(.bottom, 28)
 
                     if tracks.isEmpty {
                         emptyState
                     } else {
+                        FLTrackListHeader()
                         trackList(playlist)
                     }
                 }
-                .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.top, Theme.Spacing.lg)
+                .padding(.horizontal, collectionGutter)
                 .padding(.bottom, 100)
             }
             .background(Theme.background)
@@ -57,41 +61,50 @@ struct PlaylistDetailView: View {
 
     @ViewBuilder
     private func playlistHeader(_ playlist: Playlist, tracks: [Track]) -> some View {
-        HStack(alignment: .top, spacing: Theme.Spacing.xl) {
-            ArtworkView(data: playlist.customArtwork ?? tracks.first?.artwork, size: 200)
+        HStack(alignment: .bottom, spacing: 28) {
+            ArtworkView(data: playlist.customArtwork ?? tracks.first?.artwork, size: 180)
 
-            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                if isEditingName {
-                    TextField("Playlist name", text: $editedName)
-                        .textFieldStyle(.plain)
-                        .font(Theme.Font.title)
-                        .foregroundStyle(Theme.textPrimary)
-                        .onSubmit { commitRename() }
-                } else {
-                    Text(playlist.name)
-                        .font(Theme.Font.title)
-                        .foregroundStyle(Theme.textPrimary)
-                        .onTapGesture(count: 2) {
-                            editedName = playlist.name
-                            isEditingName = true
-                        }
+            VStack(alignment: .leading, spacing: 0) {
+                FLEyebrow(text: "Playlist")
+
+                Group {
+                    if isEditingName {
+                        TextField("Playlist name", text: $editedName)
+                            .textFieldStyle(.plain)
+                            .onSubmit { commitRename() }
+                    } else {
+                        Text(playlist.name)
+                            .lineLimit(1)
+                            .onTapGesture(count: 2) {
+                                editedName = playlist.name
+                                isEditingName = true
+                            }
+                            .help("Double-click to rename")
+                    }
                 }
+                .font(.system(size: 30, weight: .bold))
+                .tracking(-0.8)
+                .foregroundStyle(Theme.textPrimary)
+                .padding(.top, 6)
 
-                Text("\(tracks.count) track\(tracks.count == 1 ? "" : "s")")
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.textSecondary)
+                Text(FormatUtils.playlistSummary(
+                    trackCount: tracks.count,
+                    duration: tracks.reduce(0) { $0 + ($1.duration ?? 0) }
+                ))
+                .font(.system(size: 13.5))
+                .foregroundStyle(Theme.textSecondary)
+                .padding(.top, 8)
 
                 if let desc = playlist.description, !desc.isEmpty {
                     Text(desc)
-                        .font(Theme.Font.body)
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(4)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Theme.textTertiary)
+                        .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 6)
                 }
 
-                Spacer()
-
-                HStack(spacing: Theme.Spacing.md) {
+                HStack(spacing: 10) {
                     if !tracks.isEmpty {
                         Button {
                             player.isShuffleEnabled = false
@@ -99,12 +112,13 @@ struct PlaylistDetailView: View {
                             player.engine.play()
                             listening.recordPlaylistPlay(playlist)
                         } label: {
-                            HStack(spacing: Theme.Spacing.xs) {
+                            HStack(spacing: Theme.Spacing.sm) {
                                 Image(systemName: "play.fill")
-                                Text("Play All")
+                                    .font(.system(size: 11))
+                                Text("Play")
                             }
                         }
-                        .buttonStyle(PillButtonStyle(isPrimary: true))
+                        .buttonStyle(FLActionPillStyle(isPrimary: true))
 
                         Button {
                             player.isShuffleEnabled = true
@@ -113,27 +127,23 @@ struct PlaylistDetailView: View {
                             player.engine.play()
                             listening.recordPlaylistPlay(playlist)
                         } label: {
-                            HStack(spacing: Theme.Spacing.xs) {
+                            HStack(spacing: Theme.Spacing.sm) {
                                 Image(systemName: "shuffle")
+                                    .font(.system(size: 12))
                                 Text("Shuffle")
                             }
                         }
-                        .buttonStyle(PillButtonStyle())
+                        .buttonStyle(FLActionPillStyle())
                     }
 
-                    Button {
+                    FLCircleIconButton(systemImage: "pencil") {
                         showEditor = true
-                    } label: {
-                        HStack(spacing: Theme.Spacing.xs) {
-                            Image(systemName: "pencil")
-                            Text("Edit")
-                        }
                     }
-                    .buttonStyle(PillButtonStyle())
+                    .help("Edit cover, name and description")
                 }
+                .padding(.top, 18)
             }
         }
-        .frame(minHeight: 200)
     }
 
     // MARK: - Track List
@@ -166,17 +176,17 @@ struct PlaylistDetailView: View {
                                       playlist: Playlist) -> some View {
         let entryID = entry.id
         let isDropTarget = dropTargetEntryID == entryID && draggingEntryID != entryID
-        let rowBackground: Color = player.currentTrack?.id == track.id
+        // `nil` lets `flRowStyle` supply its own hover fill.
+        let rowBackground: Color? = player.currentTrack?.id == track.id
             ? Theme.surfaceElevated
-            : (selection.contains(entryID) ? Theme.surfaceElevated.opacity(0.6) : Color.clear)
+            : (selection.contains(entryID) ? Theme.surfaceElevated.opacity(0.6) : nil)
 
         TrackRow(track: track,
                  isPlaying: player.currentTrack?.id == track.id,
                  displayNumber: index + 1,
                  showDragHandle: true,
                  showAlbumArt: true)
-            .padding(.vertical, 2)
-            .background(RoundedRectangle(cornerRadius: Theme.Radius.lg).fill(rowBackground))
+            .flRowStyle(fill: rowBackground)
             .opacity(draggingEntryID == entryID ? 0.4 : 1.0)
             .overlay(alignment: .top) {
                 if isDropTarget {

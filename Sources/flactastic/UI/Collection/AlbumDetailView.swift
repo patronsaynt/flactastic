@@ -32,15 +32,20 @@ struct AlbumDetailView: View {
         if let album {
             ZStack {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-                        DetailBackButton {
+                    VStack(alignment: .leading, spacing: 0) {
+                        FLBackLink(title: "Back to Albums") {
                             if !router.collectionPath.isEmpty { router.collectionPath.removeLast() }
                         }
+                        .padding(.top, 24)
+
                         albumHeader(album)
+                            .padding(.top, 22)
+                            .padding(.bottom, 28)
+
+                        FLTrackListHeader()
                         trackList(album.tracks)
                     }
-                    .padding(.horizontal, Theme.Spacing.xl)
-                    .padding(.top, Theme.Spacing.lg)
+                    .padding(.horizontal, collectionGutter)
                     .padding(.bottom, 100)
                 }
             }
@@ -70,8 +75,8 @@ struct AlbumDetailView: View {
     // MARK: - Album Header
 
     private func albumHeader(_ album: Album) -> some View {
-        HStack(alignment: .top, spacing: Theme.Spacing.xl) {
-            ArtworkView(data: album.artwork, size: 200, id: "album:\(album.id)")
+        HStack(alignment: .bottom, spacing: 28) {
+            ArtworkView(data: album.artwork, size: 180, id: "album:\(album.id)")
                 .onTapGesture {
                     withAnimation(.easeInOut(duration: 0.3)) {
                         router.artworkZoomData = album.artwork
@@ -81,69 +86,86 @@ struct AlbumDetailView: View {
                     if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
                 }
 
-            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            VStack(alignment: .leading, spacing: 0) {
+                FLEyebrow(text: "Album")
+
                 Text(album.name)
-                    .font(Theme.Font.title)
+                    .font(.system(size: 30, weight: .bold))
+                    .tracking(-0.8)
                     .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                    .padding(.top, 6)
 
-                if album.isCompilation {
-                    Text("Compilation")
-                        .font(Theme.Font.headline)
-                        .foregroundStyle(Theme.textSecondary)
-                } else if let artist = album.artist {
-                    ArtistLink(credit: artist)
-                }
+                metadataLine(album)
+                    .padding(.top, 8)
 
-                HStack(spacing: Theme.Spacing.md) {
-                    if let year = album.year {
-                        metadataTag("\(year)")
-                    }
-                    if let genre = album.genre {
-                        metadataTag(genre)
-                    }
-                    ForEach(album.secondaryGenres, id: \.self) { secondary in
-                        metadataTag(secondary)
-                    }
-                    metadataTag("\(album.trackCount) tracks")
-                    metadataTag(FormatUtils.formatDuration(album.totalDuration))
-                }
-
-                Spacer()
-
-                HStack(spacing: Theme.Spacing.md) {
+                HStack(spacing: 10) {
                     Button {
                         playAlbum(album, shuffle: false)
                     } label: {
-                        HStack(spacing: Theme.Spacing.xs) {
+                        HStack(spacing: Theme.Spacing.sm) {
                             Image(systemName: "play.fill")
-                            Text("Play All")
+                                .font(.system(size: 11))
+                            Text("Play")
                         }
                     }
-                    .buttonStyle(PillButtonStyle(isPrimary: true))
+                    .buttonStyle(FLActionPillStyle(isPrimary: true))
 
                     Button {
                         playAlbum(album, shuffle: true)
                     } label: {
-                        HStack(spacing: Theme.Spacing.xs) {
+                        HStack(spacing: Theme.Spacing.sm) {
                             Image(systemName: "shuffle")
+                                .font(.system(size: 12))
                             Text("Shuffle")
                         }
                     }
-                    .buttonStyle(PillButtonStyle())
+                    .buttonStyle(FLActionPillStyle())
 
-                    Button {
+                    FLCircleIconButton(systemImage: "pencil") {
                         isEditingAlbum = true
-                    } label: {
-                        HStack(spacing: Theme.Spacing.xs) {
-                            Image(systemName: "pencil")
-                            Text("Edit")
-                        }
                     }
-                    .buttonStyle(PillButtonStyle())
+                    .help("Edit album")
                 }
+                .padding(.top, 18)
             }
         }
-        .frame(height: 200)
+    }
+
+    /// `artist · year · genre · N tracks · duration` — replaces the old row of
+    /// metadata chips. The artist segment stays clickable.
+    private func metadataPieces(_ album: Album) -> [String] {
+        var trailing: [String] = []
+        if let year = album.year { trailing.append("\(year)") }
+        if let genre = album.genre { trailing.append(genre) }
+        trailing.append(contentsOf: album.secondaryGenres)
+        trailing.append("\(album.trackCount) track\(album.trackCount == 1 ? "" : "s")")
+        trailing.append(FormatUtils.formatDuration(album.totalDuration))
+        return trailing
+    }
+
+    @ViewBuilder
+    private func metadataLine(_ album: Album) -> some View {
+        HStack(spacing: 0) {
+            if album.isCompilation {
+                Text("Compilation")
+                    .font(.system(size: 13.5))
+                    .foregroundStyle(Theme.textSecondary)
+            } else {
+                ArtistLink(
+                    credit: album.artist,
+                    font: .system(size: 13.5),
+                    color: Theme.textSecondary
+                )
+            }
+
+            ForEach(Array(metadataPieces(album).enumerated()), id: \.offset) { _, piece in
+                Text(" · \(piece)")
+                    .font(.system(size: 13.5))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+        }
+        .lineLimit(1)
     }
 
     // MARK: - Track List
@@ -154,7 +176,7 @@ struct AlbumDetailView: View {
         LazyVStack(spacing: 0) {
             ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
                 TrackRow(track: track, isPlaying: player.currentTrack?.id == track.id)
-                    .contentShape(Rectangle())
+                    .flRowStyle(fill: player.currentTrack?.id == track.id ? Theme.surfaceElevated : nil)
                     .onTapGesture(count: 2) {
                         player.startFreshQueue(tracks, startAt: index, source: album?.name)
                         player.engine.play()
@@ -176,18 +198,7 @@ struct AlbumDetailView: View {
                             artistItems
                         }
                     }
-                    .padding(.vertical, Theme.Spacing.xs)
-                    .background(
-                        RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                            .fill(player.currentTrack?.id == track.id
-                                  ? Theme.surfaceElevated
-                                  : Color.clear)
-                    )
                     .riseFadeIn(index: index)
-
-                if index < tracks.count - 1 {
-                    Divider().foregroundStyle(Theme.divider)
-                }
             }
         }
     }
@@ -218,18 +229,6 @@ struct AlbumDetailView: View {
         }
         children.append(newItem)
         return .submenu("Add to Playlist", systemImage: "plus.square.on.square", items: children)
-    }
-
-    private func metadataTag(_ text: String) -> some View {
-        Text(text)
-            .font(Theme.Font.caption)
-            .foregroundStyle(Theme.textTertiary)
-            .padding(.horizontal, Theme.Spacing.sm)
-            .padding(.vertical, 3)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .fill(Theme.surfaceElevated)
-            )
     }
 
     private func playAlbum(_ album: Album, shuffle: Bool) {

@@ -117,8 +117,16 @@ if [[ ! -f "$RELEASE_NOTES" ]]; then
 ## Installation
 1. Download \`FLACtastic-${VERSION}.dmg\`.
 2. Open the DMG and drag **FLACtastic.app** into your **Applications** folder.
-3. The first time you launch, right-click the app and choose **Open** to
-   bypass macOS Gatekeeper (the build is ad-hoc signed for beta testing).
+3. Double-click the app. macOS will refuse to open it and say it "could not
+   verify" the app — this build is ad-hoc signed and not notarized, so
+   Gatekeeper has no identity to check. It is not a malware detection.
+4. Open **System Settings → Privacy & Security**, scroll to the message about
+   FLACtastic being blocked, and click **Open Anyway**. Confirm, and the app
+   launches normally from then on.
+
+   *(Control-clicking the app and choosing Open no longer works: Apple removed
+   that shortcut in macOS 15 Sequoia. Privacy & Security is the only route
+   on macOS 15 and later.)*
 NOTES
     echo
     echo "▶ Wrote release notes stub: $RELEASE_NOTES"

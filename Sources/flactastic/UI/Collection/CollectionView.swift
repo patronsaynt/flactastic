@@ -1,17 +1,32 @@
 import SwiftUI
 
+/// Horizontal gutter for the redesigned Collection surfaces.
+let collectionGutter: CGFloat = 36
+
+/// Headroom reserved at the top of a scrolling card grid. A hovered card rises
+/// 3pt and scales 1.03, pushing its top edge above the scroll content's origin
+/// — and `ScrollView` clips to its bounds, so without this the first row's
+/// cards get their tops shaved. The control row above gives up the same amount
+/// of bottom padding, keeping the resting gap identical.
+let cardHoverHeadroom: CGFloat = 8
+
 struct CollectionView: View {
     @Environment(LibraryStore.self) private var library
     @Environment(PlayerState.self) private var player
     @Environment(Settings.self) private var settings
     @Environment(NavigationRouter.self) private var router
-    @Environment(\.colorScheme) private var colorScheme
 
     @State private var searchText = ""
     /// Persisted across launches so the user's preferred grouping (e.g.
     /// "Artist") survives quitting the app. Default stays `.album` for
     /// first-time users.
     @AppStorage("flactastic.collectionSort") private var sortOption: CollectionSortOption = .album
+    /// Track sort state lives here rather than in `AllTracksView` so the single
+    /// control row under the page title can drive every content mode.
+    @AppStorage("flactastic.allTracksSort") private var tracksSortOption: AllTracksSortOption = .dateAdded
+    /// `false` for `.dateAdded` means newest-first. Alphabetical sorts flip the
+    /// default to ascending when the option changes.
+    @AppStorage("flactastic.allTracksAscending") private var tracksAscending: Bool = false
     @State private var contentMode: CollectionContentMode = .albums
     @State private var editingAlbum: Album? = nil
     @State private var refreshRotation: Double = 0
@@ -116,38 +131,59 @@ struct CollectionView: View {
 
     private var rootContent: some View {
         VStack(spacing: 0) {
-            // Header is always pinned above the content area.
-            header
-                .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.top, Theme.Spacing.lg)
-                .padding(.bottom, Theme.Spacing.md)
-
-            switch contentMode {
-            case .albums:
-                // Albums use a ScrollView so the grid/list can grow freely.
-                ScrollView {
-                    VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                        if shouldGroup {
-                            groupedContent
-                        } else if settings.useListLayout {
-                            albumList(cachedFiltered)
-                        } else {
-                            albumGrid(cachedFiltered)
-                        }
-                    }
-                    .padding(.horizontal, Theme.Spacing.xl)
-                    .padding(.bottom, 100)
+            // Title + control row are always pinned above the content area.
+            VStack(alignment: .leading, spacing: 0) {
+                FLPageHeader(eyebrow: "Library", title: modeTitle) {
+                    refreshButton
                 }
-                .task { canAnimateEntrances = true }
-            case .tracks:
-                // Tracks uses List internally — omit the outer ScrollView so
-                // List can take full height and scroll on its own.
-                AllTracksView(tracks: library.tracks, searchText: searchText)
-                    .padding(.horizontal, Theme.Spacing.xl)
-            case .artists:
-                ArtistsCollectionView(searchText: searchText)
+                .padding(.top, 30)
+
+                controlRow
+                    .padding(.top, 18)
+                    .padding(.bottom, 20 - cardHoverHeadroom)
             }
+            .padding(.horizontal, collectionGutter)
+
+            // Crossfade between modes (and between grid/list) rather than
+            // hard-cutting — the pill toggle animates, so the content should
+            // too. Same easing as the root ⇄ detail transition.
+            Group {
+                switch contentMode {
+                case .albums:
+                    // Albums use a ScrollView so the grid/list can grow freely.
+                    ScrollView {
+                        Group {
+                            if shouldGroup {
+                                groupedContent
+                            } else if settings.useListLayout {
+                                albumList(cachedFiltered)
+                            } else {
+                                albumGrid(cachedFiltered)
+                            }
+                        }
+                        .transition(.opacity)
+                        .padding(.horizontal, collectionGutter)
+                        .padding(.top, cardHoverHeadroom)
+                        .padding(.bottom, 100)
+                    }
+                    .task { canAnimateEntrances = true }
+                case .artists:
+                    ArtistsCollectionView(searchText: searchText)
+                case .tracks:
+                    AllTracksView(
+                        tracks: library.tracks,
+                        searchText: searchText,
+                        sortOption: $tracksSortOption,
+                        ascending: $tracksAscending
+                    )
+                    .padding(.horizontal, collectionGutter)
+                    .padding(.top, cardHoverHeadroom)
+                }
+            }
+            .transition(.opacity)
+            .animation(.easeInOut(duration: 0.22), value: settings.useListLayout)
         }
+        .animation(.easeInOut(duration: 0.22), value: contentMode)
         .background(Theme.background)
     }
 
@@ -162,98 +198,117 @@ struct CollectionView: View {
 
     // MARK: - Header
 
-    private var header: some View {
-        HStack(alignment: .center, spacing: Theme.Spacing.md) {
-            Picker("View", selection: $contentMode) {
-                ForEach(CollectionContentMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
+    private var modeTitle: String {
+        switch contentMode {
+        case .albums:  return "Albums"
+        case .artists: return "Artists"
+        case .tracks:  return "All Tracks"
+        }
+    }
+
+    private var refreshButton: some View {
+        FLCircleIconButton {
+            library.refreshLibrary()
+        } label: {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 13, weight: .medium))
+                .rotationEffect(.degrees(refreshRotation))
+        }
+        .disabled(isRefreshing)
+        .help("Refresh Library")
+        .onChange(of: isRefreshing) { _, spinning in
+            if spinning {
+                withAnimation(.linear(duration: 0.7).repeatForever(autoreverses: false)) {
+                    refreshRotation = 360
                 }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 180)
-
-            HStack(spacing: Theme.Spacing.sm) {
-                Image(systemName: "music.note")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.textTertiary)
-
-                Text(countLabel)
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.textTertiary)
-                    .tracking(1.5)
-            }
-
-            Button { library.refreshLibrary() } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(isRefreshing ? Theme.textTertiary : Theme.textSecondary)
-                    .rotationEffect(.degrees(refreshRotation))
-            }
-            .buttonStyle(.plain)
-            .disabled(isRefreshing)
-            .help("Refresh Library")
-            .onChange(of: isRefreshing) { _, spinning in
-                if spinning {
-                    withAnimation(.linear(duration: 0.7).repeatForever(autoreverses: false)) {
-                        refreshRotation = 360
-                    }
-                } else {
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        refreshRotation = 0
-                    }
+            } else {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    refreshRotation = 0
                 }
-            }
-
-            Spacer()
-
-            HStack(spacing: Theme.Spacing.md) {
-                if contentMode == .albums {
-                    Picker("Sort", selection: $sortOption) {
-                        ForEach(CollectionSortOption.allCases) { option in
-                            Text(option.rawValue).tag(option)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .tint(Theme.textSecondary)
-                    .id(colorScheme)
-                }
-
-                SearchBarView(searchText: $searchText)
             }
         }
     }
 
-    private var countLabel: String {
-        switch contentMode {
-        case .albums:
-            let n = cachedFiltered.count
-            return "LIBRARY — \(n) ALBUM\(n == 1 ? "" : "S")"
-        case .tracks:
-            let n = library.tracks.count
-            return "LIBRARY — \(n) TRACK\(n == 1 ? "" : "S")"
-        case .artists:
-            let resolver = library.makeArtistResolver()
-            let n = library.allArtists(resolver: resolver).count
-            return "LIBRARY — \(n) ARTIST\(n == 1 ? "" : "S")"
+    /// Grid/list preference is the persisted app-wide one, now driven from the
+    /// page itself rather than a Settings toggle.
+    private var useListLayout: Binding<Bool> {
+        Binding(get: { settings.useListLayout }, set: { settings.useListLayout = $0 })
+    }
+
+    private var controlRow: some View {
+        HStack(spacing: Theme.Spacing.md) {
+            FLPillToggle(
+                selection: $contentMode,
+                segments: [
+                    .text(.albums, "Albums"),
+                    .text(.artists, "Artists"),
+                    .text(.tracks, "Tracks"),
+                ]
+            )
+
+            if contentMode == .albums {
+                FLPillToggle(
+                    selection: useListLayout,
+                    segments: [
+                        .icon(false, "square.grid.2x2", help: "Grid"),
+                        .icon(true, "list.bullet", help: "List"),
+                    ]
+                )
+            }
+
+            Spacer()
+
+            switch contentMode {
+            case .albums:
+                FLSortMenu(
+                    selection: $sortOption,
+                    options: CollectionSortOption.allCases
+                ) { $0.rawValue }
+            case .tracks:
+                FLSortMenu(
+                    selection: $tracksSortOption,
+                    options: AllTracksSortOption.allCases
+                ) { $0.rawValue }
+                .onChange(of: tracksSortOption) { _, newValue in
+                    // Reset direction to the sensible default for the chosen sort.
+                    tracksAscending = (newValue != .dateAdded)
+                }
+
+                FLCircleIconButton(systemImage: tracksAscending ? "arrow.up" : "arrow.down") {
+                    tracksAscending.toggle()
+                }
+                .help(tracksAscending ? "Ascending" : "Descending")
+            case .artists:
+                EmptyView()
+            }
+
+            SearchBarView(searchText: $searchText, style: .capsule)
         }
     }
 
     // MARK: - Grouped Content
 
     private var groupedContent: some View {
-        LazyVStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+        LazyVStack(alignment: .leading, spacing: 32) {
             ForEach(cachedGroups, id: \.key) { group in
-                Section {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 10) {
+                        FLEyebrow(text: group.key)
+
+                        Rectangle()
+                            .fill(Theme.divider)
+                            .frame(height: 1)
+
+                        Text("\(group.albums.count) album\(group.albums.count == 1 ? "" : "s")")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+
                     if settings.useListLayout {
                         albumList(group.albums)
                     } else {
                         albumGrid(group.albums)
                     }
-                } header: {
-                    Text(group.key)
-                        .font(Theme.Font.headline)
-                        .foregroundStyle(Theme.textPrimary)
-                        .padding(.top, Theme.Spacing.sm)
                 }
             }
         }
@@ -263,16 +318,15 @@ struct CollectionView: View {
 
     private func albumGrid(_ albums: [Album]) -> some View {
         LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: Theme.Spacing.lg)],
-            spacing: Theme.Spacing.xl
+            columns: [GridItem(.adaptive(minimum: 180, maximum: 240), spacing: 24)],
+            spacing: 24
         ) {
             ForEach(Array(albums.enumerated()), id: \.element.id) { index, album in
-                Button { router.collectionPath.append(album.id) } label: {
-                    AlbumCardView(album: album)
-                }
-                .buttonStyle(.plain)
-                .flContextMenu { albumContextMenu(album) }
-                .riseFadeIn(index: index, animated: album.id, animatedIDs: animatedAlbumIDs, enabled: canAnimateEntrances)
+                AlbumCardView(album: album)
+                    .contentShape(Rectangle())
+                    .onTapGesture { router.collectionPath.append(album.id) }
+                    .flContextMenu { albumContextMenu(album) }
+                    .riseFadeIn(index: index, animated: album.id, animatedIDs: animatedAlbumIDs, enabled: canAnimateEntrances)
             }
         }
     }
@@ -280,14 +334,12 @@ struct CollectionView: View {
     // MARK: - Album List
 
     private func albumList(_ albums: [Album]) -> some View {
-        LazyVStack(spacing: 0) {
+        LazyVStack(spacing: 2) {
             ForEach(Array(albums.enumerated()), id: \.element.id) { index, album in
-                Button { router.collectionPath.append(album.id) } label: {
-                    AlbumRowView(album: album)
-                }
-                .buttonStyle(.plain)
-                .flContextMenu { albumContextMenu(album) }
-                .riseFadeIn(index: index, animated: album.id, animatedIDs: animatedAlbumIDs, enabled: canAnimateEntrances)
+                AlbumRowView(album: album)
+                    .onTapGesture { router.collectionPath.append(album.id) }
+                    .flContextMenu { albumContextMenu(album) }
+                    .riseFadeIn(index: index, animated: album.id, animatedIDs: animatedAlbumIDs, enabled: canAnimateEntrances)
             }
         }
     }

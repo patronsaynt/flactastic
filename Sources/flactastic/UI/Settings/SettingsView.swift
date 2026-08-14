@@ -467,12 +467,12 @@ private struct AppearanceSettingsPane: View {
             }
 
             // Library View ─────────────────────────────────────────────────
+            // Grid/list layout is chosen in-page on the Collection and
+            // Playlists tabs now, so it no longer appears here.
             SettingsGroup(title: "Library View") {
-                ToggleRow(label: "List Layout", isOn: $settings.useListLayout)
-                GroupDivider()
                 ToggleRow(
                     label: "Group Albums by Artist",
-                    subtitle: "In Icon View, cluster albums under their artist.",
+                    subtitle: "In grid view, cluster albums under their artist.",
                     isOn: $settings.groupByArtist
                 )
             }

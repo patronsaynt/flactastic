@@ -19,8 +19,6 @@ struct PlaylistsTabView: View {
     @State private var sortOption: PlaylistSortOption = .nameAsc
     @State private var showNewPlaylistPrompt = false
     @State private var newPlaylistName = ""
-    @State private var renamingPlaylistID: UUID?
-    @State private var renameText = ""
     @State private var editingPlaylistID: UUID?
 
     private var filteredPlaylists: [Playlist] {
@@ -57,79 +55,78 @@ struct PlaylistsTabView: View {
         .sheet(isPresented: $showNewPlaylistPrompt) {
             newPlaylistSheet
         }
-        .sheet(item: $renamingPlaylistID) { playlistID in
-            renamePlaylistSheet(for: playlistID)
-        }
         .sheet(item: $editingPlaylistID) { playlistID in
             PlaylistEditorView(playlistID: playlistID)
         }
     }
 
     private var rootContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                header
-                if settings.useListLayout {
-                    playlistList
-                } else {
-                    playlistGrid
-                }
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                FLPageHeader(eyebrow: "Library", title: "Playlists")
+                    .padding(.top, 30)
+
+                controlRow
+                    .padding(.top, 18)
+                    .padding(.bottom, 20 - cardHoverHeadroom)
             }
-            .padding(.horizontal, Theme.Spacing.xl)
-            .padding(.top, Theme.Spacing.lg)
-            .padding(.bottom, 100)
+            .padding(.horizontal, collectionGutter)
+
+            ScrollView {
+                Group {
+                    if settings.useListLayout {
+                        playlistList
+                    } else {
+                        playlistGrid
+                    }
+                }
+                .transition(.opacity)
+                .padding(.horizontal, collectionGutter)
+                .padding(.top, cardHoverHeadroom)
+                .padding(.bottom, 100)
+            }
+            .animation(.easeInOut(duration: 0.22), value: settings.useListLayout)
         }
         .background(Theme.background)
     }
 
-    // MARK: - Header
+    // MARK: - Control row
 
-    private var header: some View {
-        HStack(alignment: .center) {
-            HStack(spacing: Theme.Spacing.sm) {
-                Image(systemName: "music.note.list")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.textTertiary)
+    /// Same persisted app-wide preference the Collection tab drives.
+    private var useListLayout: Binding<Bool> {
+        Binding(get: { settings.useListLayout }, set: { settings.useListLayout = $0 })
+    }
 
-                Text("PLAYLISTS — \(filteredPlaylists.count)")
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.textTertiary)
-                    .tracking(1.5)
+    private var controlRow: some View {
+        HStack(spacing: Theme.Spacing.md) {
+            Button {
+                newPlaylistName = ""
+                showNewPlaylistPrompt = true
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("New Playlist")
+                }
             }
+            .buttonStyle(FLActionPillStyle(isPrimary: true, height: 34))
+
+            FLPillToggle(
+                selection: useListLayout,
+                segments: [
+                    .icon(false, "square.grid.2x2", help: "Grid"),
+                    .icon(true, "list.bullet", help: "List"),
+                ]
+            )
 
             Spacer()
 
-            HStack(spacing: Theme.Spacing.md) {
-                Picker("Sort", selection: $sortOption) {
-                    ForEach(PlaylistSortOption.allCases) { option in
-                        Text(option.rawValue).tag(option)
-                    }
-                }
-                .pickerStyle(.menu)
-                .tint(Theme.textSecondary)
+            FLSortMenu(
+                selection: $sortOption,
+                options: PlaylistSortOption.allCases
+            ) { $0.rawValue }
 
-                Button {
-                    newPlaylistName = ""
-                    showNewPlaylistPrompt = true
-                } label: {
-                    HStack(spacing: Theme.Spacing.xs) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 12, weight: .medium))
-                        Text("New Playlist")
-                            .font(Theme.Font.bodyMedium)
-                    }
-                    .foregroundStyle(Theme.textPrimary)
-                    .padding(.horizontal, Theme.Spacing.md)
-                    .padding(.vertical, Theme.Spacing.sm)
-                    .background(
-                        RoundedRectangle(cornerRadius: Theme.Radius.md)
-                            .fill(Theme.surfaceElevated)
-                    )
-                }
-                .buttonStyle(.plain)
-
-                SearchBarView(searchText: $searchText)
-            }
+            SearchBarView(searchText: $searchText, style: .capsule)
         }
     }
 
@@ -137,19 +134,19 @@ struct PlaylistsTabView: View {
 
     private var playlistGrid: some View {
         LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: Theme.Spacing.lg)],
-            spacing: Theme.Spacing.xl
+            columns: [GridItem(.adaptive(minimum: 180, maximum: 240), spacing: 24)],
+            spacing: 24
         ) {
             ForEach(Array(filteredPlaylists.enumerated()), id: \.element.id) { index, playlist in
                 let resolved = playlistStore.resolvedTracks(for: playlist, in: library)
-                Button { router.playlistsPath.append(playlist.id) } label: {
-                    PlaylistCardView(
-                        playlist: playlist,
-                        artwork: playlist.customArtwork ?? resolved.first?.artwork,
-                        trackCount: resolved.count
-                    )
-                }
-                .buttonStyle(.plain)
+                PlaylistCardView(
+                    playlist: playlist,
+                    artwork: playlist.customArtwork ?? resolved.first?.artwork,
+                    trackCount: resolved.count,
+                    totalDuration: totalDuration(of: resolved)
+                )
+                .contentShape(Rectangle())
+                .onTapGesture { router.playlistsPath.append(playlist.id) }
                 .flContextMenu { playlistContextMenu(playlist, tracks: resolved) }
                 .riseFadeIn(index: index)
             }
@@ -159,21 +156,24 @@ struct PlaylistsTabView: View {
     // MARK: - Playlist List
 
     private var playlistList: some View {
-        LazyVStack(spacing: 0) {
+        LazyVStack(spacing: 2) {
             ForEach(Array(filteredPlaylists.enumerated()), id: \.element.id) { index, playlist in
                 let resolved = playlistStore.resolvedTracks(for: playlist, in: library)
-                Button { router.playlistsPath.append(playlist.id) } label: {
-                    PlaylistRowView(
-                        playlist: playlist,
-                        artwork: playlist.customArtwork ?? resolved.first?.artwork,
-                        trackCount: resolved.count
-                    )
-                }
-                .buttonStyle(.plain)
+                PlaylistRowView(
+                    playlist: playlist,
+                    artwork: playlist.customArtwork ?? resolved.first?.artwork,
+                    trackCount: resolved.count,
+                    totalDuration: totalDuration(of: resolved)
+                )
+                .onTapGesture { router.playlistsPath.append(playlist.id) }
                 .flContextMenu { playlistContextMenu(playlist, tracks: resolved) }
                 .riseFadeIn(index: index)
             }
         }
+    }
+
+    private func totalDuration(of tracks: [Track]) -> TimeInterval {
+        tracks.reduce(0) { $0 + ($1.duration ?? 0) }
     }
 
     private func playlistContextMenu(_ playlist: Playlist, tracks: [Track]) -> [FLContextMenuItem] {
@@ -220,39 +220,6 @@ struct PlaylistsTabView: View {
         .background(Theme.surface)
     }
 
-    // MARK: - Rename Playlist Sheet
-
-    private func renamePlaylistSheet(for playlistID: UUID) -> some View {
-        VStack(spacing: Theme.Spacing.lg) {
-            Text("Rename Playlist")
-                .font(Theme.Font.headline)
-                .foregroundStyle(Theme.textPrimary)
-
-            TextField("Playlist name", text: $renameText)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 260)
-                .onSubmit { commitRename(for: playlistID) }
-
-            HStack(spacing: Theme.Spacing.md) {
-                Button("Cancel") {
-                    renamingPlaylistID = nil
-                }
-                .buttonStyle(PillButtonStyle())
-                .keyboardShortcut(.cancelAction)
-
-                Button("Rename") {
-                    commitRename(for: playlistID)
-                }
-                .buttonStyle(PillButtonStyle(isPrimary: true))
-                .keyboardShortcut(.defaultAction)
-                .disabled(renameText.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-        }
-        .padding(Theme.Spacing.xl)
-        .frame(width: 340, height: 160)
-        .background(Theme.surface)
-    }
-
     // MARK: - Actions
 
     private func commitNewPlaylist() {
@@ -260,13 +227,6 @@ struct PlaylistsTabView: View {
         guard !trimmed.isEmpty else { return }
         playlistStore.createPlaylist(name: trimmed)
         showNewPlaylistPrompt = false
-    }
-
-    private func commitRename(for playlistID: UUID) {
-        let trimmed = renameText.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-        playlistStore.renamePlaylist(id: playlistID, name: trimmed)
-        renamingPlaylistID = nil
     }
 }
 
