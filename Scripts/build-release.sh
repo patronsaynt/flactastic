@@ -41,9 +41,9 @@ if [[ ! -f "$VERSION_FILE" ]]; then
     exit 1
 fi
 VERSION="$(tr -d '[:space:]' < "$VERSION_FILE")"
-if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ || "$VERSION" =~ ^beta-[0-9]+(\.[0-9]+)?$ ]]; then
     echo "ERROR: invalid version '$VERSION' in version.txt" >&2
-    echo "       expected MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-PRERELEASE" >&2
+    echo "       expected MAJOR.MINOR.PATCH[-PRERELEASE] or beta-N[.N]" >&2
     exit 1
 fi
 
