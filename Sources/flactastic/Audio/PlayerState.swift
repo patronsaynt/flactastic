@@ -252,23 +252,6 @@ final class PlayerState {
         }
     }
 
-    /// Reorder upcoming queue items without interrupting playback. `source` and
-    /// `destination` are relative to the section that fired `.onMove`;
-    /// `baseEngineIndex` maps them to absolute positions in the engine queue.
-    /// Delegates to `engine.reorderQueue` which avoids flushing in-flight audio.
-    func moveQueueItems(from source: IndexSet, to destination: Int, baseEngineIndex: Int) {
-        guard !engine.queue.isEmpty else { return }
-        let curIdx = engine.currentIndex
-        var q = engine.queue
-
-        // Translate section-relative indices → full engine-queue indices.
-        let engineSource = IndexSet(source.map { $0 + baseEngineIndex })
-        let engineDest = destination + baseEngineIndex
-
-        q.move(fromOffsets: engineSource, toOffset: engineDest)
-        engine.reorderQueue(q, currentIndex: curIdx)
-    }
-
     /// Move the track identified by `sourceID` to immediately before the track
     /// identified by `destinationID`. Used by the queue panel's drag-to-reorder
     /// drop targets. Both tracks must already exist in the engine queue.

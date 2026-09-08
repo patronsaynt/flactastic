@@ -4,15 +4,6 @@ import Foundation
 // remote items returned by streaming services *before* they become local Track
 // rows in LibraryStore — the DownloadCoordinator bridges the two.
 
-enum RemoteItemType: String, Sendable, Hashable {
-    case track
-    case album
-    case artist
-    case playlist
-    case episode
-    case podcast
-}
-
 struct RemoteArtist: Sendable, Hashable, Identifiable {
     let id: String
     let name: String

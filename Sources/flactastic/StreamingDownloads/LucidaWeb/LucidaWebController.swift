@@ -227,13 +227,6 @@ final class LucidaWebController: NSObject {
         }
     }
 
-    /// All cookies the WebView currently has for `lucida.to` (including
-    /// every backend node). Used to share the cleared session with
-    /// URLSession-backed downloads.
-    func httpCookies() async -> [HTTPCookie] {
-        await webView.configuration.websiteDataStore.httpCookieStore.allCookies()
-    }
-
     /// Start a `WKDownload` for the given request, using the cleared session.
     /// The returned download's delegate must be set by the caller before any
     /// data arrives — `WKWebView.startDownload` invokes the delegate

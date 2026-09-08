@@ -35,13 +35,6 @@ final class DiscordPresenceService {
         }
     }
 
-    func shutdown() {
-        watcher?.cancel()
-        watcher = nil
-        let ipc = self.ipc
-        Task { await ipc.disconnect() }
-    }
-
     /// Dedupe key — equality controls whether we push a fresh `SET_ACTIVITY`.
     /// Keep this minimal: timestamps drift each poll due to float jitter, and
     /// Discord rate-limits to ~5 updates per 20s, so including them silently

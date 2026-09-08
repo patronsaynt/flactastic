@@ -46,15 +46,20 @@ struct TitleBarConfigurator: NSViewRepresentable {
 
         private let buttonTypes: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
 
-        /// Last origin AppKit itself assigned to each button. Offsets are always
-        /// measured from this, never from a value we wrote, so repeated passes
-        /// can't compound.
-        private var systemOrigins: [NSWindow.ButtonType: CGPoint] = [:]
+        /// Each button's stock origin within its superview (`NSTitlebarView`),
+        /// captured once. This is a fixed OS constant — confirmed by logging
+        /// it across launch-time window-frame restoration and manual resizes,
+        /// it never moves — so the target position can always be recomputed
+        /// from it directly, without ever reading the button's current (and
+        /// possibly already-nudged) frame as if it were a fresh baseline.
+        /// That keeps every reposition idempotent no matter what triggers it.
+        private var stockOrigins: [NSWindow.ButtonType: CGPoint] = [:]
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             guard let window else { return }
             configure(window)
+            captureStockOrigins(in: window)
 
             // Re-assert the custom title bar after exiting native fullscreen
             // (Big Picture mode). Fullscreen resets the style mask, which would
@@ -67,13 +72,16 @@ struct TitleBarConfigurator: NSViewRepresentable {
 
             // AppKit re-lays out the standard window buttons on its own schedule
             // — window-frame restoration at launch, live resize, fullscreen
-            // transitions — and every one of those passes snaps them back to
-            // their stock origins. A one-shot nudge therefore survives only if
-            // nothing else lays out afterwards, which is exactly why the offsets
-            // held when running unbundled but were lost in the packaged app
-            // (a bundled launch restores the saved window frame after the
-            // content view is installed). Observing each button's frame instead
-            // means every reset is corrected, whoever caused it.
+            // transitions — and any of those passes can move them. A one-shot
+            // nudge therefore survives only if nothing else lays out afterwards,
+            // which is exactly why the offsets held when running unbundled but
+            // were lost in the packaged app (a bundled launch restores the saved
+            // window frame after the content view is installed). Observing each
+            // button's frame means every relayout is corrected, whoever caused
+            // it — and since `reposition` recomputes the target from the fixed
+            // stock origin rather than the button's own (possibly already-
+            // nudged) frame, reacting to our own writes can't compound the
+            // offset.
             observeButtonFrames(in: window)
             repositionTrafficLights()
             DispatchQueue.main.async { [weak self] in self?.repositionTrafficLights() }
@@ -85,6 +93,14 @@ struct TitleBarConfigurator: NSViewRepresentable {
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
             window.styleMask.insert(.fullSizeContentView)
+        }
+
+        private func captureStockOrigins(in window: NSWindow) {
+            guard stockOrigins.isEmpty else { return }
+            for type in buttonTypes {
+                guard let button = window.standardWindowButton(type) else { continue }
+                stockOrigins[type] = button.frame.origin
+            }
         }
 
         @objc private func didExitFullScreen() {
@@ -122,16 +138,12 @@ struct TitleBarConfigurator: NSViewRepresentable {
         private func reposition(_ type: NSWindow.ButtonType, button: NSView) {
             // In native fullscreen the system owns the buttons — leave them be.
             guard let window, !window.styleMask.contains(.fullScreen) else { return }
-            let current = button.frame.origin
-            // Already sitting where we last put it — nothing to do. This is also
+            guard let stock = stockOrigins[type] else { return }
+            let target = CGPoint(x: stock.x + dx, y: stock.y + dy)
+            // Already sitting where it belongs — nothing to do. This is also
             // what stops the notification we trigger below from recursing.
-            if let system = systemOrigins[type], current == offset(system) { return }
-            systemOrigins[type] = current
-            button.setFrameOrigin(offset(current))
-        }
-
-        private func offset(_ origin: CGPoint) -> CGPoint {
-            CGPoint(x: origin.x + dx, y: origin.y + dy)
+            guard button.frame.origin != target else { return }
+            button.setFrameOrigin(target)
         }
     }
 }

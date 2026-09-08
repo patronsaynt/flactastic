@@ -3,36 +3,22 @@ import Foundation
 /// Resolves a public Spotify playlist into a `RemotePlaylist`.
 ///
 /// Two strategies, picked automatically:
-///  - **Web API** (preferred): when the user has supplied Spotify app
-///    credentials (Client Credentials flow), fetch the *complete* tracklist via
-///    `api.spotify.com`, paginating past 100 tracks. No track cap.
-///  - **Embed fallback** (no setup): scrape the no-auth
+///  - **Web API** (full tracklist, no cap): given a user OAuth bearer token
+///    from `SpotifyAuthController` (account linking), paginate
+///    `api.spotify.com` for the complete tracklist.
+///  - **Embed fallback** (no auth needed): scrape the no-auth
 ///    `open.spotify.com/embed/playlist/<id>` page's `__NEXT_DATA__` JSON. Works
-///    for any public playlist but Spotify caps that preview at 100 tracks.
+///    for any public playlist but Spotify caps that preview at 100 tracks —
+///    used for the paste-a-link flow when the user isn't connected.
 ///
 /// Why not Lucida: lucida.to's `/api/fetch/metadata` works for tracks/albums but
 /// fails ("Load failed") on Spotify playlists.
 ///
-/// An `actor` so the cached Web API token is shared safely across concurrent
-/// resolves.
+/// An `actor` so calls are safely serialized across concurrent resolves.
 actor SpotifyPlaylistService {
 
     /// The embed preview caps at this many entries.
     static let trackCap = 100
-
-    struct Credentials: Sendable, Equatable {
-        let clientID: String
-        let clientSecret: String
-
-        /// `nil` when either field is blank — caller should use the embed path.
-        init?(clientID: String, clientSecret: String) {
-            let id = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
-            let secret = clientSecret.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !id.isEmpty, !secret.isEmpty else { return nil }
-            self.clientID = id
-            self.clientSecret = secret
-        }
-    }
 
     enum ServiceError: LocalizedError {
         case notASpotifyPlaylist
@@ -51,7 +37,7 @@ actor SpotifyPlaylistService {
             case .parseFailed:
                 return "Couldn't read the playlist from Spotify. It may be private."
             case .authFailed(let code):
-                return "Spotify rejected the API credentials (HTTP \(code)). Check the Client ID and Secret in Settings."
+                return "Spotify rejected the request (HTTP \(code)). Try reconnecting your Spotify account in Settings."
             case .apiError(let code, let message):
                 return "Spotify refused the request (HTTP \(code)): \(message)"
             }
@@ -68,10 +54,6 @@ actor SpotifyPlaylistService {
 
     private let session: URLSession
 
-    /// Cached Client Credentials token, keyed by the client id it was minted
-    /// for, with its expiry. Reused across resolves until it nears expiry.
-    private var cachedToken: (clientID: String, token: String, expiresAt: Date)?
-
     init(session: URLSession? = nil) {
         if let session {
             self.session = session
@@ -85,21 +67,12 @@ actor SpotifyPlaylistService {
 
     // MARK: - Entry point
 
-    func resolve(_ url: URL, credentials: Credentials?) async throws -> Result {
+    /// Resolve via the no-auth embed preview, capped at 100 tracks. Used for
+    /// the paste-a-link flow when the user isn't connected — connect the
+    /// Spotify account (`resolve(_:userToken:)`) for full, uncapped tracklists.
+    func resolve(_ url: URL) async throws -> Result {
         guard let playlistID = Self.playlistID(from: url) else {
             throw ServiceError.notASpotifyPlaylist
-        }
-        if let credentials {
-            // Use the official API for full, uncapped tracklists.
-            do {
-                return try await resolveViaAPI(playlistID: playlistID, sourceURL: url, credentials: credentials)
-            } catch let error as ServiceError {
-                // Bad credentials are surfaced so the user can fix them. Any
-                // other API failure (e.g. Spotify 404s app-token access to some
-                // algorithmic playlists) falls back to the embed preview.
-                if case .authFailed = error { throw error }
-                return try await resolveViaEmbed(playlistID: playlistID, sourceURL: url)
-            }
         }
         return try await resolveViaEmbed(playlistID: playlistID, sourceURL: url)
     }
@@ -159,17 +132,8 @@ actor SpotifyPlaylistService {
 
     // MARK: - Web API path
 
-    private func resolveViaAPI(
-        playlistID: String,
-        sourceURL: URL,
-        credentials: Credentials
-    ) async throws -> Result {
-        let token = try await accessToken(for: credentials)
-        return try await resolveViaAPI(playlistID: playlistID, sourceURL: sourceURL, token: token)
-    }
-
-    /// Shared Web API resolve given an already-minted bearer token — used by
-    /// both the Client-Credentials (app token) and user-login paths.
+    /// Resolve via the Web API given an already-minted user OAuth bearer
+    /// token (from `SpotifyAuthController`'s account linking).
     private func resolveViaAPI(
         playlistID: String,
         sourceURL: URL,
@@ -217,32 +181,6 @@ actor SpotifyPlaylistService {
             serviceID: "lucida"
         )
         return Result(playlist: playlist, wasTruncated: false)
-    }
-
-    /// Mint or reuse a Client Credentials access token.
-    private func accessToken(for credentials: Credentials) async throws -> String {
-        if let cached = cachedToken,
-           cached.clientID == credentials.clientID,
-           cached.expiresAt.timeIntervalSinceNow > 30 {
-            return cached.token
-        }
-
-        var request = URLRequest(url: URL(string: "https://accounts.spotify.com/api/token")!)
-        request.httpMethod = "POST"
-        let basic = "\(credentials.clientID):\(credentials.clientSecret)"
-            .data(using: .utf8)!.base64EncodedString()
-        request.setValue("Basic \(basic)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = "grant_type=client_credentials".data(using: .utf8)
-
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw ServiceError.authFailed(-1) }
-        guard (200..<300).contains(http.statusCode) else { throw ServiceError.authFailed(http.statusCode) }
-
-        let decoded = try JSONDecoder().decode(APIToken.self, from: data)
-        let expiresAt = Date().addingTimeInterval(TimeInterval(decoded.expires_in ?? 3600))
-        cachedToken = (credentials.clientID, decoded.access_token, expiresAt)
-        return decoded.access_token
     }
 
     private func apiGet<T: Decodable>(_ urlString: String, token: String, as: T.Type) async throws -> T {
@@ -415,11 +353,6 @@ actor SpotifyPlaylistService {
 }
 
 // MARK: - Web API wire types
-
-private struct APIToken: Decodable {
-    let access_token: String
-    let expires_in: Int?
-}
 
 private struct APIPlaylistHeader: Decodable {
     let name: String?

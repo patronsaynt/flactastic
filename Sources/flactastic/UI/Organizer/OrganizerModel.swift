@@ -30,22 +30,6 @@ final class OrganizerModel {
     var unchangedCount: Int { operations.lazy.filter { if case .unchanged = $0.status { return true } else { return false } }.count }
     var conflictCount: Int { operations.lazy.filter { if case .conflict = $0.status { return true } else { return false } }.count }
 
-    func generatePreview(profile: OrganizerProfile, tracks: [Track], rootURL: URL?) {
-        guard let rootURL else {
-            operations = []
-            isPreviewStale = true
-            lastError = "Choose a source folder in Settings before organizing."
-            return
-        }
-        lastError = nil
-        operations = OrganizerPlanner.plan(tracks: tracks, profile: profile, rootURL: rootURL)
-        isPreviewStale = false
-    }
-
-    func markStale() {
-        isPreviewStale = true
-    }
-
     /// Re-plans after a short quiet period. Called on every edit in the builder
     /// so the preview tracks the rules live; the debounce keeps a burst of
     /// keystrokes from replanning the whole library once per character, and the

@@ -57,15 +57,11 @@ struct OnboardingStepHeader: View {
     }
 }
 
-/// Primary/secondary pill CTA used across onboarding steps. Thin wrapper
-/// around the app's existing `PillButtonStyle` so onboarding buttons stay
-/// visually identical to Settings' pill buttons.
+/// Primary pill CTA used across onboarding steps. Thin wrapper around the
+/// app's existing `PillButtonStyle` so onboarding buttons stay visually
+/// identical to Settings' pill buttons.
 extension View {
     func onboardingPrimaryButton() -> some View {
         buttonStyle(PillButtonStyle(isPrimary: true))
-    }
-
-    func onboardingSecondaryButton() -> some View {
-        buttonStyle(PillButtonStyle())
     }
 }

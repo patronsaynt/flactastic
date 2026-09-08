@@ -246,6 +246,15 @@ private struct GeneralSettingsPane: View {
                 .padding(.vertical, Theme.Spacing.md)
             }
 
+            // Navigation ───────────────────────────────────────────────────
+            SettingsGroup(title: "Navigation") {
+                ToggleRow(
+                    label: "Show Download Tab",
+                    subtitle: "Show the Download tab in the top navigation bar.",
+                    isOn: $settings.showDownloadTab
+                )
+            }
+
             // Playback ─────────────────────────────────────────────────────
             SettingsGroup(title: "Playback") {
                 ToggleRow(
@@ -412,35 +421,6 @@ private struct ConnectionsSettingsPane: View {
                     isOn: $settings.showSpotifyLikedSongs
                 )
             }
-
-            // Legacy API keys ──────────────────────────────────────────────
-            SettingsGroup(title: "Spotify API Keys (Legacy)") {
-                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                    Text("Optional. Used only for the public-link paste fallback when you're not connected above. Without keys, pasted public playlists use Spotify's preview, capped at 100 tracks. Add a free Spotify Developer app's Client ID and Secret (developer.spotify.com → Dashboard → Create app) to fetch pasted public playlists of any length.")
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    HStack(spacing: Theme.Spacing.md) {
-                        Text("Client ID")
-                            .font(Theme.Font.body)
-                            .foregroundStyle(Theme.textSecondary)
-                            .frame(width: 90, alignment: .leading)
-                        TextField("Client ID", text: $settings.spotifyClientID)
-                            .textFieldStyle(.roundedBorder)
-                    }
-                    HStack(spacing: Theme.Spacing.md) {
-                        Text("Client Secret")
-                            .font(Theme.Font.body)
-                            .foregroundStyle(Theme.textSecondary)
-                            .frame(width: 90, alignment: .leading)
-                        SecureField("Client Secret", text: $settings.spotifyClientSecret)
-                            .textFieldStyle(.roundedBorder)
-                    }
-                }
-                .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.vertical, Theme.Spacing.md)
-            }
         }
     }
 }
@@ -558,15 +538,6 @@ private struct VisualizerSettingsPane: View {
         @Bindable var settings = settings
 
         VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-
-            // Display ──────────────────────────────────────────────────────
-            SettingsGroup(title: "Display") {
-                ToggleRow(
-                    label: "Big Picture Fullscreen Toggle",
-                    subtitle: "Show a small icon in Big Picture mode to enter or exit fullscreen.",
-                    isOn: $settings.showBigPictureFullScreenToggle
-                )
-            }
 
             // Lyrics ───────────────────────────────────────────────────────
             SettingsGroup(title: "Lyrics") {

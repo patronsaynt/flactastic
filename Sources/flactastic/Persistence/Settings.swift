@@ -74,11 +74,6 @@ final class Settings {
         didSet { UserDefaults.standard.set(visualizerMode.rawValue, forKey: "flactastic.visualizerMode") }
     }
 
-    /// When true, Big Picture mode shows a small fullscreen toggle in the top-right corner.
-    var showBigPictureFullScreenToggle: Bool {
-        didSet { UserDefaults.standard.set(showBigPictureFullScreenToggle, forKey: "flactastic.showBigPictureFullScreenToggle") }
-    }
-
     /// When true, the Lyrics visualizer mode fetches lyrics from lrclib.net.
     /// Disable for offline / privacy-conscious use; cached entries still display.
     var lyricsLookupEnabled: Bool {
@@ -96,16 +91,11 @@ final class Settings {
         didSet { UserDefaults.standard.set(showVpnNotice, forKey: "flactastic.showVpnNotice") }
     }
 
-    /// Spotify Web API app credentials (Client Credentials flow). When both are
-    /// set, playlist rebuilds fetch the *complete* tracklist via the official
-    /// API instead of Spotify's 100-track embed preview. Optional — the embed
-    /// fallback works without them for playlists up to 100 tracks.
-    var spotifyClientID: String {
-        didSet { UserDefaults.standard.set(spotifyClientID, forKey: "flactastic.spotifyClientID") }
-    }
-
-    var spotifyClientSecret: String {
-        didSet { UserDefaults.standard.set(spotifyClientSecret, forKey: "flactastic.spotifyClientSecret") }
+    /// Whether the Download tab appears in the top navigation bar. Defaults
+    /// to hidden — most users import via the Home/Playlists flows and don't
+    /// need direct access to the streaming-download tooling.
+    var showDownloadTab: Bool {
+        didSet { UserDefaults.standard.set(showDownloadTab, forKey: "flactastic.showDownloadTab") }
     }
 
     /// Whether the synthetic "Liked Songs" entry appears at the top of the
@@ -150,18 +140,26 @@ final class Settings {
         autoFetchArtistImages = (storedAutoFetch as? Bool) ?? true
         let storedDRP = UserDefaults.standard.object(forKey: "flactastic.discordRichPresenceEnabled")
         discordRichPresenceEnabled = (storedDRP as? Bool) ?? true
+        // A stored "bigPicture" no longer parses now that the mode is gone,
+        // so this fallback doubles as the migration for existing users. Write
+        // the resolved value straight back — `didSet` doesn't fire during
+        // init, so without this the dead value would be re-read every launch.
         let storedVis = UserDefaults.standard.string(forKey: "flactastic.visualizerMode")
-        visualizerMode = storedVis.flatMap(VisualizerMode.init(rawValue:)) ?? .albumArtLargeDetails
-        let storedBPToggle = UserDefaults.standard.object(forKey: "flactastic.showBigPictureFullScreenToggle")
-        showBigPictureFullScreenToggle = (storedBPToggle as? Bool) ?? true
+        let resolvedVis = storedVis.flatMap(VisualizerMode.init(rawValue:))
+        let effectiveVis = resolvedVis ?? .albumArtLargeDetails
+        visualizerMode = effectiveVis
+        if storedVis != nil, resolvedVis == nil {
+            UserDefaults.standard.set(effectiveVis.rawValue, forKey: "flactastic.visualizerMode")
+            UserDefaults.standard.removeObject(forKey: "flactastic.showBigPictureFullScreenToggle")
+        }
         let storedLyricsLookup = UserDefaults.standard.object(forKey: "flactastic.lyricsLookupEnabled")
         lyricsLookupEnabled = (storedLyricsLookup as? Bool) ?? true
         let storedSaveLyrics = UserDefaults.standard.object(forKey: "flactastic.saveLyricsToFiles")
         saveLyricsToFiles = (storedSaveLyrics as? Bool) ?? true
         let storedVpn = UserDefaults.standard.object(forKey: "flactastic.showVpnNotice")
         showVpnNotice = (storedVpn as? Bool) ?? true
-        spotifyClientID = UserDefaults.standard.string(forKey: "flactastic.spotifyClientID") ?? ""
-        spotifyClientSecret = UserDefaults.standard.string(forKey: "flactastic.spotifyClientSecret") ?? ""
+        let storedShowDownloadTab = UserDefaults.standard.object(forKey: "flactastic.showDownloadTab")
+        showDownloadTab = (storedShowDownloadTab as? Bool) ?? false
         let storedLikedSongs = UserDefaults.standard.object(forKey: "flactastic.showSpotifyLikedSongs")
         showSpotifyLikedSongs = (storedLikedSongs as? Bool) ?? true
         let storedCPF = UserDefaults.standard.object(forKey: "flactastic.countedPlayFraction")

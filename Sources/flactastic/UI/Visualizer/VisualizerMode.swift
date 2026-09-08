@@ -1,38 +1,8 @@
 import Foundation
 
-enum VisualizerCategory: String, CaseIterable, Identifiable {
-    case albumArt
-    case lyrics
-    case spectrum
-    case bigPicture
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .albumArt:   return "Album Art"
-        case .lyrics:     return "Lyrics"
-        case .spectrum:   return "Spectrum"
-        case .bigPicture: return "Big Picture"
-        }
-    }
-
-    var modes: [VisualizerMode] {
-        switch self {
-        case .albumArt:
-            return [.albumArtLarge, .albumArtLargeDetails,
-                    .albumArtSmallDetails,
-                    .albumArtWheel]
-        case .lyrics:
-            return [.lyrics]
-        case .spectrum:
-            return [.spectrumRadial, .spectrumHorizontal, .spectrogram]
-        case .bigPicture:
-            return [.bigPicture]
-        }
-    }
-}
-
+/// The visualizer's modes, in the order the left-edge mode wheel presents
+/// them. `allCases` order is load-bearing — the wheel steps through it — so
+/// keep it aligned with the design handoff's `MODES` array.
 enum VisualizerMode: String, CaseIterable, Codable, Identifiable {
     case albumArtLarge
     case albumArtLargeDetails
@@ -42,53 +12,26 @@ enum VisualizerMode: String, CaseIterable, Codable, Identifiable {
     case spectrumRadial
     case spectrumHorizontal
     case spectrogram
-    case bigPicture
 
     var id: String { rawValue }
 
-    var category: VisualizerCategory {
+    /// The full label shown on the mode wheel.
+    var wheelLabel: String {
         switch self {
-        case .albumArtLarge, .albumArtLargeDetails,
-             .albumArtSmallDetails,
-             .albumArtWheel:
-            return .albumArt
-        case .lyrics:
-            return .lyrics
-        case .spectrumRadial, .spectrumHorizontal, .spectrogram:
-            return .spectrum
-        case .bigPicture:
-            return .bigPicture
-        }
-    }
-
-    /// Short label shown in the sub-option segmented row.
-    var shortName: String {
-        switch self {
-        case .albumArtLarge:        return "Large"
-        case .albumArtLargeDetails: return "Large + Details"
-        case .albumArtSmallDetails: return "Small"
-        case .albumArtWheel:        return "Wheel"
+        case .albumArtLarge:        return "Large Art"
+        case .albumArtLargeDetails: return "Large Art + Details"
+        case .albumArtSmallDetails: return "Small Art + Details"
+        case .albumArtWheel:        return "Cover Wheel"
         case .lyrics:               return "Lyrics"
-        case .spectrumRadial:       return "Radial"
-        case .spectrumHorizontal:   return "Horizontal"
+        case .spectrumRadial:       return "Radial Spectrum"
+        case .spectrumHorizontal:   return "Horizontal Spectrum"
         case .spectrogram:          return "Spectrogram"
-        case .bigPicture:           return "Big Picture"
         }
     }
 
     var requiresAudioTap: Bool {
         switch self {
         case .spectrumRadial, .spectrumHorizontal, .spectrogram:
-            return true
-        default:
-            return false
-        }
-    }
-
-    var showsDetails: Bool {
-        switch self {
-        case .albumArtLargeDetails, .albumArtSmallDetails,
-             .spectrumRadial, .spectrumHorizontal:
             return true
         default:
             return false

@@ -1149,7 +1149,7 @@ struct DownloadTabView: View {
     }
 
     /// Public-link paste field for the not-connected fallback. Resolves via the
-    /// existing embed / Client-Credentials path (`resolvePlaylist`).
+    /// no-auth embed path (`resolvePlaylist`), capped at 100 tracks.
     private var plPasteBar: some View {
         HStack(spacing: 10) {
             Image(systemName: "link")
@@ -1559,13 +1559,9 @@ struct DownloadTabView: View {
         isResolvingPlaylist = true
         // Fresh paste — reset the options panel to the highest-quality default.
         options = .default
-        let credentials = SpotifyPlaylistService.Credentials(
-            clientID: settings.spotifyClientID,
-            clientSecret: settings.spotifyClientSecret
-        )
         Task {
             do {
-                let result = try await rebuilder.resolve(url, credentials: credentials)
+                let result = try await rebuilder.resolve(url)
                 resolvedPlaylist = result.playlist
                 playlistTruncated = result.wasTruncated
             } catch {

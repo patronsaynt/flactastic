@@ -13,16 +13,23 @@ struct ContentView: View {
     @Environment(Settings.self) private var settings
 
     @State private var showSettings = false
+    /// Mirrors the hosting window's fullscreen state. The custom top bar is
+    /// the app's own view, not an `NSToolbar`, so hiding it for a fullscreen
+    /// visualizer has to happen here in the layout.
+    @State private var isFullScreen = false
 
     var body: some View {
         @Bindable var router = router
         VStack(spacing: 0) {
-            TopBarView(selectedTab: $router.selectedTab) {
-                showSettings = true
+            if !hidesTopBar(router: router) {
+                TopBarView(selectedTab: $router.selectedTab) {
+                    showSettings = true
+                }
             }
 
             mainContent(router: router)
         }
+        .background(WindowFullScreenObserver(isFullScreen: $isFullScreen))
         // Extend into the title-bar region so the top bar shares the row with
         // the traffic lights (the NSWindow is configured for a full-size,
         // transparent title bar — see TitleBarConfigurator).
@@ -70,6 +77,14 @@ struct ContentView: View {
                 playlistStore.reconcile(with: library)
             }
         }
+        .onChange(of: settings.showDownloadTab) { _, isShown in
+            // The tab just disappeared from the bar out from under the user —
+            // send them somewhere still visible instead of leaving them on a
+            // now-unreachable screen.
+            if !isShown && router.selectedTab == .download {
+                router.selectedTab = .home
+            }
+        }
         .onChange(of: player.isPlaying) { oldValue, newValue in
             // Handle repeat only when playback stopped naturally (track reached the end),
             // not when the user manually pressed pause.
@@ -85,6 +100,12 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    /// Fullscreen is the only thing that takes the top bar away, and only for
+    /// the visualizer — every other tab keeps its navigation at all times.
+    private func hidesTopBar(router: NavigationRouter) -> Bool {
+        isFullScreen && router.selectedTab == .visualizer
     }
 
     @ViewBuilder

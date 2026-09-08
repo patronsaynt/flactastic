@@ -17,10 +17,6 @@ final class StreamerRegistry {
         providers[provider.serviceID] = provider
     }
 
-    func unregister(serviceID: String) {
-        providers.removeValue(forKey: serviceID)
-    }
-
     func provider(serviceID: String) -> (any StreamerProvider)? {
         providers[serviceID]
     }
@@ -46,39 +42,5 @@ final class StreamerRegistry {
             throw StreamerError.unsupportedURL(url)
         }
         return try await provider.resolve(url)
-    }
-
-    /// Returns search results from every configured provider, keyed by
-    /// `serviceID`. Failures from individual providers are swallowed (the UI
-    /// still wants to show results from the working ones); callers can inspect
-    /// the optional `errors` map.
-    struct AggregatedSearch: Sendable {
-        let perService: [String: StreamerSearchResults]
-        let errors: [String: Error]
-    }
-
-    func searchAll(_ query: String, limit: Int = 20) async -> AggregatedSearch {
-        let snapshot = providers
-        var perService: [String: StreamerSearchResults] = [:]
-        var errors: [String: Error] = [:]
-        await withTaskGroup(of: (String, Result<StreamerSearchResults, Error>).self) { group in
-            for (id, provider) in snapshot {
-                group.addTask {
-                    do {
-                        let r = try await provider.search(query, limit: limit)
-                        return (id, .success(r))
-                    } catch {
-                        return (id, .failure(error))
-                    }
-                }
-            }
-            for await (id, result) in group {
-                switch result {
-                case .success(let r): perService[id] = r
-                case .failure(let e): errors[id] = e
-                }
-            }
-        }
-        return AggregatedSearch(perService: perService, errors: errors)
     }
 }

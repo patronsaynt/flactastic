@@ -8,20 +8,20 @@ struct VolumeSliderView: View {
         @Bindable var player = player
         HStack(spacing: Theme.Spacing.sm) {
             Image(systemName: "speaker.fill")
-                .font(.system(size: 10))
+                .font(.system(size: 12))
                 .foregroundStyle(Theme.textTertiary)
 
             Slider(value: $player.volume, in: 0...1) { _ in
                 settings.volume = player.volume
             }
             .tint(Theme.accent)
-            .frame(width: 56)
+            .frame(width: 64)
             .onChange(of: player.volume) { _, newValue in
                 player.engine.setVolume(newValue)
             }
 
             Image(systemName: "speaker.wave.3.fill")
-                .font(.system(size: 10))
+                .font(.system(size: 12))
                 .foregroundStyle(Theme.textTertiary)
         }
     }

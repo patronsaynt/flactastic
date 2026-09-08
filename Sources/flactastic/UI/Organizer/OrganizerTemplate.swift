@@ -52,35 +52,6 @@ enum OrganizerTemplate {
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Returns the bucket key for grouping `track` at a level keyed by `field`.
-    /// This is what determines which tracks share a folder — distinct from the
-    /// rendered folder *name*, which uses the level's template.
-    static func bucketKey(_ field: GroupingField, for track: Track, primaryArtistOnly: Bool = false) -> String {
-        switch field {
-        case .albumArtist:
-            let raw = track.albumArtist ?? track.artist ?? "Unknown Artist"
-            return primaryArtistOnly ? primaryArtist(raw) : raw
-        case .artist:
-            let raw = track.artist ?? "Unknown Artist"
-            return primaryArtistOnly ? primaryArtist(raw) : raw
-        case .album:
-            return track.album ?? "Unknown Album"
-        case .genre:
-            return track.genre ?? "Unknown Genre"
-        case .year:
-            return track.year.map(String.init) ?? "Unknown Year"
-        case .decade:
-            return track.year.map { "\(($0 / 10) * 10)" } ?? "Unknown Decade"
-        case .format:
-            return track.fileFormat.rawValue.uppercased()
-        case .firstLetterOfArtist:
-            var name = track.albumArtist ?? track.artist ?? ""
-            if primaryArtistOnly { name = primaryArtist(name) }
-            let first = name.trimmingCharacters(in: .whitespaces).first.map { String($0).uppercased() } ?? "#"
-            return first.first?.isLetter == true ? first : "#"
-        }
-    }
-
     private static func value(for key: String, track: Track, primaryArtistOnly: Bool) -> String {
         switch key {
         case "artist":

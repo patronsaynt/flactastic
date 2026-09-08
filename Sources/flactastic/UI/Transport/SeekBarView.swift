@@ -1,9 +1,16 @@
 import SwiftUI
 
 struct SeekBarView: View {
+    /// Larger geometry for the main floating player bar; the menu-bar and
+    /// mini-player instances keep the original compact sizing.
+    var prominent = false
+
     @Environment(PlayerState.self) private var player
     @State private var isDragging = false
     @State private var dragValue: Double = 0
+
+    private var trackHeight: CGFloat { prominent ? 5 : 4 }
+    private var thumbSize: CGFloat { prominent ? 14 : 12 }
 
     var body: some View {
         let duration = player.duration ?? 1
@@ -18,20 +25,20 @@ struct SeekBarView: View {
                     // Track background
                     Capsule()
                         .fill(Theme.surfaceElevated)
-                        .frame(height: 4)
+                        .frame(height: trackHeight)
 
                     // Filled portion
                     Capsule()
                         .fill(Theme.accent)
-                        .frame(width: max(0, min(CGFloat(progress) * width, width)), height: 4)
+                        .frame(width: max(0, min(CGFloat(progress) * width, width)), height: 5)
 
                     // Thumb
                     Circle()
                         .fill(Theme.accent)
-                        .frame(width: 12, height: 12)
-                        .offset(x: max(0, min(CGFloat(progress) * width - 6, width - 12)))
+                        .frame(width: thumbSize, height: thumbSize)
+                        .offset(x: max(0, min(CGFloat(progress) * width - thumbSize / 2, width - thumbSize)))
                 }
-                .frame(height: 12)
+                .frame(height: thumbSize)
                 .frame(maxHeight: .infinity, alignment: .center)
                 .contentShape(Rectangle())
                 .gesture(
@@ -52,16 +59,16 @@ struct SeekBarView: View {
                         }
                 )
             }
-            .frame(height: 16)
+            .frame(height: prominent ? 18 : 16)
 
             HStack {
                 Text(FormatUtils.formatDuration(displayTime))
-                    .font(Theme.Font.captionMono)
+                    .font(prominent ? .system(size: 12) : Theme.Font.captionMono)
                     .foregroundStyle(Theme.textTertiary)
                     .monospacedDigit()
                 Spacer()
                 Text("-\(FormatUtils.formatDuration(max(0, duration - displayTime)))")
-                    .font(Theme.Font.captionMono)
+                    .font(prominent ? .system(size: 12) : Theme.Font.captionMono)
                     .foregroundStyle(Theme.textTertiary)
                     .monospacedDigit()
             }

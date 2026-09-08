@@ -177,12 +177,6 @@ final class PlaylistStore {
         save()
     }
 
-    func moveEntries(from source: IndexSet, to destination: Int, in playlistID: UUID) {
-        guard let index = playlists.firstIndex(where: { $0.id == playlistID }) else { return }
-        playlists[index].entries.move(fromOffsets: source, toOffset: destination)
-        save()
-    }
-
     /// Move the entry identified by `sourceID` to immediately before the entry
     /// identified by `destinationID`. Used by drag-and-drop reordering in the
     /// playlist detail view.

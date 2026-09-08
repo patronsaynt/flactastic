@@ -2,10 +2,14 @@ import SwiftUI
 
 struct TabBarView: View {
     @Binding var selectedTab: AppTab
+    @Environment(Settings.self) private var settings
     @Namespace private var tabAnimation
 
     private let libraryTabs: [AppTab] = [.home, .collection, .playlists]
-    private let toolTabs: [AppTab]    = [.download, .organizer, .visualizer]
+
+    private var toolTabs: [AppTab] {
+        [.download, .organizer, .visualizer].filter { $0 != .download || settings.showDownloadTab }
+    }
 
     var body: some View {
         HStack(spacing: 2) {

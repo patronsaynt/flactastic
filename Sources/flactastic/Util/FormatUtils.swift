@@ -99,18 +99,35 @@ enum FormatUtils {
         return "\(tracks) · \(coarseDuration(duration))"
     }
 
+    /// "FLAC · 24-BIT / 96 kHz" — the uppercase fidelity caption the
+    /// visualizer prints under the track details. Components that the track
+    /// doesn't carry are dropped; returns nil when there's nothing to say.
+    static func techSpec(for track: Track?) -> String? {
+        guard let track else { return nil }
+        var parts: [String] = [track.fileFormat.displayName]
+
+        var fidelity: [String] = []
+        if let bits = track.bitDepth { fidelity.append("\(bits)-BIT") }
+        if let rate = track.sampleRate { fidelity.append(kilohertzString(rate)) }
+        if !fidelity.isEmpty {
+            parts.append(fidelity.joined(separator: " / "))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// "96 kHz" / "44.1 kHz" — whole numbers print without a decimal.
+    private static func kilohertzString(_ rate: Double) -> String {
+        let khz = rate / 1000.0
+        return khz == khz.rounded()
+            ? String(format: "%.0f kHz", khz)
+            : String(format: "%.1f kHz", khz)
+    }
+
     static func formatSampleRate(_ rate: Double?, bitDepth: Int?) -> String? {
         guard let rate else { return nil }
-        let khz = rate / 1000.0
-        let rateStr: String
-        if khz == khz.rounded() {
-            rateStr = String(format: "%.0f kHz", khz)
-        } else {
-            rateStr = String(format: "%.1f kHz", khz)
-        }
         if let bitDepth {
-            return "\(bitDepth)/\(Int(khz))"
+            return "\(bitDepth)/\(Int(rate / 1000.0))"
         }
-        return rateStr
+        return kilohertzString(rate)
     }
 }

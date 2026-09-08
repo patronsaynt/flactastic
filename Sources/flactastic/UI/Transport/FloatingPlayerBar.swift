@@ -12,7 +12,7 @@ struct FloatingPlayerBar: View {
         if player.currentTrack != nil {
             playerContent
                 .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.vertical, Theme.Spacing.sm)
+                .padding(.vertical, Theme.Spacing.md)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.Radius.lg)
                         .fill(Theme.surface)
@@ -37,7 +37,7 @@ struct FloatingPlayerBar: View {
                 }
             }
 
-            SeekBarView()
+            SeekBarView(prominent: true)
         }
     }
 
@@ -47,22 +47,22 @@ struct FloatingPlayerBar: View {
     private var trackInfo: some View {
         if let track = player.currentTrack {
             HStack(spacing: Theme.Spacing.sm) {
-                ArtworkView(data: track.artwork, size: 40)
+                ArtworkView(data: track.artwork, size: 48)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(track.title)
-                        .font(Theme.Font.caption)
+                        .font(.system(size: 13))
                         .fontWeight(.medium)
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
                     if let artist = ArtistResolver.displayString(track.artist) {
                         Text(artist)
-                            .font(.system(size: 10))
+                            .font(.system(size: 11.5))
                             .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
                     }
                 }
-                .frame(maxWidth: 150, alignment: .leading)
+                .frame(maxWidth: 160, alignment: .leading)
             }
             .flContextMenu {
                 FLContextMenuItem.button("View Album", systemImage: "square.grid.2x2") {
@@ -90,13 +90,13 @@ struct FloatingPlayerBar: View {
             FLContextMenuWindow.present(items: buildAddToPlaylistItems(), at: NSEvent.mouseLocation)
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 11, weight: .medium))
-                .frame(width: 22, height: 22)
+                .font(.system(size: 13, weight: .medium))
+                .frame(width: 26, height: 26)
                 .foregroundStyle(Theme.textTertiary)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .frame(width: 22, height: 22)
+        .frame(width: 26, height: 26)
         .help("Add to playlist")
     }
 
@@ -143,9 +143,9 @@ struct FloatingPlayerBar: View {
             }
         } label: {
             Image(systemName: "text.line.first.and.arrowtriangle.forward")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(player.isQueueVisible ? Theme.accent : Theme.textTertiary)
-                .frame(width: 22, height: 22)
+                .frame(width: 26, height: 26)
         }
         .buttonStyle(.plain)
         .help(player.isQueueVisible ? "Hide queue" : "Show queue")
@@ -159,34 +159,34 @@ struct FloatingPlayerBar: View {
                 player.toggleShuffle()
             } label: {
                 Image(systemName: "shuffle")
-                    .font(.system(size: 11))
+                    .font(.system(size: 13))
                     .foregroundStyle(player.isShuffleEnabled ? Theme.accent : Theme.textTertiary)
             }
             .buttonStyle(.plain)
 
             Button { player.engine.previous() } label: {
                 Image(systemName: "backward.fill")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 19, weight: .medium))
                     .foregroundStyle(Theme.textPrimary)
-                    .frame(width: 30, height: 30)
+                    .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
             Button { player.engine.togglePlayPause() } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 22, weight: .medium))
+                    .font(.system(size: 26, weight: .medium))
                     .foregroundStyle(Theme.textPrimary)
-                    .frame(width: 42, height: 42)
+                    .frame(width: 50, height: 50)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
             Button { player.next() } label: {
                 Image(systemName: "forward.fill")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 19, weight: .medium))
                     .foregroundStyle(Theme.textPrimary)
-                    .frame(width: 30, height: 30)
+                    .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -199,7 +199,7 @@ struct FloatingPlayerBar: View {
                 }
             } label: {
                 Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
-                    .font(.system(size: 11))
+                    .font(.system(size: 13))
                     .foregroundStyle(player.repeatMode != .off ? Theme.accent : Theme.textTertiary)
             }
             .buttonStyle(.plain)

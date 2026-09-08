@@ -117,14 +117,11 @@ final class PlaylistRebuildCoordinator {
         self.urlSession = urlSession
     }
 
-    /// Resolve a public Spotify playlist URL into its title, cover, and ordered
-    /// tracklist. With API credentials the full tracklist is fetched; otherwise
-    /// the no-auth embed (capped at 100 tracks) is used.
-    func resolve(
-        _ url: URL,
-        credentials: SpotifyPlaylistService.Credentials?
-    ) async throws -> SpotifyPlaylistService.Result {
-        try await spotifyService.resolve(url, credentials: credentials)
+    /// Resolve a public Spotify playlist URL via the no-auth embed preview
+    /// (capped at 100 tracks). Used for the paste-a-link fallback when the
+    /// user isn't connected — connect the Spotify account for full tracklists.
+    func resolve(_ url: URL) async throws -> SpotifyPlaylistService.Result {
+        try await spotifyService.resolve(url)
     }
 
     /// Resolve a playlist using a user OAuth bearer token — fetches the user's
