@@ -150,6 +150,16 @@ struct LucidaWebHost: NSViewRepresentable {
             webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
         ])
+        // Re-parenting a live WKWebView into a new window's view hierarchy
+        // leaves the page running (JS keeps ticking — bridge calls still
+        // complete) but WebKit's remote layer-hosting connection stays bound
+        // to the old window, so nothing actually paints: the pane renders
+        // blank/gray. Toggling `isHidden` on the next run-loop turn forces
+        // WebKit to rebuild that connection against the window it's in now.
+        DispatchQueue.main.async {
+            webView.isHidden = true
+            webView.isHidden = false
+        }
         return container
     }
 

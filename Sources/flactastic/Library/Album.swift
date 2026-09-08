@@ -21,4 +21,10 @@ struct Album: Identifiable, Hashable {
     var isCompilation: Bool {
         tracks.contains(where: \.isCompilation)
     }
+    /// True when any track in the album is a Mix Compilation (a DJ mix, live
+    /// set, radio show, or concert recording). Surfaced in the album's
+    /// metadata line so it reads clearly even for single-track imports.
+    var isMixCompilation: Bool {
+        tracks.contains(where: \.isMixCompilation)
+    }
 }

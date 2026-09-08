@@ -61,6 +61,7 @@ struct AlbumMetadataEditorView: View {
     @State private var genre:           String
     @State private var secondaryGenres: [String]
     @State private var isCompilation:   Bool
+    @State private var isMixCompilation: Bool
 
     @State private var artworkData:    Data?
     @State private var artworkChanged: Bool = false
@@ -102,6 +103,7 @@ struct AlbumMetadataEditorView: View {
         _genre           = State(initialValue: album.genre ?? "")
         _secondaryGenres = State(initialValue: album.secondaryGenres)
         _isCompilation   = State(initialValue: album.isCompilation)
+        _isMixCompilation = State(initialValue: album.isMixCompilation)
         _artworkData   = State(initialValue: album.artwork)
         let sorted = album.tracks.sorted {
             ($0.trackNumber ?? Int.max) < ($1.trackNumber ?? Int.max)
@@ -201,6 +203,25 @@ struct AlbumMetadataEditorView: View {
             }
             .toggleStyle(.checkbox)
             .disabled(isSaving)
+            .onChange(of: isCompilation) { _, on in
+                // Compilation and Mix Compilation are mutually exclusive.
+                if on { isMixCompilation = false }
+            }
+
+            Toggle(isOn: $isMixCompilation) {
+                Text("Mix Compilation")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.textPrimary)
+            }
+            .toggleStyle(.checkbox)
+            .disabled(isSaving || (!mixCompilationEligible && !isMixCompilation))
+            .help(mixCompilationEligible
+                  ? "Mark this album's single track as a mix, live set, radio show, or concert recording. Disables lyrics and enables chapter markers."
+                  : "Only available for single-track albums longer than 10 minutes")
+            .onChange(of: isMixCompilation) { _, on in
+                // Compilation and Mix Compilation are mutually exclusive.
+                if on { isCompilation = false }
+            }
 
             HStack(spacing: Theme.Spacing.md) {
                 metaField("Year",  text: $year,  width: 80, numericOnly: true)
@@ -221,6 +242,13 @@ struct AlbumMetadataEditorView: View {
 
             Spacer(minLength: 0)
         }
+    }
+
+    /// Mix Compilation only makes sense for a single continuous recording —
+    /// gated to albums with exactly one track that's also long enough to
+    /// qualify (mirrors the per-track 10-minute rule in TrackMetadataEditorView).
+    private var mixCompilationEligible: Bool {
+        album.trackCount == 1 && (album.tracks.first?.duration ?? 0) > 600
     }
 
     @ViewBuilder
@@ -439,6 +467,13 @@ struct AlbumMetadataEditorView: View {
             isCompilation == album.isCompilation ? .unchanged : .set(isCompilation)
         }()
 
+        // Mix Compilation: only ever reachable when the album has exactly one
+        // track, so this writes through to that single track exactly like the
+        // per-track editor would.
+        let mixCompilationChange: MetadataWriter.MixCompilationChange = {
+            isMixCompilation == album.isMixCompilation ? .unchanged : .set(isMixCompilation)
+        }()
+
         let orderedTracks = editableTracks  // snapshot current order + edited fields
 
         Task {
@@ -463,7 +498,8 @@ struct AlbumMetadataEditorView: View {
                         trackNumber:       item.trackNumber,
                         artworkChange:     artChange,
                         albumArtistChange: aaChange,
-                        compilationChange: compilationChange
+                        compilationChange: compilationChange,
+                        mixCompilationChange: mixCompilationChange
                     )
                     collected.append(updated)
                     await MainActor.run { savedCount += 1 }

@@ -285,8 +285,16 @@ struct FLBackLink: View {
 
 // MARK: - Track list
 
-/// The `# / TITLE / LENGTH` rule above a tracklist.
+/// The `# / TITLE / FORMAT / QUALITY / LENGTH` rule above a tracklist. Column
+/// widths mirror `TrackRow`'s trailing badges exactly (see
+/// `TrackRow.formatColumnWidth` etc.) so the labels stay aligned with the
+/// values underneath regardless of badge content length.
 struct FLTrackListHeader: View {
+    /// Reserve trailing space matching a track list whose rows show a drag
+    /// handle (`TrackRow(showDragHandle: true)`), so LENGTH lines up with the
+    /// duration column rather than the handle beside it.
+    var showDragHandle: Bool = false
+
     var body: some View {
         HStack(spacing: 14) {
             Text("#")
@@ -299,10 +307,24 @@ struct FLTrackListHeader: View {
                 .tracking(1.5)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+            Text("FORMAT")
+                .font(.system(size: 11))
+                .tracking(1.5)
+                .frame(minWidth: TrackRow.formatColumnWidth, alignment: .center)
+
+            Text("QUALITY")
+                .font(.system(size: 11))
+                .tracking(1.5)
+                .frame(minWidth: TrackRow.qualityColumnWidth, alignment: .center)
+
             Text("LENGTH")
                 .font(.system(size: 11))
                 .tracking(1.5)
-                .padding(.trailing, 64)
+                .frame(minWidth: TrackRow.lengthColumnWidth, alignment: .trailing)
+
+            if showDragHandle {
+                Color.clear.frame(width: 18)
+            }
         }
         .foregroundStyle(Theme.textTertiary)
         .padding(.horizontal, 10)

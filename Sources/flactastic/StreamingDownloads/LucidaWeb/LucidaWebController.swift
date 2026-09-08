@@ -78,6 +78,7 @@ final class LucidaWebController: NSObject {
                                 configuration: config)
         webView.customUserAgent = Self.userAgent
         webView.navigationDelegate = self
+        webView.uiDelegate = self
         // Web Inspector access from the debug window (Right-click → Inspect
         // Element). Requires macOS 13.3+; harmless on older OSes.
         if #available(macOS 13.3, *) { webView.isInspectable = true }
@@ -418,6 +419,35 @@ extension LucidaWebController: WKNavigationDelegate {
         addLog(.error, detail)
         phase = .failed(ns.localizedDescription)
         resolveWaiters(.failure(error))
+    }
+}
+
+// MARK: - UI delegate
+
+extension LucidaWebController: WKUIDelegate {
+    /// lucida.to's own frontend hands completed downloads off via
+    /// `window.open(url)` (see `LucidaWebProvider.getStream`). We have exactly
+    /// one `WKWebView`, shared by every bridge call and re-parented into the
+    /// debug pane / challenge sheet — with no `uiDelegate`, WebKit's default
+    /// for a new-window request is to navigate the *existing* view in place,
+    /// stranding it on whatever CDN/redirect target the popup pointed at.
+    /// From then on every relative-path `fetch('/api/load?...')` in the
+    /// bridge script resolves against the wrong origin and fails instantly
+    /// with "Failed to fetch". Returning `nil` here tells WebKit there's no
+    /// new window to hand the request to, so it's dropped instead of
+    /// hijacking the main frame — lucida.to stays the current page no matter
+    /// what the user clicks while poking at the real site (e.g. in the debug
+    /// pane).
+    nonisolated func webView(
+        _ webView: WKWebView,
+        createWebViewWith configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures
+    ) -> WKWebView? {
+        Task { @MainActor in
+            self.addLog(.info, "swallowed window.open: \(navigationAction.request.url?.absoluteString ?? "?")")
+        }
+        return nil
     }
 }
 

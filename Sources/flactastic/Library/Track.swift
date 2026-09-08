@@ -25,6 +25,13 @@ struct Track: Sendable, Identifiable, Hashable {
     /// compilation: it does NOT bucket under any single artist's own releases,
     /// but each track-level performer still picks it up under "Appears On".
     var isCompilation: Bool = false
+    /// Marks this track as a mix / live set / radio show / concert recording
+    /// rather than a conventional song. Only user-settable when `duration`
+    /// exceeds 600s (10 minutes) — see TrackMetadataEditorView. When true,
+    /// FLACtastic must not fetch or embed LYRICS for this track, and instead
+    /// surfaces user-authored chapter/track markers (stored as an embedded
+    /// CUESHEET tag, loaded lazily — see CueSheet.swift / MetadataWriter.readMarkers).
+    var isMixCompilation: Bool = false
     /// Filesystem-derived timestamp for when this track's file appeared in the
     /// library folder. Prefers the APFS "added to directory" timestamp when
     /// available, otherwise falls back to file creation / modification.
@@ -47,6 +54,7 @@ struct Track: Sendable, Identifiable, Hashable {
         secondaryGenres: [String] = [],
         year: Int? = nil,
         isCompilation: Bool = false,
+        isMixCompilation: Bool = false,
         dateAdded: Date? = nil
     ) {
         self.id = id
@@ -65,6 +73,7 @@ struct Track: Sendable, Identifiable, Hashable {
         self.secondaryGenres = secondaryGenres
         self.year = year
         self.isCompilation = isCompilation
+        self.isMixCompilation = isMixCompilation
         self.dateAdded = dateAdded
     }
 
@@ -97,6 +106,7 @@ extension Track {
             secondaryGenres: secondaryGenres,
             year: year,
             isCompilation: isCompilation,
+            isMixCompilation: isMixCompilation,
             dateAdded: dateAdded
         )
     }

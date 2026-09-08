@@ -88,6 +88,48 @@ char *taglib_helper_get_lyrics(void *file) {
     return result;
 }
 
+int taglib_helper_get_mix_compilation(void *file) {
+    if (!file) return 0;
+    char **values = taglib_property_get((TagLib_File *)file, "MIXCOMPILATION");
+    if (!values) return 0;
+    int result = 0;
+    if (values[0] && values[0][0] != '\0') {
+        char c = values[0][0];
+        if (c == '1' || c == 't' || c == 'T' || c == 'y' || c == 'Y') result = 1;
+    }
+    taglib_property_free(values);
+    return result;
+}
+
+void taglib_helper_set_mix_compilation(void *file, int value) {
+    if (!file) return;
+    if (value) {
+        taglib_property_set((TagLib_File *)file, "MIXCOMPILATION", "1");
+    } else {
+        taglib_property_set((TagLib_File *)file, "MIXCOMPILATION", "");
+    }
+}
+
+char *taglib_helper_get_cuesheet(void *file) {
+    if (!file) return NULL;
+    char **values = taglib_property_get((TagLib_File *)file, "CUESHEET");
+    if (!values) return NULL;
+    char *result = NULL;
+    if (values[0] && values[0][0] != '\0') {
+        size_t n = strlen(values[0]);
+        result = (char *)malloc(n + 1);
+        if (result) memcpy(result, values[0], n + 1);
+    }
+    taglib_property_free(values);
+    return result;
+}
+
+void taglib_helper_set_cuesheet(void *file, const char *value) {
+    if (!file) return;
+    taglib_property_set((TagLib_File *)file, "CUESHEET",
+                        (value && value[0] != '\0') ? value : "");
+}
+
 unsigned char *taglib_helper_read_picture(void *file, unsigned int *out_size) {
     if (!file || !out_size) return NULL;
     *out_size = 0;

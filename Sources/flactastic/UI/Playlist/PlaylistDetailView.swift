@@ -38,7 +38,7 @@ struct PlaylistDetailView: View {
                     if tracks.isEmpty {
                         emptyState
                     } else {
-                        FLTrackListHeader()
+                        FLTrackListHeader(showDragHandle: true)
                         trackList(playlist)
                     }
                 }

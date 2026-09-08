@@ -299,13 +299,16 @@ struct HomeView: View {
 
     private func recentAlbumTile(_ item: RecentItem) -> some View {
         let album = albumsByID[item.targetID]
-        let artist = ArtistResolver.displayString(album?.artist)
-            ?? ArtistResolver.displayString(item.subtitle)
-            ?? item.subtitle
+        let subtitle: String = {
+            if album?.isMixCompilation == true { return "Mix Compilation" }
+            return ArtistResolver.displayString(album?.artist)
+                ?? ArtistResolver.displayString(item.subtitle)
+                ?? item.subtitle
+        }()
         return tile(
             artwork: album?.artwork,
             title: item.title,
-            subtitle: artist,
+            subtitle: subtitle,
             enabled: album != nil,
             onOpen: { if let album { router.navigateToAlbum(id: album.id) } },
             menu: { album.map(albumContextMenu) ?? [] }

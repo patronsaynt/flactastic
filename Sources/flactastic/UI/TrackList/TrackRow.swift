@@ -1,6 +1,12 @@
 import SwiftUI
 
 struct TrackRow: View {
+    /// Shared with `FLTrackListHeader` so the FORMAT / QUALITY / LENGTH column
+    /// headers stay aligned with these badges regardless of content length.
+    static let formatColumnWidth: CGFloat = 46
+    static let qualityColumnWidth: CGFloat = 92
+    static let lengthColumnWidth: CGFloat = 44
+
     let track: Track
     let isPlaying: Bool
     var displayNumber: Int? = nil
@@ -45,6 +51,7 @@ struct TrackRow: View {
                 .font(.system(size: 10, weight: .medium))
                 .tracking(0.3)
                 .foregroundStyle(Theme.textTertiary)
+                .frame(minWidth: Self.formatColumnWidth - 14, alignment: .center)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
                 .background(
@@ -59,7 +66,9 @@ struct TrackRow: View {
                 .font(.system(size: 12.5))
                 .foregroundStyle(Theme.textSecondary)
                 .monospacedDigit()
-                .frame(width: 44, alignment: .trailing)
+                .lineLimit(1)
+                .fixedSize()
+                .frame(minWidth: Self.lengthColumnWidth, alignment: .trailing)
 
             if showDragHandle {
                 Image(systemName: "line.3.horizontal")
@@ -131,6 +140,7 @@ struct TrackRow: View {
             .font(.system(size: 10, weight: .semibold))
             .tracking(0.3)
             .foregroundStyle(quality.color)
+            .frame(minWidth: Self.qualityColumnWidth - 14, alignment: .center)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(

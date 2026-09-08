@@ -18,6 +18,7 @@ struct TrackMetadataEditorView: View {
     @State private var genre:           String
     @State private var secondaryGenres: [String]
     @State private var trackNumber:     String
+    @State private var isMixCompilation: Bool
 
     // Artwork state
     @State private var artworkData:    Data?
@@ -28,8 +29,9 @@ struct TrackMetadataEditorView: View {
     @State private var isSaving:    Bool   = false
     @State private var errorMessage: String? = nil
 
-    // Lyrics editor pop-out
+    // Lyrics / markers editor pop-out
     @State private var showLyricsEditor: Bool = false
+    @State private var showMarkersEditor: Bool = false
 
     init(track: Track) {
         self.track = track
@@ -41,11 +43,12 @@ struct TrackMetadataEditorView: View {
         _genre           = State(initialValue: track.genre ?? "")
         _secondaryGenres = State(initialValue: track.secondaryGenres)
         _trackNumber     = State(initialValue: track.trackNumber.map { "\($0)" } ?? "")
+        _isMixCompilation = State(initialValue: track.isMixCompilation)
         _artworkData = State(initialValue: track.artwork)
     }
 
     var body: some View {
-        FLSheet(title: "Edit Track", width: 520, height: 500) {
+        FLSheet(title: "Edit Track", width: 520, height: 540) {
             formBody
         } footer: {
             footerButtons
@@ -60,6 +63,9 @@ struct TrackMetadataEditorView: View {
         }
         .sheet(isPresented: $showLyricsEditor) {
             TrackLyricsEditorView(track: track)
+        }
+        .sheet(isPresented: $showMarkersEditor) {
+            TrackMarkersEditorView(track: track)
         }
     }
 
@@ -118,7 +124,7 @@ struct TrackMetadataEditorView: View {
 
     // Metadata fields column
     private var fieldsSection: some View {
-        VStack(spacing: Theme.Spacing.sm) {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             metaField("Song Name",  text: $title,       required: true)
             ArtistsFieldView(artists: $artists)
             metaField("Album",      text: $album)
@@ -130,8 +136,22 @@ struct TrackMetadataEditorView: View {
             }
             GenreFieldView(text: $genre)
             SecondaryGenresFieldView(genres: $secondaryGenres, primaryGenre: genre)
+
+            Toggle(isOn: $isMixCompilation) {
+                Text("Mix Compilation")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.textPrimary)
+            }
+            .toggleStyle(.checkbox)
+            .disabled(isSaving || (!mixCompilationEligible && !isMixCompilation))
+            .help(mixCompilationEligible
+                  ? "Mark this track as a mix, live set, radio show, or concert recording. Disables lyrics and enables chapter markers."
+                  : "Only available for tracks longer than 10 minutes")
+            .padding(.top, Theme.Spacing.xs)
         }
     }
+
+    private var mixCompilationEligible: Bool { (track.duration ?? 0) > 600 }
 
     @ViewBuilder
     private func metaField(
@@ -176,18 +196,33 @@ struct TrackMetadataEditorView: View {
 
     private var footerButtons: some View {
         HStack {
-            Button {
-                showLyricsEditor = true
-            } label: {
-                HStack(spacing: Theme.Spacing.xs) {
-                    Image(systemName: "text.alignleft")
-                        .font(.system(size: 11))
-                    Text("Lyrics…")
+            if isMixCompilation {
+                Button {
+                    showMarkersEditor = true
+                } label: {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Image(systemName: "list.bullet.rectangle")
+                            .font(.system(size: 11))
+                        Text("Markers…")
+                    }
                 }
+                .buttonStyle(PillButtonStyle())
+                .disabled(isSaving)
+                .help("Add and edit chapter markers for this mix")
+            } else {
+                Button {
+                    showLyricsEditor = true
+                } label: {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Image(systemName: "text.alignleft")
+                            .font(.system(size: 11))
+                        Text("Lyrics…")
+                    }
+                }
+                .buttonStyle(PillButtonStyle())
+                .disabled(isSaving)
+                .help("Edit the embedded lyrics for this track")
             }
-            .buttonStyle(PillButtonStyle())
-            .disabled(isSaving)
-            .help("Edit the embedded lyrics for this track")
 
             Spacer()
             Button("Cancel") { dismiss() }
@@ -229,6 +264,8 @@ struct TrackMetadataEditorView: View {
         let parsedTrackNumber = Int(trackNumber)
         let snapshot = track
         let cleanedSecondary = secondaryGenres.filter { $0.lowercased() != genre.lowercased() }
+        let mixCompilationChange: MetadataWriter.MixCompilationChange =
+            isMixCompilation == track.isMixCompilation ? .unchanged : .set(isMixCompilation)
 
         let joinedArtist: String? = {
             let cleaned = artists.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -249,7 +286,8 @@ struct TrackMetadataEditorView: View {
                     genre:           genre.isEmpty ? nil : genre,
                     secondaryGenres: cleanedSecondary,
                     trackNumber:     parsedTrackNumber,
-                    artworkChange: artChange
+                    artworkChange: artChange,
+                    mixCompilationChange: mixCompilationChange
                 )
                 await MainActor.run {
                     library.updateTrack(id: snapshot.id, with: updated)

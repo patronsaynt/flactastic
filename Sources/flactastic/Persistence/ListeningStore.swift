@@ -248,9 +248,14 @@ final class ListeningStore {
 
     /// Convenience: record an intentional album play for the Recently Played rail.
     func recordAlbumPlay(_ album: Album) {
-        let subtitle = album.isCompilation
-            ? "Compilation"
-            : (ArtistResolver.displayString(album.artist) ?? "Unknown Artist")
+        let subtitle: String
+        if album.isMixCompilation {
+            subtitle = "Mix Compilation"
+        } else if album.isCompilation {
+            subtitle = "Compilation"
+        } else {
+            subtitle = ArtistResolver.displayString(album.artist) ?? "Unknown Artist"
+        }
         recordContextPlay(kind: .album, targetID: album.id, title: album.name, subtitle: subtitle)
     }
 

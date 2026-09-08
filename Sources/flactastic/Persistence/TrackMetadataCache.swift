@@ -17,6 +17,7 @@ struct TrackMetadataCacheEntry: Codable, Sendable {
     var secondaryGenres: [String]
     var year: Int?
     var isCompilation: Bool
+    var isMixCompilation: Bool
     var hasArtwork: Bool
     var fileSize: Int64
     var mtime: Date
@@ -34,6 +35,7 @@ struct TrackMetadataCacheEntry: Codable, Sendable {
         secondaryGenres = track.secondaryGenres
         year = track.year
         isCompilation = track.isCompilation
+        isMixCompilation = track.isMixCompilation
         hasArtwork = track.artwork != nil
         self.fileSize = fileSize
         self.mtime = mtime
@@ -64,6 +66,7 @@ struct TrackMetadataCacheEntry: Codable, Sendable {
         track.secondaryGenres = secondaryGenres
         track.year = year
         track.isCompilation = isCompilation
+        track.isMixCompilation = isMixCompilation
     }
 }
 

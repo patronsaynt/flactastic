@@ -62,6 +62,10 @@ final class LyricsFetcher {
         startDelay: TimeInterval = 0
     ) -> Lyrics? {
         guard let track else { return nil }
+        // Mix compilations (live sets, mixes, radio shows) must never carry
+        // or seek lyrics — this is a defensive second guard behind the
+        // primary check at the visualizer call site.
+        guard track.isMixCompilation != true else { return nil }
         let key = LyricsCacheKey.make(
             artist: track.artist ?? track.albumArtist,
             title: track.title,

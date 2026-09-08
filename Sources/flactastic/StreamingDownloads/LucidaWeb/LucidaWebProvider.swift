@@ -26,7 +26,7 @@ final class LucidaWebProvider: NSObject, StreamerProvider {
         "tidal.com", "listen.tidal.com",
         "qobuz.com", "play.qobuz.com", "open.qobuz.com",
         "deezer.com",
-        "soundcloud.com",
+        "soundcloud.com", "on.soundcloud.com",
         "music.apple.com",
         "music.amazon.com", "music.amazon.co.uk",
         "music.youtube.com",

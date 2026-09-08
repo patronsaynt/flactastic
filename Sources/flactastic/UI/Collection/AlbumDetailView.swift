@@ -87,7 +87,7 @@ struct AlbumDetailView: View {
                 }
 
             VStack(alignment: .leading, spacing: 0) {
-                FLEyebrow(text: "Album")
+                FLEyebrow(text: album.isMixCompilation ? "Mix Compilation" : "Album")
 
                 Text(album.name)
                     .font(.system(size: 30, weight: .bold))

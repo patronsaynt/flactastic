@@ -56,6 +56,14 @@ actor MetadataWriter {
         case set(Bool)
     }
 
+    /// Sentinel for the MIXCOMPILATION tag. `.unchanged` skips the write;
+    /// `.set(true)` writes "1" and also clears any LYRICS tag (mix
+    /// compilations must not carry lyrics); `.set(false)` clears the tag.
+    enum MixCompilationChange: Sendable {
+        case unchanged
+        case set(Bool)
+    }
+
     /// Write text tags and optionally artwork to the file at `track.url`.
     ///
     /// - Returns: An updated `Track` value reflecting the written fields.
@@ -72,7 +80,8 @@ actor MetadataWriter {
         trackNumber: Int?,
         artworkChange: ArtworkChange = .unchanged,
         albumArtistChange: AlbumArtistChange = .unchanged,
-        compilationChange: CompilationChange = .unchanged
+        compilationChange: CompilationChange = .unchanged,
+        mixCompilationChange: MixCompilationChange = .unchanged
     ) throws -> Track {
         let url = track.url
 
@@ -116,11 +125,32 @@ actor MetadataWriter {
         }
 
         // --- Compilation flag ---
+        // Compilation and Mix Compilation are mutually exclusive; whichever is
+        // applied here second wins if a caller somehow requests both at once.
         switch compilationChange {
         case .unchanged:
             break
         case .set(let on):
             taglib_helper_set_compilation(file, on ? 1 : 0)
+            if on {
+                taglib_helper_set_mix_compilation(file, 0)
+            }
+        }
+
+        // --- Mix Compilation flag ---
+        switch mixCompilationChange {
+        case .unchanged:
+            break
+        case .set(let on):
+            taglib_helper_set_mix_compilation(file, on ? 1 : 0)
+            if on {
+                // Turning ON mix compilation clears any existing LYRICS tag in
+                // the same save — mix/live-set tracks must not carry a LYRICS
+                // tag, and this keeps the file's on-disk state atomic with the
+                // toggle flip.
+                taglib_helper_set_lyrics(file, "")
+                taglib_helper_set_compilation(file, 0)
+            }
         }
 
         // --- Artwork ---
@@ -170,7 +200,15 @@ actor MetadataWriter {
         }
         switch compilationChange {
         case .unchanged:        break
-        case .set(let on):      updated.isCompilation = on
+        case .set(let on):
+            updated.isCompilation = on
+            if on { updated.isMixCompilation = false }
+        }
+        switch mixCompilationChange {
+        case .unchanged:        break
+        case .set(let on):
+            updated.isMixCompilation = on
+            if on { updated.isCompilation = false }
         }
         switch artworkChange {
         case .unchanged:   break
@@ -245,6 +283,47 @@ actor MetadataWriter {
         defer { free(cstr) }
         let result = String(cString: cstr)
         return result.isEmpty ? nil : result
+    }
+
+    /// Write markers as an embedded CUESHEET tag on `track.url`. Pass an empty
+    /// array to clear the tag. All other tags are left untouched.
+    func writeMarkers(to track: Track, markers: [TrackMarker]) throws {
+        let url = track.url
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw WriteError.fileNotFound(url)
+        }
+        guard let file = url.path.withCString({ taglib_file_new($0) }) else {
+            throw WriteError.fileOpenFailed(url)
+        }
+        defer {
+            taglib_file_free(file)
+            taglib_tag_free_strings()
+        }
+        guard taglib_file_is_valid(file) != 0 else {
+            throw WriteError.fileOpenFailed(url)
+        }
+        let cuesheet = markers.isEmpty ? "" : CueSheet.encode(markers: markers, fileName: url.lastPathComponent)
+        cuesheet.withCString { taglib_helper_set_cuesheet(file, $0) }
+        guard taglib_file_save(file) != 0 else {
+            throw WriteError.saveFailed(url)
+        }
+    }
+
+    /// Read and decode the embedded CUESHEET tag from `track.url`. Returns an
+    /// empty array when unset or unparsable.
+    func readMarkers(from track: Track) throws -> [TrackMarker] {
+        let url = track.url
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        guard let file = url.path.withCString({ taglib_file_new($0) }) else { return [] }
+        defer {
+            taglib_file_free(file)
+            taglib_tag_free_strings()
+        }
+        guard taglib_file_is_valid(file) != 0 else { return [] }
+        guard let cstr = taglib_helper_get_cuesheet(file) else { return [] }
+        defer { free(cstr) }
+        let raw = String(cString: cstr)
+        return raw.isEmpty ? [] : CueSheet.decode(raw)
     }
 
     // MARK: - Helpers

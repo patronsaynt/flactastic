@@ -38,6 +38,7 @@ struct LyricsVisualizerView: View {
         .background { backdrop }
         .task(id: player.currentTrack?.id) {
             ensureArtistImage()
+            guard player.currentTrack?.isMixCompilation != true else { return }
             let enabled = settings.lyricsLookupEnabled
             let save = settings.saveLyricsToFiles
             fetcher.ensureLyrics(
@@ -46,7 +47,7 @@ struct LyricsVisualizerView: View {
                 saveToFile: save
             )
             fetcher.prefetch(
-                tracks: adjacentTracks,
+                tracks: adjacentTracks.filter { $0.isMixCompilation != true },
                 enabled: enabled,
                 saveToFile: save
             )
@@ -151,7 +152,9 @@ struct LyricsVisualizerView: View {
 
     @ViewBuilder
     private var lyricsArea: some View {
-        if !settings.lyricsLookupEnabled {
+        if player.currentTrack?.isMixCompilation == true {
+            unavailable("Lyrics aren't available for mix compilations")
+        } else if !settings.lyricsLookupEnabled {
             unavailable("Lyrics lookup disabled in Settings")
         } else if let track = player.currentTrack {
             let key = LyricsCacheKey.make(

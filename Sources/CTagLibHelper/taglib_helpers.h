@@ -66,6 +66,24 @@ void taglib_helper_set_lyrics(void *file, const char *value);
  *  free(), or NULL if unset. */
 char *taglib_helper_get_lyrics(void *file);
 
+/** Read the MIXCOMPILATION property (a FLACtastic-defined tag; no standard
+ *  cross-format equivalent, so it is stored under the same name in every
+ *  container via TagLib's generic property API).
+ *  Returns 1 when the tag is present and truthy ("1"/"true"/"yes"), 0 otherwise. */
+int taglib_helper_get_mix_compilation(void *file);
+
+/** Write the MIXCOMPILATION property. Non-zero `value` writes "1"; zero
+ *  clears the tag entirely. */
+void taglib_helper_set_mix_compilation(void *file, int value);
+
+/** Read the CUESHEET property (Xiph CUESHEET tag; stores an embedded cue
+ *  sheet describing chapter/track markers within a single-file recording).
+ *  Returns a malloc'd C string the caller must free(), or NULL if unset. */
+char *taglib_helper_get_cuesheet(void *file);
+
+/** Write the CUESHEET property verbatim. Pass NULL or "" to clear. */
+void taglib_helper_set_cuesheet(void *file, const char *value);
+
 /** Read the audio bit depth (bits per sample) for the file at \a path, using
  *  TagLib's C++ AudioProperties. Works for lossless formats whose container
  *  reports no PCM bit depth to AVFoundation (FLAC, ALAC, WAV, AIFF, …).
